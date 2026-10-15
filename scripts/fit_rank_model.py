@@ -9,7 +9,6 @@ averaged over question sizes 5, 10 and 20; the question-mean score is reported t
 Writes results/rank_model_eval.json and results/models/rank_model.json.
 """
 import argparse
-import glob
 import json
 import sys
 from datetime import datetime
@@ -27,7 +26,7 @@ from aicup.metric import LEVELS, expected_score_decision, score  # noqa: E402
 from aicup.pilot import pilot_questions  # noqa: E402
 from aicup.qfeatures import FEATURE_NAMES, build_matrix, sample_questions  # noqa: E402
 from aicup.rankmodel import MLPModel, SoftmaxModel, ThresholdModel  # noqa: E402
-from aicup.scoring import fold_players, player_games  # noqa: E402
+from aicup.scoring import fold_players, player_games, read_scored_games  # noqa: E402
 
 SIZES = (5, 10, 20)
 CANDIDATES = {
@@ -42,10 +41,7 @@ CANDIDATES = {
 
 
 def load_fold(fold, all_games, folds_df, scores_dir):
-    paths = sorted(glob.glob(str(Path(scores_dir) / f"fold{fold}" / "games_s*_p*.csv")))
-    if not paths:
-        raise FileNotFoundError(f"no scored parts for fold {fold}")
-    games = pd.concat([pd.read_csv(p) for p in paths], ignore_index=True)
+    games = read_scored_games(Path(scores_dir) / f"fold{fold}")
     players = fold_players(all_games, folds_df, fold)
     want = {k for ks in players["game_keys"] for k in ks}
     have = set(games["game_key"])

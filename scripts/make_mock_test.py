@@ -7,7 +7,6 @@ Outputs in --out-dir: rank_prediction_test_public.csv, rank_prediction_test_priv
 offline_predictions.csv (question_id, pred_rank) for checking predict_submission.py end to end.
 """
 import argparse
-import glob
 import json
 import sys
 from pathlib import Path
@@ -22,7 +21,7 @@ from aicup.metric import LEVELS, expected_score_decision  # noqa: E402
 from aicup.pilot import pilot_questions  # noqa: E402
 from aicup.qfeatures import build_matrix  # noqa: E402
 from aicup.rankmodel import from_state  # noqa: E402
-from aicup.scoring import fold_players, load_games, player_games  # noqa: E402
+from aicup.scoring import completed_parts, fold_players, load_games, player_games, read_scored_games  # noqa: E402
 
 
 def official_rows(qs, prefix, data):
@@ -62,9 +61,9 @@ def main():
                   "n_games": pick["n_games"]}).to_csv(out / "answers.csv", index=False)
     print(f"wrote {len(pick)} mock questions ({half} public) to {out}")
 
-    parts = sorted(glob.glob(str(Path(a.scores) / f"fold{a.fold}" / "games_s*_p*.csv")))
-    if parts and Path(a.model).exists():
-        games = pd.concat([pd.read_csv(p) for p in parts], ignore_index=True)
+    fold_dir = Path(a.scores) / f"fold{a.fold}"
+    if completed_parts(fold_dir) and Path(a.model).exists():
+        games = read_scored_games(fold_dir)
         X, _, _ = build_matrix(games, pick)
         model = from_state(json.loads(Path(a.model).read_text())["state"])
         pred = [LEVELS[expected_score_decision(p)] for p in model.predict_proba(X)]

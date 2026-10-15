@@ -4,6 +4,7 @@ per-fold game selection and resumable part bookkeeping.
 Used by the pilot, the full-fold scoring run and the submission pipeline, so every
 log-likelihood in the project comes from the same code path.
 """
+import re
 import time
 from pathlib import Path
 
@@ -127,3 +128,64 @@ def part_paths(out_dir, shard, k):
 def pending_parts(out_dir, shard, parts):
     """Indices of parts whose CSV or npz output is missing."""
     return [k for k in range(len(parts)) if not all(p.exists() for p in part_paths(out_dir, shard, k))]
+
+
+_PART_RE = re.compile(r"(games|moves)_s(\d+)_p(\d+)\.(csv|npz)")
+
+
+def _part_files(out_dir, shard=None):
+    """{(shard, index): kinds present} for final part files (temporary files never match)."""
+    found = {}
+    for p in Path(out_dir).glob("*_s*_p*.*"):
+        m = _PART_RE.fullmatch(p.name)
+        if m and (shard is None or int(m.group(2)) == shard):
+            found.setdefault((int(m.group(2)), int(m.group(3))), set()).add(m.group(1))
+    return found
+
+
+def completed_parts(out_dir, shard=None):
+    """(shard, index) of parts whose CSV and npz both exist, sorted."""
+    return sorted(k for k, kinds in _part_files(out_dir, shard).items() if kinds == {"games", "moves"})
+
+
+def done_game_keys(out_dir, shard):
+    done = set()
+    for s, k in completed_parts(out_dir, shard):
+        done |= set(pd.read_csv(part_paths(out_dir, s, k)[0], usecols=["game_key"])["game_key"])
+    return done
+
+
+def next_part_index(out_dir, shard):
+    """First part index not used by any file of this shard, finished or not."""
+    used = [k for _, k in _part_files(out_dir, shard)]
+    return max(used) + 1 if used else 0
+
+
+def resume_plan(keys, out_dir, shard, part_size):
+    """[(part_index, keys)] covering every key not already in a finished part, in order.
+
+    Resume is decided per game, not per part number, so the part size may change between
+    runs and no game is ever scored twice; new parts are numbered after any existing file.
+    """
+    done = done_game_keys(out_dir, shard)
+    stray = done - set(keys)
+    if stray:
+        raise ValueError(f"{len(stray)} finished games are not in this selection, e.g. {sorted(stray)[:3]}")
+    pending = [k for k in keys if k not in done]
+    start = next_part_index(out_dir, shard)
+    return [(start + j, pending[i:i + part_size]) for j, i in enumerate(range(0, len(pending), part_size))]
+
+
+def pause_requested(path):
+    return Path(path).exists()
+
+
+def read_scored_games(fold_dir):
+    """All finished parts of one fold (every shard) as one table; each game must appear once."""
+    paths = [part_paths(fold_dir, s, k)[0] for s, k in completed_parts(fold_dir)]
+    if not paths:
+        raise FileNotFoundError(f"no finished parts in {fold_dir}")
+    games = pd.concat([pd.read_csv(p) for p in paths], ignore_index=True)
+    if not games["game_key"].is_unique:
+        raise ValueError(f"{fold_dir}: {int(games['game_key'].duplicated().sum())} games scored more than once")
+    return games

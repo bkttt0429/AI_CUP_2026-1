@@ -47,3 +47,68 @@ def test_pending_parts_needs_both_csv_and_npz(tmp_path):
     (tmp_path / "games_s1_p002.csv").write_text("x")
     np.savez(tmp_path / "moves_s1_p002.npz", a=np.zeros(1))
     assert pending_parts(tmp_path, 0, [(0, 1), (1, 2), (2, 3)]) == [1, 2]
+
+
+def _write_part(out_dir, shard, k, keys, npz=True):
+    pd.DataFrame({"game_key": keys}).to_csv(out_dir / f"games_s{shard}_p{k:03d}.csv", index=False)
+    if npz:
+        np.savez(out_dir / f"moves_s{shard}_p{k:03d}.npz", a=np.zeros(1))
+
+
+def test_done_game_keys_and_next_index_ignore_incomplete_parts(tmp_path):
+    from aicup.scoring import done_game_keys, next_part_index
+
+    _write_part(tmp_path, 0, 0, ["g1", "g2"])
+    _write_part(tmp_path, 0, 1, ["g3"], npz=False)   # interrupted between the two renames
+    _write_part(tmp_path, 1, 0, ["g9"])              # another shard
+    assert done_game_keys(tmp_path, 0) == {"g1", "g2"}
+    assert next_part_index(tmp_path, 0) == 2
+    assert next_part_index(tmp_path, 5) == 0
+
+
+def test_resume_plan_scores_each_game_once_even_if_part_size_changes(tmp_path):
+    from aicup.scoring import resume_plan
+
+    keys = [f"g{i}" for i in range(10)]
+    first = resume_plan(keys, tmp_path, 0, part_size=4)
+    assert [k for k, _ in first] == [0, 1, 2] and first[0][1] == keys[:4]
+    for k, part in first[:2]:                        # two parts finish, then the run is paused
+        _write_part(tmp_path, 0, k, part)
+    second = resume_plan(keys, tmp_path, 0, part_size=3)
+    assert [k for k, _ in second] == [2]
+    assert second[0][1] == ["g8", "g9"]
+    done_twice = [g for _, part in first[:2] for g in part] + [g for _, part in second for g in part]
+    assert sorted(done_twice) == sorted(keys)
+
+
+def test_resume_plan_rejects_finished_games_outside_the_selection(tmp_path):
+    import pytest
+
+    from aicup.scoring import resume_plan
+
+    _write_part(tmp_path, 0, 0, ["stranger"])
+    with pytest.raises(ValueError):
+        resume_plan(["g1", "g2"], tmp_path, 0, part_size=1)
+
+
+def test_pause_requested(tmp_path):
+    from aicup.scoring import pause_requested
+
+    flag = tmp_path / "PAUSE"
+    assert not pause_requested(flag)
+    flag.write_text("")
+    assert pause_requested(flag)
+
+
+def test_read_scored_games_skips_temporary_files_and_rejects_duplicates(tmp_path):
+    import pytest
+
+    from aicup.scoring import read_scored_games
+
+    _write_part(tmp_path, 0, 0, ["g1", "g2"])
+    _write_part(tmp_path, 1, 0, ["g3"])
+    pd.DataFrame({"game_key": ["g4"]}).to_csv(tmp_path / "games_s0_p001.tmp.csv", index=False)
+    assert sorted(read_scored_games(tmp_path)["game_key"]) == ["g1", "g2", "g3"]
+    _write_part(tmp_path, 1, 1, ["g1"])
+    with pytest.raises(ValueError):
+        read_scored_games(tmp_path)
