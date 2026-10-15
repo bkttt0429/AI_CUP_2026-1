@@ -17,3 +17,4 @@ results/scores_smoke/
 data/mock_tests/
 submission_rank*.csv
 submission_rank*.json
+results/replay/

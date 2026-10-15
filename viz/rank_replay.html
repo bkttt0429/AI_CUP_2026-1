@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>棋力證據回放</title>
+<style>
+/* Layout: a wall of equal cards, each = board + the running rank evidence of its target player. */
+:root {
+  --bg: #eef1f3; --card: #fbfcfc; --ink: #15191c; --ink-2: #4a535b; --muted: #77818a; --rule: #d9dfe3;
+  --kaya: #e3bc6d; --kaya-line: #6f5221; --stone-b: #15181a; --stone-w: #f7f7f3; --stone-edge: #8c8b84;
+  --accent: #2a78d6; --mark: #eb6834; --band: rgba(42, 120, 214, 0.14);
+  --font: "Noto Sans TC", system-ui, -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f1215; --card: #171b1f; --ink: #e8ecef; --ink-2: #b4bdc5; --muted: #87919a; --rule: #2a3137;
+    --kaya: #b48c47; --kaya-line: #3f2e12; --stone-b: #0d0f10; --stone-w: #ecece6; --stone-edge: #5d5d57;
+    --accent: #3987e5; --mark: #d95926; --band: rgba(57, 135, 229, 0.20); color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 var(--font); }
+header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--rule);
+  padding: 10px max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+h1 { font-size: 17px; margin: 0; }
+.meta { color: var(--muted); font-size: 12.5px; }
+.controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-left: auto; }
+button, select { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--rule);
+  background: var(--card); color: var(--ink); cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+main { padding: 14px max(16px, env(safe-area-inset-left, 0px)) 40px; }
+.wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--cell, 210px), 1fr)); gap: 14px; }
+.wall.single { --cell: min(560px, 92vw); justify-content: center; }
+.card { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 8px; display: grid; gap: 5px; min-width: 0; }
+.head { display: flex; gap: 6px; align-items: baseline; font-size: 12.5px; min-width: 0; }
+.rank { font-weight: 700; font-size: 14px; }
+.head .who { color: var(--muted); font-family: var(--mono); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.head .step { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+canvas.board { width: 100%; aspect-ratio: 1; display: block; border-radius: 4px; }
+canvas.spark { width: 100%; height: 58px; display: block; }
+.ev { font-size: 12px; color: var(--ink-2); display: flex; justify-content: space-between; gap: 6px; font-variant-numeric: tabular-nums; }
+.ev b { color: var(--ink); }
+input[type=range] { width: 100%; margin: 0; accent-color: var(--accent); }
+.empty { color: var(--muted); padding: 40px 0; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1 id="title">棋力證據回放</h1>
+    <div class="meta" id="meta"></div>
+  </div>
+  <div class="controls" role="group" aria-label="全部棋盤">
+    <button id="play" class="primary" type="button">全部播放</button>
+    <button id="back" type="button" aria-label="全部上一手">◀</button>
+    <button id="fwd" type="button" aria-label="全部下一手">▶</button>
+    <button id="start" type="button">回到開始</button>
+    <button id="end" type="button">跳到終局</button>
+    <label class="meta" for="speed">速度</label>
+    <select id="speed">
+      <option value="1">1 手/秒</option><option value="2">2 手/秒</option><option value="5" selected>5 手/秒</option>
+      <option value="10">10 手/秒</option><option value="20">20 手/秒</option>
+    </select>
+  </div>
+</header>
+<main><div class="wall" id="wall"></div></main>
+<script type="application/json" id="payload">/*PAYLOAD*/</script>
+<script>
+(() => {
+  const P = JSON.parse(document.getElementById("payload").textContent);
+  const params = new URLSearchParams(location.search);
+  const COLS = "ABCDEFGHJKLMNOPQRST";
+  const wall = document.getElementById("wall");
+  let games = P.games.map((g, i) => ({ ...g, index: i }));
+  if (params.has("board")) {
+    const i = Number(params.get("board"));
+    games = games.filter(g => g.index === i);
+    wall.classList.add("single");
+  }
+  document.getElementById("title").textContent = P.title;
+  document.getElementById("meta").textContent =
+    `${games.length} 盤 · ${P.source} · 證據 = 目標玩家已下各手在 18 個 Human SL profile 下的累積後驗平均（弱 12k → 強 6d）；藍帶 = pilot 中該級玩家最貼合 profile 的中間 80%；橫線 = 級位／段位分界`;
+  if (!games.length) { wall.innerHTML = '<div class="empty">沒有可顯示的棋盤</div>'; return; }
+
+  const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  let colors;
+  const readColors = () => { colors = Object.fromEntries(["--kaya", "--kaya-line", "--stone-b", "--stone-w", "--stone-edge", "--accent", "--mark", "--band", "--muted", "--rule", "--ink-2"].map(k => [k, css(k)])); };
+  readColors();
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readColors(); views.forEach(v => { v.dirty = true; }); schedule(); });
+
+  /* --- minimal Go rules: captures and replay --- */
+  function neighbours(p) { const x = p % 19, y = (p / 19) | 0, out = []; if (x) out.push(p - 1); if (x < 18) out.push(p + 1); if (y) out.push(p - 19); if (y < 18) out.push(p + 19); return out; }
+  function removeIfDead(board, start) {
+    const c = board[start], seen = new Set([start]), stack = [start];
+    while (stack.length) { const p = stack.pop(); for (const q of neighbours(p)) { if (!board[q]) return; if (board[q] === c && !seen.has(q)) { seen.add(q); stack.push(q); } } }
+    for (const p of seen) board[p] = 0;
+  }
+  function play(board, move, color) {
+    if (!move) return;
+    const p = move[1] * 19 + move[0];
+    board[p] = color;
+    for (const q of neighbours(p)) if (board[q] && board[q] !== color) removeIfDead(board, q);
+    removeIfDead(board, p);
+  }
+  const colorAt = t => (t % 2 === 0 ? 1 : 2);  // games alternate from Black
+  function rebuild(view, step) {
+    view.board.fill(0);
+    for (let t = 0; t < step; t++) play(view.board, view.g.moves[t], colorAt(t));
+    view.step = step;
+  }
+
+  /* one y-range for every sparkline, the class bands plus two profiles each side, so boards stay
+     comparable; early-game swings beyond it are drawn at the edge */
+  const bandEnds = games.flatMap(g => g.band || []);
+  const yMin = bandEnds.length ? Math.max(0, Math.min(...bandEnds) - 2.5) : 0;
+  const yMax = bandEnds.length ? Math.min(17, Math.max(...bandEnds) + 2.5) : 17;
+
+  /* --- cards --- */
+  const views = games.map(g => {
+    const card = document.createElement("article");
+    card.className = "card";
+    const total = g.moves.length;
+    card.innerHTML = `<div class="head"><span class="rank">${g.rank}</span><span class="who">${g.player} · 執${g.color === "B" ? "黑" : "白"}</span><span class="step"></span></div>
+      <canvas class="board" role="img" aria-label="${g.rank} 級玩家的棋局"></canvas>
+      <canvas class="spark" role="img" aria-label="目標玩家的累積棋力證據"></canvas>
+      <div class="ev"><span class="ev-now"></span><span class="ev-band"></span></div>
+      <input type="range" min="0" max="${total}" value="0" aria-label="手數">`;
+    wall.appendChild(card);
+    const view = { g, card, total, step: 0, board: new Int8Array(361), dirty: true, visible: true,
+      boardCanvas: card.querySelector("canvas.board"), spark: card.querySelector("canvas.spark"),
+      stepEl: card.querySelector(".step"), nowEl: card.querySelector(".ev-now"), slider: card.querySelector("input") };
+    if (g.band) card.querySelector(".ev-band").textContent = `${g.rank} 級常見 ${P.profiles[g.band[0]]}–${P.profiles[g.band[1]]}`;
+    view.slider.addEventListener("input", () => { stopAll(); rebuild(view, Number(view.slider.value)); view.dirty = true; schedule(); });
+    return view;
+  });
+
+  /* --- drawing --- */
+  function sizeCanvas(c) {
+    const r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    return [w, h];
+  }
+  function drawBoard(view) {
+    const c = view.boardCanvas, [w] = sizeCanvas(c), ctx = c.getContext("2d");
+    const m = w * 0.045, s = (w - 2 * m) / 18;
+    ctx.fillStyle = colors["--kaya"]; ctx.fillRect(0, 0, w, w);
+    ctx.strokeStyle = colors["--kaya-line"]; ctx.lineWidth = Math.max(1, w / 400);
+    ctx.beginPath();
+    for (let i = 0; i < 19; i++) { const a = m + i * s; ctx.moveTo(m, a); ctx.lineTo(w - m, a); ctx.moveTo(a, m); ctx.lineTo(a, w - m); }
+    ctx.stroke();
+    ctx.fillStyle = colors["--kaya-line"];
+    for (const a of [3, 9, 15]) for (const b of [3, 9, 15]) { ctx.beginPath(); ctx.arc(m + a * s, m + b * s, Math.max(1.5, s * 0.12), 0, 7); ctx.fill(); }
+    for (let p = 0; p < 361; p++) {
+      const v = view.board[p]; if (!v) continue;
+      const x = m + (p % 19) * s, y = m + ((p / 19) | 0) * s;
+      ctx.beginPath(); ctx.arc(x, y, s * 0.47, 0, 7);
+      ctx.fillStyle = v === 1 ? colors["--stone-b"] : colors["--stone-w"]; ctx.fill();
+      if (v === 2) { ctx.strokeStyle = colors["--stone-edge"]; ctx.lineWidth = Math.max(0.6, s * 0.05); ctx.stroke(); }
+    }
+    const last = view.step ? view.g.moves[view.step - 1] : null;
+    if (last) {
+      ctx.beginPath(); ctx.arc(m + last[0] * s, m + last[1] * s, s * 0.2, 0, 7);
+      ctx.strokeStyle = colors["--mark"]; ctx.lineWidth = Math.max(1.2, s * 0.09); ctx.stroke();
+    }
+  }
+  function evidenceIndex(view) {  // how many target moves are already on the board
+    const t = view.g.evidence ? view.g.evidence.t : [];
+    let lo = 0, hi = t.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (t[mid] < view.step) lo = mid + 1; else hi = mid; }
+    return lo;
+  }
+  function drawSpark(view) {
+    const c = view.spark, [w, h] = sizeCanvas(c), ctx = c.getContext("2d"), ev = view.g.evidence;
+    ctx.clearRect(0, 0, w, h);
+    const pad = 3 * (window.devicePixelRatio || 1), y = v => pad + (yMax - Math.max(yMin, Math.min(yMax, v))) / (yMax - yMin) * (h - 2 * pad);
+    if (view.g.band) { ctx.fillStyle = colors["--band"]; ctx.fillRect(0, y(view.g.band[1] + 0.5), w, y(view.g.band[0] - 0.5) - y(view.g.band[1] + 0.5)); }
+    ctx.strokeStyle = colors["--rule"]; ctx.lineWidth = 1;
+    for (const v of [11.5]) { ctx.beginPath(); ctx.moveTo(0, y(v)); ctx.lineTo(w, y(v)); ctx.stroke(); }  // kyu | dan boundary
+    if (!ev || !ev.pmi.length) { view.nowEl.textContent = "無證據資料"; return; }
+    const n = ev.pmi.length, x = i => (n === 1 ? w / 2 : i / (n - 1) * (w - 2 * pad) + pad), k = evidenceIndex(view);
+    ctx.strokeStyle = colors["--muted"]; ctx.lineWidth = Math.max(1, w / 260); ctx.globalAlpha = 0.45;
+    ctx.beginPath(); ev.pmi.forEach((v, i) => (i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v)))); ctx.stroke();
+    ctx.globalAlpha = 1;
+    if (k > 0) {
+      ctx.strokeStyle = colors["--accent"]; ctx.lineWidth = Math.max(1.5, w / 160);
+      ctx.beginPath(); for (let i = 0; i < k; i++) (i ? ctx.lineTo(x(i), y(ev.pmi[i])) : ctx.moveTo(x(i), y(ev.pmi[i]))); ctx.stroke();
+      ctx.fillStyle = colors["--accent"]; ctx.beginPath(); ctx.arc(x(k - 1), y(ev.pmi[k - 1]), Math.max(2.5, w / 70), 0, 7); ctx.fill();
+      view.nowEl.innerHTML = `目前最像 <b>${P.profiles[ev.best[k - 1]]}</b>（${k} 手）`;
+    } else {
+      view.nowEl.textContent = "尚未落子";
+    }
+  }
+  function paint(view) {
+    drawBoard(view); drawSpark(view);
+    view.stepEl.textContent = `${view.step} / ${view.total}`;
+    view.slider.value = String(view.step);
+    view.dirty = false;
+  }
+  let frame = 0;
+  function schedule() { if (!frame) frame = requestAnimationFrame(() => { frame = 0; for (const v of views) if (v.dirty && v.visible) paint(v); document.body.dataset.painted = String(Number(document.body.dataset.painted || 0) + 1); }); }
+  const io = new IntersectionObserver(entries => { for (const e of entries) { const v = views.find(x => x.card === e.target); v.visible = e.isIntersecting; if (v.visible && v.dirty) schedule(); } });
+  views.forEach(v => io.observe(v.card));
+  new ResizeObserver(() => { views.forEach(v => { v.dirty = true; }); schedule(); }).observe(wall);
+
+  /* --- controls --- */
+  let timer = null;
+  const playBtn = document.getElementById("play"), speedSel = document.getElementById("speed");
+  function stepAll(delta) {
+    let moved = false;
+    for (const v of views) {
+      const target = Math.max(0, Math.min(v.total, v.step + delta));
+      if (target === v.step) continue;
+      if (delta === 1) { play(v.board, v.g.moves[v.step], colorAt(v.step)); v.step = target; } else rebuild(v, target);
+      v.dirty = true; moved = true;
+    }
+    schedule();
+    return moved;
+  }
+  function stopAll() { if (timer) { clearInterval(timer); timer = null; playBtn.textContent = "全部播放"; } }
+  function startAll() {
+    stopAll();
+    timer = setInterval(() => { if (!stepAll(1)) stopAll(); }, 1000 / Number(speedSel.value));
+    playBtn.textContent = "全部暫停";
+  }
+  playBtn.addEventListener("click", () => (timer ? stopAll() : startAll()));
+  speedSel.addEventListener("change", () => { if (timer) startAll(); });
+  document.getElementById("fwd").addEventListener("click", () => { stopAll(); stepAll(1); });
+  document.getElementById("back").addEventListener("click", () => { stopAll(); stepAll(-1); });
+  document.getElementById("start").addEventListener("click", () => { stopAll(); views.forEach(v => { rebuild(v, 0); v.dirty = true; }); schedule(); });
+  document.getElementById("end").addEventListener("click", () => { stopAll(); views.forEach(v => { rebuild(v, v.total); v.dirty = true; }); schedule(); });
+  window.replay = { views, stepAll, startAll, stopAll, seekAll: s => { views.forEach(v => { rebuild(v, Math.min(v.total, s)); v.dirty = true; }); schedule(); } };
+
+  if (params.has("speed")) speedSel.value = params.get("speed");
+  if (params.get("autoplay") === "1") startAll();
+  schedule();
+  document.body.dataset.ready = "true";
+})();
+</script>
+</body>
+</html>
