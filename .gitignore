@@ -11,3 +11,6 @@ __pycache__/
 .claude/
 results/pilot/*.npz
 results/pilot_smoke/
+results/scores/**/*.npz
+results/scores/fold*/
+results/scores_smoke/
