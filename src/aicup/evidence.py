@@ -31,18 +31,19 @@ def auc(pos, neg):
     return float((pos > neg).mean() + 0.5 * (pos == neg).mean())
 
 
-def fit_thresholds(s, y, n_classes=10):
-    """Monotone cut points on statistic s maximising the mean official score (exact DP).
+def fit_thresholds(s, y, n_classes=10, weights=None):
+    """Monotone cut points on statistic s maximising the (weighted) mean official score (exact DP).
 
     Equal s values always land in the same class. Returns cuts [n_classes - 1] with
     class = number of cuts strictly below s (see apply_thresholds); unused classes get
     collapsed cuts (+inf above the highest used class, -inf below the lowest).
     """
     s, y = np.asarray(s, dtype=float), np.asarray(y, dtype=int)
+    w = np.ones(len(y)) if weights is None else np.asarray(weights, dtype=float)
     values, inverse = np.unique(s, return_inverse=True)
     gain = np.zeros((len(values), n_classes))
     for c in range(n_classes):
-        gain[:, c] = np.bincount(inverse, weights=[score(c, t) for t in y], minlength=len(values))
+        gain[:, c] = np.bincount(inverse, weights=[score(c, t) * wi for t, wi in zip(y, w)], minlength=len(values))
     best = np.empty_like(gain)
     back = np.zeros(gain.shape, dtype=int)
     best[0] = gain[0]
