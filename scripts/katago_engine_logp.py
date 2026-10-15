@@ -47,8 +47,10 @@ def _query(qid, moves, profile):
     }
 
 
-def engine_target_logps(moves, target_color, profile, katago=KATAGO, model=MODEL, cfg=CFG, timeout=1800):
-    targets = {f"q{t}": (t, x, y) for t, (c, x, y) in enumerate(moves) if c == target_color}
+def engine_target_logps(moves, target_color, profile, katago=KATAGO, model=MODEL, cfg=CFG, timeout=1800,
+                        only_t=None):
+    targets = {f"q{t}": (t, x, y) for t, (c, x, y) in enumerate(moves)
+               if c == target_color and (only_t is None or t in only_t)}
     if not targets:
         return []
     stdin = "".join(json.dumps(_query(qid, moves[:t], profile)) + "\n" for qid, (t, _, _) in targets.items())
