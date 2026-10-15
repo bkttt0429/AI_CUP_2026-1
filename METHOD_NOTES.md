@@ -53,6 +53,17 @@
 ### 2.6 Ablation 清單（便宜優先）
 執色平面｜不截開局 vs 最後 250 vs 分段取樣｜明確局長特徵（兩種表示都給）｜只用局長統計的 baseline｜只計我方 vs 兩方都算（檢驗「對手等級相關」假設）｜按局取樣 vs 等級→玩家→局分層取樣（不刪資料）｜鄰級 label smoothing（當序數正則化，不當指標對齊）｜聚合方式三選一。
 
+### 2.7 聚合器實驗（含 CTM）— 排在 pilot 之後的可選支線
+- 要回答的問題：**給定相同的分局、分階段證據，哪種聚合器最能分辨未見玩家的相鄰等級？** 不是「CTM vs ResNet」。CTM 的定位是查詢級的條件式整合「修正器」，不是棋力模型本體。
+- 證據表示：每手 (ll_{g,t,r})（18 或 10 個 profile）→ 相對分數 (d=ll-mathrm{mean}_rll)（或 (ll-mathrm{LSE}_rll)）加保留 (arll)；**不做**單位長度正規化。四個手數區段 1–40／41–100／101–180／181+，每段每 profile 存 mean／std／Q10／Q90、有效目標手數、平均 surprisal；缺段用 mask。每局先編成一個 128 維 token，查詢 = 5–20 個 token；permutation-invariant、不加局索引位置編碼；明確輸入 (og m)、(og n_{target})、各段手數（softmax attention 對重複 token 不變，自己不會知道證據量）。注意 (n_{g,p}) 會帶入局長訊號（見 2.6），要 ablate。
+- 梯子（同一輸入、同一固定查詢集、以玩家為單位成對比較）：(0) 校準後似然累加；(1) 穩健統計：每局 LLR 截斷／trimmed sum／Student-t（直接針對「一局撐起全部證據」的誤設）；(2) 分階段統計 + logistic／MLP；(3) DeepSets／小型 Set Transformer；(4) cross-attention + GRU，固定 8 ticks；(5) CTM（latent 256、neuron history 8、NLM hidden 16、4 heads、固定 8 ticks、action／output 各約 512 sync pairs），輸出對基準 logits 的修正 (Delta)，正則化趨零。
+- 訓練／選模：固定 (T=8)，(mathrm{CE}(z^T)+gamma|Delta^T|^2)；原始 CTM 的 min-loss／max-certainty 雙 tick loss 當對照。不把各 tick 輸出相乘或對實際落子取 (max_	au) 當似然（不是正規化分布）；不在驗證集上挑 tick；訓練 8 跑 16 另列為「超出訓練長度的泛化」。
+- 判讀：分階段特徵讓所有模型都升 → 貢獻在輸入表示，不留 CTM；(4) 與 (5) 都優於靜態聚合 → 反覆讀取有價值但不能歸因同步機制；(5) 穩定優於同輸入、近似成本的 (4) → 才深究。
+- 統計效力：200 人 pilot 只能看方向，不能裁決聚合器間的小差距。成對差異 SD 若約 0.3，要偵測 0.02 的得分差需約 900 位玩家 → 用整個 fold（約 1,600 人）或多 fold，玩家為重抽樣單位。
+- 成本（評論沒算）：聚合器訓練集需要訓練 fold 玩家**所有**棋局的 Human SL 特徵。全量 1.11 億手 × 18 profile ≈ 2×10⁹ 次，以 4,296/秒/卡約兩卡 65 小時。可行版本：每級 400 位玩家 × 30 局 × 18 profile ≈ 2.4×10⁸ 次 ≈ 單卡 15 小時；或 pilot 後縮到 10 個 profile。
+- 自訓 policy 的特徵必須 out-of-fold（例：policy 用 fold 1–3 訓練、聚合器用 fold 4 的特徵、fold 0 評估）；凍結的 Human SL 少一層訓練內外差異，更適合先比聚合器。
+- 順序：pilot → (0)(1)(2) 幾乎免費 → (3) → 只在 (3) 顯示集合互動有益時做 (4)(5)。相對主模型（自訓條件落子模型、校準、提交管線），這整節是可選支線；11/24 前時間不夠就砍。
+
 ## 3. 成本：0B 實測（2026-10-16，lab01 單卡 RTX PRO 6000，torch 2.14.1+cu130，`scripts/bench_humansl.py` → `results/bench_0B.json`）
 
 | 量測 | 數字 |
@@ -74,3 +85,4 @@
 - 本資料集的伺服器與等級尺度 ↔ KataGo KGS `rank_*` 的對應（決定 w 是硬分箱還是學習的軟映射）。
 - 對手等級對 Human SL 似然的影響大小（2.4 的掃描決定）。
 - 測試集是否含虛手／殘局（11/04 後重跑 check_legal）。
+- 測試集每題的棋局順序是否有意義（若為時間序，順序本身帶訊號；聚合器先設計成順序無關，11/04 後測順序敏感度）。
