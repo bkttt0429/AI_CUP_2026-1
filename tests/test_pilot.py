@@ -88,3 +88,49 @@ def test_score_positions_matches_single_position_path_for_both_colours():
                 assert np.max(np.abs(got[:, s] - np.array(ref))) < 1e-4, (color, own)
     finally:
         torch.backends.cudnn.allow_tf32 = prev
+
+
+def _questions_frame():
+    import pandas as pd
+
+    rows = []
+    def add(rank, pid, n, j, start):
+        keys = ";".join(f"{rank}:g{start + i:04d}" for i in range(n))
+        rows.append({"question_id": f"f0_{rank}_{pid[:8]}_n{n}_{j}", "rank": rank, "player_id": pid, "n_games": n, "game_keys": keys})
+    for pid, base in (("aaaa0000aaaa0000", 0), ("bbbb1111bbbb1111", 100), ("cccc2222cccc2222", 200)):
+        add("A", pid, 5, 0, base); add("A", pid, 10, 0, base + 5); add("A", pid, 20, 0, base + 15)
+    add("A", "dddd3333dddd3333", 5, 0, 300); add("A", "dddd3333dddd3333", 10, 0, 305)  # no 20-game question
+    add("6D", "eeee4444eeee4444", 5, 0, 400); add("6D", "eeee4444eeee4444", 10, 0, 405); add("6D", "eeee4444eeee4444", 20, 0, 415)
+    return pd.DataFrame(rows)
+
+
+def test_select_players_only_takes_players_with_a_20_game_question():
+    from aicup.pilot import select_players
+
+    sel = select_players(_questions_frame(), fold=0, per_rank=5, seed=42)
+    assert sorted(sel["player_id"]) == ["aaaa0000aaaa0000", "bbbb1111bbbb1111", "cccc2222cccc2222", "eeee4444eeee4444"]
+    row = sel[sel["player_id"] == "aaaa0000aaaa0000"].iloc[0]
+    assert row["game_keys"] == [f"A:g{i:04d}" for i in range(15, 35)]
+
+
+def test_select_players_caps_per_rank_and_is_deterministic():
+    from aicup.pilot import select_players
+
+    a = select_players(_questions_frame(), fold=0, per_rank=1, seed=42)
+    b = select_players(_questions_frame(), fold=0, per_rank=1, seed=42)
+    assert a["rank"].value_counts().to_dict() == {"A": 1, "6D": 1}
+    assert a["player_id"].tolist() == b["player_id"].tolist()
+
+
+def test_pilot_questions_nest_20_10_5_without_overlap_within_a_size():
+    import pandas as pd
+
+    from aicup.pilot import pilot_questions
+
+    keys = [f"3D:g{i:04d}" for i in range(20)]
+    q = pilot_questions(pd.DataFrame([{"rank": "3D", "player_id": "abcdef0123456789", "game_keys": keys}]))
+    assert q["n_games"].value_counts().to_dict() == {20: 1, 10: 2, 5: 4}
+    for n in (10, 5):
+        used = [k for s in q[q["n_games"] == n]["game_keys"] for k in s]
+        assert sorted(used) == sorted(keys)
+    assert set(q["question_id"]) >= {"3D_abcdef01_n20_0", "3D_abcdef01_n10_1", "3D_abcdef01_n5_3"}

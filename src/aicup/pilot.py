@@ -46,3 +46,37 @@ def game_positions(sgf, target_color, features):
         "t": np.asarray(ts, dtype=np.int16),
         "color": np.full(n, 0 if target_color == "B" else 1, dtype=np.int8),
     }
+
+
+def select_players(questions, fold, per_rank=20, seed=42):
+    """Up to `per_rank` players per rank that have a 20-game question in this fold's file.
+
+    Returns DataFrame[rank, player_id, game_keys] where game_keys is the list of 20 keys
+    from the player's `_n20_0` question. Ranks are processed in a fixed order and players
+    sorted by id before sampling, so the result depends only on (questions, seed).
+    """
+    import pandas as pd
+
+    q = questions[questions["question_id"].str.startswith(f"f{fold}_") & questions["question_id"].str.endswith("_n20_0")]
+    rng = np.random.RandomState(seed)
+    rows = []
+    for rank in sorted(q["rank"].unique(), key=str):
+        cand = q[q["rank"] == rank].sort_values("player_id")
+        take = cand.iloc[sorted(rng.choice(len(cand), size=min(per_rank, len(cand)), replace=False))]
+        for r in take.itertuples():
+            rows.append({"rank": r.rank, "player_id": r.player_id, "game_keys": r.game_keys.split(";")})
+    return pd.DataFrame(rows, columns=["rank", "player_id", "game_keys"])
+
+
+def pilot_questions(players):
+    """Per player: one 20-game question, two disjoint 10-game halves, four disjoint 5-game quarters."""
+    import pandas as pd
+
+    rows = []
+    for p in players.itertuples():
+        keys = list(p.game_keys)
+        for n in (20, 10, 5):
+            for j in range(len(keys) // n):
+                rows.append({"question_id": f"{p.rank}_{p.player_id[:8]}_n{n}_{j}", "rank": p.rank,
+                             "player_id": p.player_id, "n_games": n, "game_keys": keys[j * n:(j + 1) * n]})
+    return pd.DataFrame(rows, columns=["question_id", "rank", "player_id", "n_games", "game_keys"])

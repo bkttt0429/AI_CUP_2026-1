@@ -9,3 +9,5 @@ __pycache__/
 .pytest_cache/
 .superpowers/
 .claude/
+results/pilot/*.npz
+results/pilot_smoke/
