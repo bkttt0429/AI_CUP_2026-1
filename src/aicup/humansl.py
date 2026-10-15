@@ -16,6 +16,9 @@ from katago.train.load_model import load_model
 
 from aicup.sgf import to_gtp
 
+# The 18 Human SL rank profiles the pilot scores, weakest first (index 0 = 12k, 17 = 6d).
+PROFILES = [f"{n}k" for n in range(12, 0, -1)] + [f"{n}d" for n in range(1, 7)]
+
 
 def inverse_rank(s):
     """KataGo's inverse rank: 9d -> 1 ... 1d -> 9, 1k -> 10 ... 20k -> 29."""
@@ -44,6 +47,53 @@ def make_profile_meta(black_rank, white_rank=None, preaz=False):
     meta.gameDate = datetime.date(2016, 9, 1) if preaz else datetime.date(2020, 3, 1)
     meta.source = SGFMetadata.SOURCE_KGS
     return meta
+
+
+def profile_meta_for(own, opp, target_color, preaz=False):
+    """Profile metadata with the target player at rank `own` and the opponent at `opp`."""
+    if target_color == "B":
+        return make_profile_meta(own, opp, preaz)
+    return make_profile_meta(opp, own, preaz)
+
+
+def meta_rows(specs):
+    """Metadata input rows for each (own, opp) spec: [S, 2, 192], second axis = target colour B/W.
+
+    Row [s, c] is the row KataGo builds when the target (colour c) is the side to move, which
+    is the only situation in which we score a move.
+    """
+    rows = np.zeros((len(specs), 2, 192), dtype=np.float32)
+    for s, (own, opp) in enumerate(specs):
+        for c, (color, pla) in enumerate((("B", Board.BLACK), ("W", Board.WHITE))):
+            rows[s, c] = profile_meta_for(own, opp, color).get_metadata_row(nextPlayer=pla, boardArea=361)
+    return rows
+
+
+def score_positions(model, bins, globs, legal, target, colors, rows, batch=64):
+    """Log p of each target move under every metadata spec: [N, S] float32.
+
+    Board features are uploaded once per batch and reused for all S specs; only the metadata
+    row changes. FP32 throughout, illegal points masked before log-softmax, exactly as
+    `_masked_policy_logp` (the path verified against the analysis engine).
+    """
+    device = next(model.parameters()).device
+    rows_t = torch.as_tensor(rows, dtype=torch.float32, device=device)
+    n, s_count = len(target), rows.shape[0]
+    out = np.empty((n, s_count), dtype=np.float32)
+    with torch.no_grad():
+        for i in range(0, n, batch):
+            j = min(n, i + batch)
+            b = torch.as_tensor(bins[i:j], device=device).float()
+            g = torch.as_tensor(globs[i:j], device=device).float()
+            illegal = ~torch.as_tensor(legal[i:j], device=device)
+            tgt = torch.as_tensor(target[i:j], device=device).long()[:, None]
+            col = torch.as_tensor(colors[i:j], device=device).long()
+            for s in range(s_count):
+                outputs = model(b, g, input_meta=rows_t[s, col])
+                logits = model.postprocess_output(outputs)[0][0][:, 0, :].float()
+                logp = torch.log_softmax(logits.masked_fill(illegal, float("-inf")), dim=1)
+                out[i:j, s] = logp.gather(1, tgt)[:, 0].cpu().numpy()
+    return out
 
 
 def load_humansl(ckpt_path, device, use_swa=False):
