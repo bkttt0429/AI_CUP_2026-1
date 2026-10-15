@@ -1,0 +1,39 @@
+{
+ "when": "2026-10-16T00:05:57",
+ "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+ "torch": "2.14.1+cu130",
+ "pure_inference": {
+  "batch64_fp32": {
+   "positions_per_s": 3193.654170509762,
+   "ms_per_batch": 20.039740242064
+  },
+  "batch64_bf16": {
+   "positions_per_s": 4295.566994738677,
+   "ms_per_batch": 14.899080861359835
+  },
+  "batch256_fp32": {
+   "positions_per_s": 2841.27021008729,
+   "ms_per_batch": 90.1005469635129
+  },
+  "batch256_bf16": {
+   "positions_per_s": 3713.5986345733113,
+   "ms_per_batch": 68.9358288794756
+  },
+  "batch1024_fp32": {
+   "positions_per_s": 2136.0400818518315,
+   "ms_per_batch": 479.3917533196509
+  },
+  "batch1024_bf16": {
+   "positions_per_s": 2472.868838015572,
+   "ms_per_batch": 414.09393990412354
+  }
+ },
+ "end_to_end": {
+  "games": 200,
+  "target_moves": 22572,
+  "replay_features_per_s": 225.66246049971392,
+  "legality_mask_per_s": 3580.104162819018,
+  "end_to_end_target_moves_per_s": 87.54305837127606,
+  "end_to_end_wall_s": 257.8388329120353
+ }
+}

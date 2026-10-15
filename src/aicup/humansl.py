@@ -53,6 +53,23 @@ def load_humansl(ckpt_path, device, use_swa=False):
     return model, Features(model.config, 19)
 
 
+def stack_inputs(features, states, meta):
+    """Batch several GameStates into (bin [B,C,19,19], global [B,G], meta [B,192]) float32 tensors.
+
+    The metadata row is built per state for its own side to move, so self/opponent ranks
+    swap automatically between Black-to-move and White-to-move positions.
+    """
+    bins, globs, metas = [], [], []
+    for gs in states:
+        b, g = gs.get_input_features(features)
+        bins.append(b[0])
+        globs.append(g[0])
+        metas.append(meta.get_metadata_row(nextPlayer=gs.board.pla, boardArea=gs.board.x_size * gs.board.y_size))
+    return (torch.tensor(np.stack(bins), dtype=torch.float32),
+            torch.tensor(np.stack(globs), dtype=torch.float32),
+            torch.tensor(np.stack(metas), dtype=torch.float32))
+
+
 def _masked_policy_logp(model, features, gs, meta):
     """FP32 log-softmax over policy channel 0 for the side to move, illegal points at -inf."""
     board = gs.board
