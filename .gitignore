@@ -1,0 +1,10 @@
+# large / external artefacts live outside version control
+data/
+dataset_raw/
+models/
+tools/
+repo/
+__pycache__/
+*.pyc
+.pytest_cache/
+.superpowers/
