@@ -1,0 +1,12 @@
+fold 0 shard 0/2: 200 players, 2000 games
+  200/2000 games, 22640 positions, 163 positions/s
+  400/2000 games, 45333 positions, 163 positions/s
+  600/2000 games, 67890 positions, 163 positions/s
+  800/2000 games, 90543 positions, 162 positions/s
+  1000/2000 games, 112679 positions, 163 positions/s
+  1200/2000 games, 133759 positions, 162 positions/s
+  1400/2000 games, 156405 positions, 162 positions/s
+  1600/2000 games, 179346 positions, 162 positions/s
+  1800/2000 games, 201935 positions, 162 positions/s
+  2000/2000 games, 224848 positions, 162 positions/s
+{"fold": 0, "shard": 0, "nshards": 2, "games": 2000, "positions": 224848, "wall_s": 1386.7431740760803, "positions_per_s": 162.14105409230177, "profiles": ["12k", "11k", "10k", "9k", "8k", "7k", "6k", "5k", "4k", "3k", "2k", "1k", "1d", "2d", "3d", "4d", "5d", "6d"], "workers": 10, "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition", "tf32_conv": true}

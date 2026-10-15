@@ -1,0 +1,32 @@
+{
+ "fold": 0,
+ "shard": 0,
+ "nshards": 2,
+ "games": 2000,
+ "positions": 224848,
+ "wall_s": 1386.7431740760803,
+ "positions_per_s": 162.14105409230177,
+ "profiles": [
+  "12k",
+  "11k",
+  "10k",
+  "9k",
+  "8k",
+  "7k",
+  "6k",
+  "5k",
+  "4k",
+  "3k",
+  "2k",
+  "1k",
+  "1d",
+  "2d",
+  "3d",
+  "4d",
+  "5d",
+  "6d"
+ ],
+ "workers": 10,
+ "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+ "tf32_conv": true
+}

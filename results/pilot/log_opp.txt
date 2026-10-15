@@ -1,0 +1,11 @@
+fold 0 shard 0/1: 10 players, 20 games
+  opp sweep D: 2 games
+  opp sweep C: 2 games
+  opp sweep B: 2 games
+  opp sweep A: 2 games
+  opp sweep 1D: 2 games
+  opp sweep 2D: 2 games
+  opp sweep 3D: 2 games
+  opp sweep 4D: 2 games
+  opp sweep 5D: 2 games
+  opp sweep 6D: 2 games
