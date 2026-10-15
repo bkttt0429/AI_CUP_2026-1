@@ -80,6 +80,20 @@
 - 晚注入自訓模型約省 K(C_t+C_h)/(C_t+K C_h) 倍：K=10、head=5% trunk 時約 7 倍。
 - 1.11 億 × 10 × 362 × float32 ≈ 1.6 TB，所以只存實際落子 log p、熵、value 摘要。
 
+### 3.1 算力分工（2026-10-16）
+
+| | lab01 | 國網 nano4 |
+| --- | --- | --- |
+| GPU | 2 × RTX PRO 6000 Blackwell 96 GB（nvidia-smi 實測） | 每節點 8 × H200（sinfo，由使用者在登入節點 25a-lgn04 查得） |
+| CPU | Core Ultra 9 285K，24 核（8P+16E），251 GB | 計算節點核數未查 |
+| 排隊／時限 | 無排隊；帳號共用（13 個 session），GPU 可能被佔 | Slurm，計畫 gov113074、QOS normal。dev 4 小時；8gpus、16gpus 2 天；32/64gpus 1 天；256gpus 12 小時；ngs1–8gpu 14 天（各 8 節點，是否可用未確認）。查詢當下 30 節點閒置、115 mix |
+| 存取 | 金鑰 SSH，Claude 可直接跑 | 只接受密碼／OTP 互動登入，Claude 不能直接操作；GPU 小時餘額在 NCHC 計費系統，未查 |
+
+H200 對 RTX PRO 6000 的單卡速度比 r **未實測**。以 0B 的 4,296 評估/秒/卡推算：
+- 全量 Human SL 特徵（10 個 profile，1.11×10⁹ 次評估）：lab01 約 36 小時；nano4 一個 8 卡節點 r=1 約 9 小時、r=2 約 4.5 小時，都在 8gpus 的 2 天時限內。CPU 特徵 1.11×10⁸ 局面 ÷ 226/秒/核，需要計算節點核數才能估。
+- L1b 一個 epoch（假設訓練吞吐 ≈ 推論的 1/3）：lab01 約 11 小時；nano4 一節點 r=1 約 2.8 小時、r=2 約 1.4 小時。
+- 分工：開發、測試、pilot、加速、評估與校準留在 lab01；全量特徵、L1b 全量訓練與掃描丟 nano4。第一步在 dev 分區用 1 張 H200 跑 `scripts/bench_humansl.py` 與 `nproc`，把 r 和核數換成實測值。
+
 ## 4. 開放問題
 - 測試集玩家是否與訓練集重疊。
 - 本資料集的伺服器與等級尺度 ↔ KataGo KGS `rank_*` 的對應（決定 w 是硬分箱還是學習的軟映射）。
