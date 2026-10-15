@@ -59,3 +59,23 @@ def test_target_move_logps_on_three_move_game():
         assert np.exp(finite).sum() == pytest.approx(1.0, abs=1e-4)
     # move 2 (W already on the board) must have one fewer legal point than move 0
     assert np.isfinite(res[1]["policy_logp"]).sum() == np.isfinite(res[0]["policy_logp"]).sum() - 2
+
+
+@pytest.mark.skipif(not CKPT.exists(), reason="human SL checkpoint not present")
+def test_target_move_logps_handles_passes_by_either_side():
+    import torch
+
+    model, features = load_humansl(str(CKPT), "cuda" if torch.cuda.is_available() else "cpu")
+    # W passes at move 1 (opponent pass), B plays, then W passes again as the target's own move.
+    moves = parse_moves("(;SZ[19];B[pd];W[];B[pq];W[tt];B[dp])")
+    res_w = target_move_logps(model, features, moves, "W", make_profile_meta("3d"))
+    assert [(r["t"], r["gtp"]) for r in res_w] == [(1, "pass"), (3, "pass")]
+    for r in res_w:
+        assert np.isfinite(r["logp"]) and r["logp"] == r["policy_logp"][features.pass_pos]
+        finite = r["policy_logp"][np.isfinite(r["policy_logp"])]
+        assert np.exp(finite).sum() == pytest.approx(1.0, abs=1e-4)
+    # the Black target must still be scored correctly across the opponent's passes
+    res_b = target_move_logps(model, features, moves, "B", make_profile_meta("3d"))
+    assert [(r["t"], r["gtp"]) for r in res_b] == [(0, "Q16"), (2, "Q3"), (4, "D4")]
+    # before move 4 only two stones are on the board (W passed twice): 361 - 2 legal points + pass
+    assert np.isfinite(res_b[2]["policy_logp"]).sum() == 361 - 2 + 1
