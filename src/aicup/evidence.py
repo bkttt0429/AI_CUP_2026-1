@@ -74,8 +74,12 @@ def apply_thresholds(s, cuts):
     return (np.asarray(s, dtype=float)[:, None] > np.asarray(cuts)[None, :]).sum(axis=1)
 
 
-def bootstrap_ci(scores, players, ranks, n=1000, seed=42, alpha=0.05):
-    """95% CI of the mean question score, resampling players with replacement within each rank."""
+def bootstrap_ci(scores, players, ranks, n=1000, seed=42, alpha=0.05, balanced=False):
+    """95% CI of the mean question score, resampling players with replacement within each rank.
+
+    balanced=True reports the mean of per-rank means (every rank weighs the same) instead of
+    the mean over questions.
+    """
     scores, players, ranks = np.asarray(scores, dtype=float), np.asarray(players), np.asarray(ranks)
     rng = np.random.RandomState(seed)
     by_rank = {}
@@ -84,8 +88,9 @@ def bootstrap_ci(scores, players, ranks, n=1000, seed=42, alpha=0.05):
         by_rank[r] = [scores[(players == p) & (ranks == r)] for p in ps]
     means = np.empty(n)
     for i in range(n):
-        picked = [groups[j] for groups in by_rank.values() for j in rng.randint(len(groups), size=len(groups))]
-        means[i] = np.concatenate(picked).mean()
+        per_rank = [np.concatenate([groups[j] for j in rng.randint(len(groups), size=len(groups))])
+                    for groups in by_rank.values()]
+        means[i] = np.mean([g.mean() for g in per_rank]) if balanced else np.concatenate(per_rank).mean()
     lo, hi = np.quantile(means, [alpha / 2, 1 - alpha / 2])
     return float(lo), float(hi)
 

@@ -72,3 +72,14 @@ def test_question_matrix_sums_and_per_game_normalised_sums():
     assert L_norm.tolist() == [[pytest.approx(-1.0 - 2.0), pytest.approx(-2.0 - 2.0)]]
     assert n_moves.tolist() == [30]
     assert math.isclose(L_norm[0, 0], -3.0)
+
+
+def test_bootstrap_ci_class_balanced_uses_the_mean_of_class_means():
+    # class 0: 9 players scoring 0; class 1: 1 player scoring 1 -> question mean 0.1, class-balanced mean 0.5
+    scores = np.array([0.0] * 9 + [1.0])
+    players = np.arange(10)
+    ranks = np.array([0] * 9 + [1])
+    lo, hi = bootstrap_ci(scores, players, ranks, n=200, seed=0, balanced=True)
+    assert lo == hi == 0.5
+    lo_q, hi_q = bootstrap_ci(scores, players, ranks, n=200, seed=0)
+    assert lo_q == hi_q == pytest.approx(0.1)

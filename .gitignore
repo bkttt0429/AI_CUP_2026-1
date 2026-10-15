@@ -14,3 +14,6 @@ results/pilot_smoke/
 results/scores/**/*.npz
 results/scores/fold*/
 results/scores_smoke/
+data/mock_tests/
+submission_rank*.csv
+submission_rank*.json
