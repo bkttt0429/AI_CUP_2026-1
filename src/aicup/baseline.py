@@ -11,7 +11,8 @@ from pathlib import Path
 
 import numpy as np
 
-from aicup.metric import LEVELS
+from aicup.evidence import bootstrap_ci
+from aicup.metric import LEVELS, expected_score_decision, score
 
 ROOT = Path(__file__).resolve().parents[2]
 TUTORIAL_DIR = ROOT / "repo" / "AICup-2026-Tutorial"
@@ -66,3 +67,67 @@ def split_players(folds, train_folds=(1, 2, 3, 4), val_games_per_rank=10_000, se
             raise ValueError(f"rank {rank}: validation would take all {int(games.sum())} training games")
     val_set = set(val)
     return sorted(p for p in pool["player_id"] if p not in val_set), sorted(val)
+
+
+def mean_probs(game_probs, questions):
+    """[Q, 10]: per question, the mean softmax over its games that have one (the notebook's vote); NaN if none."""
+    rows = []
+    for keys in questions:
+        ps = [game_probs[k] for k in keys if k in game_probs]
+        rows.append(np.mean(ps, axis=0) if ps else np.full(len(LEVELS), np.nan))
+    return np.array(rows, dtype=float).reshape(-1, len(LEVELS))
+
+
+def decide(probs, rule):
+    """Class per row: 'argmax' (the notebook) or 'expected_score' (metric.expected_score_decision).
+
+    A NaN row (no game of the question parsed) gets class 0, the notebook's LEVELS[0] answer.
+    """
+    if rule not in ("argmax", "expected_score"):
+        raise ValueError(f"unknown decision rule {rule!r}")
+    out = []
+    for p in np.asarray(probs, dtype=float):
+        if np.isnan(p).any():
+            out.append(0)
+        else:
+            out.append(int(np.argmax(p)) if rule == "argmax" else expected_score_decision(p))
+    return np.array(out, dtype=int)
+
+
+def report(pred, y, qs, sizes=(5, 10, 20)):
+    """Official scores of question decisions, with the keys of results/rank_model_eval.json plus per-size CIs.
+
+    Top-level CIs pool every question size, as scripts/fit_rank_model.py does; `by_n` holds each
+    size on its own. CIs resample players within each rank (evidence.bootstrap_ci).
+    """
+    pred, y = np.asarray(pred, dtype=int), np.asarray(y, dtype=int)
+    s = np.array([score(p, t) for p, t in zip(pred, y)])
+    players, n = qs["player_id"].to_numpy(), qs["n_games"].to_numpy()
+    classes = range(len(LEVELS))
+
+    def balanced(mask):
+        return float(np.mean([s[mask & (y == k)].mean() for k in classes if (mask & (y == k)).any()]))
+
+    def summary(mask):
+        return {"exact": float((pred[mask] == y[mask]).mean()),
+                "within1": float((np.abs(pred[mask] - y[mask]) <= 1).mean()),
+                "per_class": {LEVELS[k]: float(s[mask & (y == k)].mean()) for k in classes if (mask & (y == k)).any()}}
+
+    by_n = {}
+    for m in sizes:
+        mask = n == m
+        by_n[m] = {"balanced": balanced(mask),
+                   "balanced_ci95": list(bootstrap_ci(s[mask], players[mask], y[mask], balanced=True)),
+                   "question_mean": float(s[mask].mean()),
+                   "question_mean_ci95": list(bootstrap_ci(s[mask], players[mask], y[mask])),
+                   "n_questions": int(mask.sum()), **summary(mask)}
+    conf = np.zeros((len(LEVELS), len(LEVELS)), dtype=int)
+    np.add.at(conf, (y, pred), 1)
+    return {"balanced_by_n": {m: by_n[m]["balanced"] for m in sizes},
+            "balanced_mean_over_n": float(np.mean([by_n[m]["balanced"] for m in sizes])),
+            "question_mean": float(s.mean()),
+            "balanced_ci95": list(bootstrap_ci(s, players, y, balanced=True)),
+            "question_mean_ci95": list(bootstrap_ci(s, players, y)),
+            **summary(np.ones(len(s), dtype=bool)),
+            "confusion_rows_truth_cols_pred": conf.tolist(),
+            "by_n": by_n}

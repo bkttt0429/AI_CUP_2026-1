@@ -108,3 +108,34 @@ def test_make_loader_reads_every_sample_once_and_pick_workers_falls_back(tmp_pat
     assert pick_workers(shards, expected=7, batch_size=4, candidate=2) == 0
     x, y, _ = next(iter(make_loader(shards, 0, True, batch_size=4)))
     assert x.dtype == torch.float32 and tuple(x.shape) == (4, 500, 19, 19) and y.dtype == torch.long
+
+
+def test_mean_probs_averages_probabilities_and_marks_empty_questions():
+    from aicup.baseline import mean_probs
+
+    a, b = np.eye(10)[0] * 0.8 + np.eye(10)[1] * 0.2, np.eye(10)[0] * 0.2 + np.eye(10)[1] * 0.8
+    P = mean_probs({"a": a, "b": b}, [["a", "b"], ["missing"], ["a", "missing"]])
+    assert np.allclose(P[0], (a + b) / 2) and np.isnan(P[1]).all() and np.allclose(P[2], a)
+
+
+def test_decide_rules_differ_on_neighbour_mass_and_fall_back_to_class_0():
+    from aicup.baseline import decide
+
+    P = np.array([[0.30, 0.30, 0.40] + [0.0] * 7, [np.nan] * 10])
+    assert decide(P, "argmax").tolist() == [2, 0]
+    # index 1: 0.30 + e^-1 (0.30 + 0.40) = 0.557 beats index 2: 0.40 + e^-1 * 0.30 = 0.510
+    assert decide(P, "expected_score").tolist() == [1, 0]
+
+
+def test_report_separates_class_balanced_from_question_mean():
+    from aicup.baseline import report
+
+    qs = pd.DataFrame({"player_id": ["p1", "p2", "p3", "p4"], "n_games": [5, 5, 5, 5]})
+    r = report(np.array([0, 0, 0, 3]), np.array([0, 0, 0, 1]), qs, sizes=(5,))
+    assert r["question_mean"] == pytest.approx(0.75) and r["balanced_by_n"][5] == pytest.approx(0.5)
+    assert r["balanced_mean_over_n"] == pytest.approx(0.5) and r["by_n"][5]["n_questions"] == 4
+    # every resample keeps three class-0 players scoring 1 and one class-1 player scoring 0
+    assert r["by_n"][5]["balanced_ci95"] == pytest.approx([0.5, 0.5]) and r["balanced_ci95"] == pytest.approx([0.5, 0.5])
+    assert r["by_n"][5]["question_mean_ci95"] == pytest.approx([0.75, 0.75])
+    perfect = report(np.array([0, 1]), np.array([0, 1]), qs.iloc[:2], sizes=(5,))
+    assert perfect["by_n"][5]["balanced_ci95"] == [1.0, 1.0] and perfect["exact"] == 1.0
