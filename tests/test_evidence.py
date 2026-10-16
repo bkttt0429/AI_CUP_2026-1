@@ -83,3 +83,16 @@ def test_bootstrap_ci_class_balanced_uses_the_mean_of_class_means():
     assert lo == hi == 0.5
     lo_q, hi_q = bootstrap_ci(scores, players, ranks, n=200, seed=0)
     assert lo_q == hi_q == pytest.approx(0.1)
+
+
+def test_bootstrap_ci_mean_over_sizes_matches_the_headline_statistic():
+    from aicup.evidence import bootstrap_ci_mean_over_sizes
+
+    # two ranks, two players each; size-5 questions score 0.4, size-20 questions score 0.8,
+    # and there are three times as many size-5 questions: pooled mean 0.5, mean over sizes 0.6
+    players = np.array([0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3])
+    ranks = np.array([0] * 8 + [1] * 8)
+    sizes = np.array([5, 5, 5, 20] * 4)
+    scores = np.where(sizes == 5, 0.4, 0.8)
+    lo, hi = bootstrap_ci_mean_over_sizes(scores, players, ranks, sizes, n=100, seed=0)
+    assert lo == pytest.approx(0.6) and hi == pytest.approx(0.6)

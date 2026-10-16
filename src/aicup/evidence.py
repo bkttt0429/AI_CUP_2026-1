@@ -95,6 +95,30 @@ def bootstrap_ci(scores, players, ranks, n=1000, seed=42, alpha=0.05, balanced=F
     return float(lo), float(hi)
 
 
+def bootstrap_ci_mean_over_sizes(scores, players, ranks, sizes, n=1000, seed=42, alpha=0.05):
+    """95% CI of the mean over question sizes of the class-balanced score.
+
+    Players are resampled with replacement within each rank, once per replicate and shared by
+    every size, so the interval belongs to exactly the statistic reported as the headline.
+    """
+    scores, players, ranks, sizes = (np.asarray(a) for a in (scores, players, ranks, sizes))
+    scores = scores.astype(float)
+    rng = np.random.RandomState(seed)
+    size_values = np.unique(sizes)
+    rank_values = np.unique(ranks)
+    groups = {r: [np.flatnonzero((players == p) & (ranks == r)) for p in np.unique(players[ranks == r])] for r in rank_values}
+    means = np.empty(n)
+    for i in range(n):
+        idx = {r: np.concatenate([g[j] for j in rng.randint(len(g), size=len(g))]) for r, g in groups.items()}
+        per_size = []
+        for s in size_values:
+            per_rank = [scores[ix[sizes[ix] == s]].mean() for ix in idx.values() if (sizes[ix] == s).any()]
+            per_size.append(np.mean(per_rank))
+        means[i] = np.mean(per_size)
+    lo, hi = np.quantile(means, [alpha / 2, 1 - alpha / 2])
+    return float(lo), float(hi)
+
+
 def question_matrix(games, questions, profiles):
     """Per question: summed log p [Q, P], per-game-normalised sums [Q, P], target-move counts [Q].
 

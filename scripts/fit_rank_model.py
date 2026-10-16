@@ -20,7 +20,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
-from aicup.evidence import bootstrap_ci  # noqa: E402
+from aicup.evidence import bootstrap_ci, bootstrap_ci_mean_over_sizes  # noqa: E402
 from aicup.humansl import PROFILES  # noqa: E402
 from aicup.metric import LEVELS, expected_score_decision, score  # noqa: E402
 from aicup.pilot import pilot_questions  # noqa: E402
@@ -132,12 +132,18 @@ def main():
         for name, model in final.items():
             res, s = evaluate(model.predict_proba(e["X"]), e["y"], e["qs"])
             if name == best:
-                res["balanced_ci95"] = list(bootstrap_ci(s, e["qs"]["player_id"].to_numpy(), e["y"], balanced=True))
-                res["question_mean_ci95"] = list(bootstrap_ci(s, e["qs"]["player_id"].to_numpy(), e["y"]))
+                pid, sz = e["qs"]["player_id"].to_numpy(), e["qs"]["n_games"].to_numpy()
+                res["balanced_mean_over_n_ci95"] = list(bootstrap_ci_mean_over_sizes(s, pid, e["y"], sz))
+                res["balanced_by_n_ci95"] = {int(m): list(bootstrap_ci(s[sz == m], pid[sz == m], e["y"][sz == m], balanced=True))
+                                             for m in SIZES}
+                res["question_mean_ci95"] = list(bootstrap_ci(s, pid, e["y"]))
             out["eval"][name] = res
         r = out["eval"][best]
-        print(f"fold {a.eval_fold} ({best}): balanced {r['balanced_mean_over_n']:.4f} CI {r['balanced_ci95']}, "
-              f"by n {r['balanced_by_n']}, question mean {r['question_mean']:.4f}", flush=True)
+        lo, hi = r["balanced_mean_over_n_ci95"]
+        by_n = "; ".join(f"n={m} {r['balanced_by_n'][m]:.4f} [{r['balanced_by_n_ci95'][m][0]:.4f}, {r['balanced_by_n_ci95'][m][1]:.4f}]"
+                         for m in SIZES)
+        print(f"fold {a.eval_fold} ({best}): balanced mean over n {r['balanced_mean_over_n']:.4f} [{lo:.4f}, {hi:.4f}]; {by_n}; "
+              f"question mean {r['question_mean']:.4f}", flush=True)
         for name in CANDIDATES:
             print(f"  {name:16s} CV {cv_summary[name]['balanced_mean_over_n']:.4f}  fold{a.eval_fold} {out['eval'][name]['balanced_mean_over_n']:.4f}")
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)

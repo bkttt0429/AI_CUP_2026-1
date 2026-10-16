@@ -19,3 +19,4 @@ submission_rank*.csv
 submission_rank*.json
 results/replay/
 !results/scores/games_fold*.csv.gz
+!results/models/
