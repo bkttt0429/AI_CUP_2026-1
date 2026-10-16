@@ -135,7 +135,18 @@ def test_report_separates_class_balanced_from_question_mean():
     assert r["question_mean"] == pytest.approx(0.75) and r["balanced_by_n"][5] == pytest.approx(0.5)
     assert r["balanced_mean_over_n"] == pytest.approx(0.5) and r["by_n"][5]["n_questions"] == 4
     # every resample keeps three class-0 players scoring 1 and one class-1 player scoring 0
-    assert r["by_n"][5]["balanced_ci95"] == pytest.approx([0.5, 0.5]) and r["balanced_ci95"] == pytest.approx([0.5, 0.5])
+    assert r["by_n"][5]["balanced_ci95"] == pytest.approx([0.5, 0.5]) and r["balanced_by_n_ci95"][5] == pytest.approx([0.5, 0.5])
     assert r["by_n"][5]["question_mean_ci95"] == pytest.approx([0.75, 0.75])
     perfect = report(np.array([0, 1]), np.array([0, 1]), qs.iloc[:2], sizes=(5,))
     assert perfect["by_n"][5]["balanced_ci95"] == [1.0, 1.0] and perfect["exact"] == 1.0
+
+
+def test_report_headline_ci_is_the_mean_over_sizes_statistic():
+    from aicup.baseline import report
+
+    # one player per class: every resample is the sample itself, so each CI collapses onto its statistic
+    qs = pd.DataFrame({"player_id": ["p1", "p1", "p1", "p2", "p2"], "n_games": [5, 5, 10, 5, 10]})
+    r = report(np.array([0, 0, 5, 5, 1]), np.array([0, 0, 0, 1, 1]), qs, sizes=(5, 10))
+    # class means are (1, 0) at n=5 and (0, 1) at n=10, so 0.5 per size; pooling sizes would give (2/3 + 1/2) / 2
+    assert r["balanced_mean_over_n"] == pytest.approx(0.5)
+    assert r["balanced_mean_over_n_ci95"] == pytest.approx([0.5, 0.5])

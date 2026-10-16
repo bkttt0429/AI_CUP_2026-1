@@ -168,7 +168,8 @@ def main():
             r = entry[label]
             by_n = "  ".join(f"n={m} {r['by_n'][m]['balanced']:.4f} [{r['by_n'][m]['balanced_ci95'][0]:.3f}, "
                              f"{r['by_n'][m]['balanced_ci95'][1]:.3f}]" for m in SIZES)
-            log(f"{name} {label}: balanced {by_n} | mean over n {r['balanced_mean_over_n']:.4f} | "
+            lo, hi = r["balanced_mean_over_n_ci95"]
+            log(f"{name} {label}: balanced {by_n} | mean over n {r['balanced_mean_over_n']:.4f} [{lo:.3f}, {hi:.3f}] | "
                 f"question mean {r['question_mean']:.4f}")
     log(f"wrote {a.out} and {a.probs_out}")
 

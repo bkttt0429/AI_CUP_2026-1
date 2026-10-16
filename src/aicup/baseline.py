@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from aicup.evidence import bootstrap_ci
+from aicup.evidence import bootstrap_ci, bootstrap_ci_mean_over_sizes
 from aicup.metric import LEVELS, expected_score_decision, score
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -95,10 +95,11 @@ def decide(probs, rule):
 
 
 def report(pred, y, qs, sizes=(5, 10, 20)):
-    """Official scores of question decisions, with the keys of results/rank_model_eval.json plus per-size CIs.
+    """Official scores of question decisions, with the keys of results/rank_model_eval.json plus `by_n` details.
 
-    Top-level CIs pool every question size, as scripts/fit_rank_model.py does; `by_n` holds each
-    size on its own. CIs resample players within each rank (evidence.bootstrap_ci).
+    The headline `balanced_mean_over_n` gets the CI of that same statistic (one player resample
+    per replicate shared by every size), as scripts/fit_rank_model.py reports it; `by_n` and
+    `balanced_by_n_ci95` hold each size on its own. CIs resample players within each rank.
     """
     pred, y = np.asarray(pred, dtype=int), np.asarray(y, dtype=int)
     s = np.array([score(p, t) for p, t in zip(pred, y)])
@@ -123,10 +124,12 @@ def report(pred, y, qs, sizes=(5, 10, 20)):
                    "n_questions": int(mask.sum()), **summary(mask)}
     conf = np.zeros((len(LEVELS), len(LEVELS)), dtype=int)
     np.add.at(conf, (y, pred), 1)
+    keep = np.isin(n, sizes)
     return {"balanced_by_n": {m: by_n[m]["balanced"] for m in sizes},
+            "balanced_by_n_ci95": {m: by_n[m]["balanced_ci95"] for m in sizes},
             "balanced_mean_over_n": float(np.mean([by_n[m]["balanced"] for m in sizes])),
+            "balanced_mean_over_n_ci95": list(bootstrap_ci_mean_over_sizes(s[keep], players[keep], y[keep], n[keep])),
             "question_mean": float(s.mean()),
-            "balanced_ci95": list(bootstrap_ci(s, players, y, balanced=True)),
             "question_mean_ci95": list(bootstrap_ci(s, players, y)),
             **summary(np.ones(len(s), dtype=bool)),
             "confusion_rows_truth_cols_pred": conf.tolist(),
