@@ -9,7 +9,9 @@ Inference is the notebook's: the official parser per game, GoRankResNet softmax 
 64, the arithmetic mean over a question's games; the mean is decided by argmax (the notebook)
 and by metric.expected_score_decision. A game that does not parse is left out of its
 questions, and a question with no game left gets LEVELS[0], as in the notebook. Per-game
-probabilities go to --probs-out. Refuses to run if a fold-0 player is in the training shards.
+probabilities go to --probs-out. Refuses to run if a question's game or a fold-0 player is in
+the training or validation shards; only the training shards of baseline_extract.py --seen-fold 0
+may hold fold-0 players (through their other games).
 """
 import argparse
 import hashlib
@@ -27,10 +29,10 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
-from aicup.baseline import TUTORIAL_DIR, decide, game_features, load_tutorial, mean_probs, report  # noqa: E402
+from aicup.baseline import (TUTORIAL_DIR, decide, eval_questions, game_features, load_tutorial,  # noqa: E402
+                             mean_probs, report)
 from aicup.metric import LEVELS, RANK_TO_IDX  # noqa: E402
-from aicup.pilot import pilot_questions, select_players  # noqa: E402
-from aicup.scoring import fold_players, load_games, player_games  # noqa: E402
+from aicup.scoring import load_games, player_games  # noqa: E402
 
 GPU_BATCH = 64
 SIZES = (5, 10, 20)
@@ -39,6 +41,21 @@ RULES = {"argmax_mean_softmax": "argmax", "expected_score_mean_softmax": "expect
 
 def log(msg):
     print(f"{datetime.now():%m-%d %H:%M:%S} {msg}", flush=True)
+
+
+def leakage(games_by_tag, fold_ids, asked, seen):
+    """Fold-0 players and question games in each split's games (game_key, player_id); exits on any not allowed.
+
+    Only a seen-player run (baseline_extract.py --seen-fold 0) may train on fold-0 players.
+    """
+    leak = {}
+    for tag, g in games_by_tag.items():
+        leak[f"fold0_players_in_{tag}"] = len(set(g["player_id"]) & fold_ids)
+        leak[f"question_games_in_{tag}"] = int(g["game_key"].isin(asked).sum())
+    bad = {k: v for k, v in leak.items() if v and not (seen and k == "fold0_players_in_train")}
+    if bad:
+        raise SystemExit(f"evaluation data in the baseline's training data: {bad}")
+    return leak
 
 
 def tutorial_provenance(tutorial_dir=TUTORIAL_DIR):
@@ -59,20 +76,17 @@ def main():
     ap.add_argument("--probs-out", default=str(ROOT / "results" / "baseline_official" / "game_probs_fold0.csv"))
     a = ap.parse_args()
     feat, ckpt_dir = Path(a.features), Path(a.ckpt).parent
+    split = json.loads((feat / "split.json").read_text())
+    seen = split.get("seen_fold") == 0
     t0 = time.time()
 
     folds = pd.read_csv(ROOT / "splits" / "player_folds.csv")
-    fold0_ids = set(folds.loc[folds["fold"] == 0, "player_id"])
-    leak = {f"fold0_players_in_{tag}": len(set(pd.read_csv(feat / f"{tag}_games.csv", usecols=["player_id"])["player_id"]) & fold0_ids)
-            for tag in ("train", "val")}
-    if any(leak.values()):
-        raise SystemExit(f"fold-0 players in the baseline's training data: {leak}")
-
-    sets = {"fold0": fold_players(player_games(), folds, 0),
-            "pilot_fold0": select_players(pd.read_csv(ROOT / "splits" / "questions_fold0.csv"), 0)}
+    qsets = eval_questions(player_games(), folds, pd.read_csv(ROOT / "splits" / "questions_fold0.csv"))
+    asked = {k for qs in qsets.values() for ks in qs["game_keys"] for k in ks}
+    leak = leakage({tag: pd.read_csv(feat / f"{tag}_games.csv", usecols=["game_key", "player_id"]) for tag in ("train", "val")},
+                   set(folds.loc[folds["fold"] == 0, "player_id"]), asked, seen)
     if a.limit_players:
-        sets = {name: players.head(a.limit_players) for name, players in sets.items()}
-    qsets = {name: pilot_questions(players) for name, players in sets.items()}
+        qsets = {name: qs[qs["player_id"].isin(qs["player_id"].unique()[:a.limit_players])] for name, qs in qsets.items()}
     keys = sorted({k for qs in qsets.values() for ks in qs["game_keys"] for k in ks})
     data = load_games(keys)
     log(f"{len(keys)} games for " + ", ".join(f"{n}: {len(qs)} questions" for n, qs in qsets.items()))
@@ -122,16 +136,18 @@ def main():
             entry[label] = report(decide(P, rule), y, qs, SIZES)
         eval_sets[name] = entry
 
-    split = json.loads((feat / "split.json").read_text())
     run = json.loads((ckpt_dir / "run.json").read_text()) if (ckpt_dir / "run.json").exists() else None
     history = pd.read_csv(ckpt_dir / "history.csv").to_dict("records") if (ckpt_dir / "history.csv").exists() else None
     import webdataset as wds
     out = {
         "created": datetime.now().isoformat(timespec="seconds"),
         "what": "official AI CUP 2026 rank baseline (Tutorial rank-prediction.ipynb) retrained and evaluated "
-                "under the project's player-grouped protocol (METHOD_NOTES §2.1)",
+                "under the project's player-grouped protocol (METHOD_NOTES §2.1)"
+                + ("; seen-player variant: training also holds the evaluated players' other fold-0 games" if seen else ""),
         "tutorial": tutorial_provenance(),
         "deviations_from_notebook": [
+            "training pool: players of folds 1-4 plus every fold-0 game that no evaluation question asks "
+            "(seen players) instead of all 1,000,000 games" if seen else
             "training pool: players of folds 1-4 only (fold 0 never seen) instead of all 1,000,000 games",
             "validation: whole players of folds 1-4, about 10,000 games per rank (~VAL_SIZE 100,000) instead of 100,000 random games",
             "evaluation: the project's fold-0 pseudo-questions (5/10/20 games), not the official public test",
@@ -142,8 +158,8 @@ def main():
         ],
         "decision_rules": {"argmax_mean_softmax": "the notebook: argmax of the mean of per-game softmax",
                            "expected_score_mean_softmax": "metric.expected_score_decision of the same mean"},
-        "split": {k: split[k] for k in ("seed", "train_folds", "val_games_per_rank", "nproc", "per_shard", "limit",
-                                        "train", "val", "val_games_by_rank")},
+        "split": {k: split.get(k) for k in ("seed", "train_folds", "val_games_per_rank", "nproc", "per_shard", "limit",
+                                            "train", "val", "val_games_by_rank", "seen_fold", "seen")},
         "leakage_check": leak,
         "training": {"run": run, "history": history},
         "checkpoint": str(a.ckpt),

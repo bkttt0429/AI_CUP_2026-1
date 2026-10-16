@@ -7,10 +7,14 @@ games per rank (aicup.baseline.split_players), so it matches the notebook's VAL_
 players of other folds (fold 0) are never written. Everything else is the notebook's: every
 train_*.csv concatenated in name order and shuffled with seed 42, NPROC worker processes each
 writing its own webdataset .tar.gz shards of PER_SHARD samples, keys '<rank>_<game_id>'.
+--seen-fold 0 is the seen-player check of METHOD_NOTES §2.1: training also gets every fold-0
+game that no question of scripts/baseline_eval.py asks (aicup.baseline.eval_questions), so
+the evaluated players are known to the model through their other games; validation is unchanged.
 Writes
   <out>/{val,train}/<tag>-w{i}-%06d.tar.gz   features.npy, label.txt, rank_idx.txt, game_name.txt
   <out>/{val,train}_games.csv                 game_key, player_id, rank, fold of every game sent
-  <out>/split.json                            counts per split (players, games, written, bad, shards, bytes)
+  <out>/split.json                            counts per split (players, games, written, bad, shards, bytes),
+                                              seen_fold and the seen games added to training
 """
 import argparse
 import glob
@@ -26,9 +30,14 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
-from aicup.baseline import game_features, split_players  # noqa: E402
+from aicup.baseline import eval_questions, game_features, split_players  # noqa: E402
 from aicup.metric import LEVELS, RANK_TO_IDX  # noqa: E402
-from aicup.scoring import TRAIN_DIR  # noqa: E402
+from aicup.scoring import TRAIN_DIR, player_games  # noqa: E402
+
+
+def seen_mask(df, fold, asked):
+    """True for the games (rows of df: rank, game_id, fold) of `fold` players whose key 'RANK:game_id' is not in `asked`."""
+    return (df["fold"] == fold) & ~(df["rank"] + ":" + df["game_id"]).isin(asked)
 
 
 def extract_worker(df_part, pattern, wid, per_shard, stats_path):
@@ -96,6 +105,8 @@ def main():
     ap.add_argument("--val-games-per-rank", type=int, default=10_000)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--limit", type=int, default=0, help="keep only the first N games of each split (smoke tests)")
+    ap.add_argument("--seen-fold", type=int, default=None,
+                    help="also train on this held-out fold's games that no evaluation question asks (seen-player check)")
     a = ap.parse_args()
     out = Path(a.out)
     t0 = time.time()
@@ -111,7 +122,16 @@ def main():
     df["fold"] = df["player_id"].map(folds.set_index("player_id")["fold"])
     if df["fold"].isna().any():
         raise SystemExit(f"{int(df['fold'].isna().sum())} games of players missing from player_folds.csv")
-    parts = {"val": df[df["player_id"].isin(set(val_ids))], "train": df[df["player_id"].isin(set(train_ids))]}
+    in_train, asked, seen_ids = df["player_id"].isin(set(train_ids)), set(), set()
+    if a.seen_fold is not None:
+        if a.seen_fold in a.train_folds:
+            raise SystemExit(f"--seen-fold {a.seen_fold} is a training fold")
+        qsets = eval_questions(player_games(), folds, pd.read_csv(ROOT / "splits" / f"questions_fold{a.seen_fold}.csv"),
+                               a.seen_fold)
+        asked = {k for qs in qsets.values() for ks in qs["game_keys"] for k in ks}
+        in_train |= seen_mask(df, a.seen_fold, asked)
+        seen_ids = set(folds.loc[folds["fold"] == a.seen_fold, "player_id"])
+    parts = {"val": df[df["player_id"].isin(set(val_ids))], "train": df[in_train]}
     if a.limit:
         parts = {tag: part.iloc[:a.limit] for tag, part in parts.items()}
     print(f"{len(df)} games; val {len(parts['val'])} games of {parts['val']['player_id'].nunique()} players, "
@@ -119,10 +139,19 @@ def main():
 
     out.mkdir(parents=True, exist_ok=True)
     summary = {"created": datetime.now().isoformat(timespec="seconds"), "seed": a.seed, "train_folds": a.train_folds,
-               "val_games_per_rank": a.val_games_per_rank, "nproc": a.nproc, "per_shard": a.per_shard, "limit": a.limit}
+               "val_games_per_rank": a.val_games_per_rank, "nproc": a.nproc, "per_shard": a.per_shard, "limit": a.limit,
+               "seen_fold": a.seen_fold}
+    if a.seen_fold is not None:
+        added = parts["train"][parts["train"]["fold"] == a.seen_fold]
+        summary["seen"] = {"players": int(added["player_id"].nunique()), "games": int(len(added)),
+                           "question_games_kept_out": len(asked)}
+        print(f"seen fold {a.seen_fold}: train gets {len(added)} games of {added['player_id'].nunique()} players; "
+              f"{len(asked)} question games kept out", flush=True)
     for tag, part in parts.items():   # val first, as in the notebook
-        if set(part["player_id"]) & held_out:
+        if set(part["player_id"]) & (held_out - (seen_ids if tag == "train" else set())):
             raise SystemExit(f"{tag}: players of held-out folds")
+        if (part["rank"] + ":" + part["game_id"]).isin(asked).any():
+            raise SystemExit(f"{tag}: games of evaluation questions")
         pd.DataFrame({"game_key": part["rank"] + ":" + part["game_id"], "player_id": part["player_id"],
                       "rank": part["rank"], "fold": part["fold"].astype(int)}).to_csv(out / f"{tag}_games.csv", index=False)
         stats = extract_split(part, out, tag, a.nproc, a.per_shard)

@@ -69,6 +69,20 @@ def split_players(folds, train_folds=(1, 2, 3, 4), val_games_per_rank=10_000, se
     return sorted(p for p in pool["player_id"] if p not in val_set), sorted(val)
 
 
+def eval_questions(games, folds, questions, fold=0):
+    """The question sets of scripts/baseline_eval.py on one fold, carved 1x20 / 2x10 / 4x5 by pilot.pilot_questions.
+
+    'fold{fold}': every player of the fold with >= 5 games, up to 20 of them (scoring.fold_players
+    on `games`, the rows of scoring.player_games); 'pilot_fold{fold}': the 200-player pilot set
+    of METHOD_NOTES §2.4.1 (pilot.select_players on `questions`, splits/questions_fold{fold}.csv).
+    """
+    from aicup.pilot import pilot_questions, select_players
+    from aicup.scoring import fold_players
+
+    return {f"fold{fold}": pilot_questions(fold_players(games, folds, fold)),
+            f"pilot_fold{fold}": pilot_questions(select_players(questions, fold))}
+
+
 def mean_probs(game_probs, questions):
     """[Q, 10]: per question, the mean softmax over its games that have one (the notebook's vote); NaN if none."""
     rows = []

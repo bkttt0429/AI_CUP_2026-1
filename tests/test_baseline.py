@@ -31,6 +31,18 @@ SGF_OF = {"D_g_1": G1, "D_g_2": G2, "6D_g_1": G2, "6D_g_3": G1}
 DF6 = pd.DataFrame({"player_id": [f"p{i}" for i in range(6)], "game_id": [f"g_{i}" for i in range(6)],
                     "rank": ["D", "C", "B", "A", "1D", "6D"], "sgf_content": [G1, G2] * 3})
 
+# --seen-fold: fold-0 players with 3 games (no question), 7 (one 5-game question), 26 (20 asked) and 40,
+# who also has a pilot 20-game question of its own; plus a fold-1 player. Ids are hex, as fold_players needs.
+SEEN_GAMES = pd.DataFrame(
+    [(r, p, f"g_{p}_{i:02d}", f) for r, p, n, f in [("D", "a0000001", 3, 0), ("D", "a0000002", 7, 0),
+                                                    ("6D", "a0000003", 26, 0), ("6D", "a0000004", 40, 0),
+                                                    ("D", "b0000001", 30, 1)] for i in range(n)],
+    columns=["rank", "player_id", "game_id", "fold"])
+SEEN_FOLDS = SEEN_GAMES.groupby(["rank", "player_id", "fold"]).size().rename("n_games").reset_index()
+PILOT_KEYS = [f"6D:g_a0000004_{i}" for i in range(20, 40)]
+SEEN_QUESTIONS = pd.DataFrame({"question_id": ["f0_6D_a0000004_n20_0"], "rank": ["6D"], "player_id": ["a0000004"],
+                               "n_games": [20], "game_keys": [";".join(PILOT_KEYS)]})
+
 
 def test_split_players_excludes_other_folds_and_is_player_disjoint():
     train, val = split_players(FOLDS, val_games_per_rank=10)
@@ -56,6 +68,37 @@ def test_split_players_is_deterministic_and_ignores_row_order():
 def test_split_players_refuses_to_take_a_whole_rank():
     with pytest.raises(ValueError):
         split_players(FOLDS, val_games_per_rank=36)
+
+
+def test_seen_mask_trains_on_every_fold0_game_that_no_evaluation_question_asks():
+    from aicup.baseline import eval_questions
+    from baseline_extract import seen_mask
+
+    games = SEEN_GAMES.assign(game_key=SEEN_GAMES["rank"] + ":" + SEEN_GAMES["game_id"])
+    qsets = eval_questions(games[["player_id", "rank", "game_key"]], SEEN_FOLDS, SEEN_QUESTIONS, 0)
+    asked = {k for qs in qsets.values() for ks in qs["game_keys"] for k in ks}
+    added = games[seen_mask(SEEN_GAMES, 0, asked)]
+    assert set(PILOT_KEYS) <= asked                    # the pilot set is evaluated too
+    assert not set(added["game_key"]) & asked
+    assert set(added["game_key"]) == set(games.loc[games["fold"] == 0, "game_key"]) - asked
+    # by hand: 3 games make no question, 7 one 5-game question, 26 a 20-game question with its halves and quarters
+    assert added.groupby("player_id").size()[["a0000001", "a0000002", "a0000003"]].tolist() == [3, 2, 6]
+
+
+def test_eval_leakage_allows_seen_players_but_never_a_question_game():
+    from baseline_eval import leakage
+
+    asked, fold0 = {"D:g_q"}, {"a0000001"}
+    val = pd.DataFrame({"game_key": ["D:g_v"], "player_id": ["v"]})
+    train = pd.DataFrame({"game_key": ["D:g_t", "D:g_s"], "player_id": ["t", "a0000001"]})
+    assert leakage({"train": train, "val": val}, fold0, asked, seen=True) == {
+        "fold0_players_in_train": 1, "question_games_in_train": 0, "fold0_players_in_val": 0, "question_games_in_val": 0}
+    asked_game = pd.DataFrame({"game_key": ["D:g_q"], "player_id": ["a0000001"]})
+    for splits, seen in [({"train": train, "val": val}, False),                              # fold-0 player, not a seen run
+                         ({"train": pd.concat([train, asked_game]), "val": val}, True),     # a question game
+                         ({"train": val, "val": train}, True)]:                             # fold-0 player in validation
+        with pytest.raises(SystemExit):
+            leakage(splits, fold0, asked, seen=seen)
 
 
 @needs_tutorial
@@ -139,6 +182,29 @@ def test_report_separates_class_balanced_from_question_mean():
     assert r["by_n"][5]["question_mean_ci95"] == pytest.approx([0.75, 0.75])
     perfect = report(np.array([0, 1]), np.array([0, 1]), qs.iloc[:2], sizes=(5,))
     assert perfect["by_n"][5]["balanced_ci95"] == [1.0, 1.0] and perfect["exact"] == 1.0
+
+
+def test_paired_delta_is_the_headline_statistic_of_the_difference():
+    from baseline_seen_compare import paired
+
+    y, n, players = np.array([0, 0, 1, 0, 1]), np.array([5, 5, 5, 10, 10]), np.array(["p", "p", "q", "p", "q"])
+    r = paired(np.array([1, 0, 1, 1, 0]), np.zeros(5), y, n, players, sizes=(5, 10))
+    # n=5: class 0 (1 + 0) / 2 and class 1 1 -> 0.75; n=10: class 0 1, class 1 0 -> 0.5; mean over sizes 0.625
+    # (pooling the sizes would give (2/3 + 1/2) / 2, the question mean 0.6)
+    assert r["delta"] == pytest.approx(0.625)
+    assert r["by_n"][5]["delta"] == pytest.approx(0.75) and r["by_n"][10]["delta"] == pytest.approx(0.5)
+    # one player per class: every resample is the sample itself
+    assert r["ci95"] == pytest.approx([0.625, 0.625]) and r["by_n"][5]["ci95"] == pytest.approx([0.75, 0.75])
+
+
+def test_true_logp_reads_the_probability_of_the_key_rank_with_a_floor():
+    from baseline_seen_compare import true_logp
+
+    p = np.full((2, 10), 0.05)
+    p[0, 0], p[1, 9], p[1, 0] = 0.5, 0.0, 0.55        # D game, 6D game whose 6D column rounded to 0
+    table = pd.DataFrame(p, columns=[f"p_{lv}" for lv in ["D", "C", "B", "A", "1D", "2D", "3D", "4D", "5D", "6D"]])
+    table.insert(0, "game_key", ["D:g_1", "6D:g_2"])
+    assert true_logp(table).to_dict() == pytest.approx({"D:g_1": np.log(0.5), "6D:g_2": np.log(1e-6)})
 
 
 def test_report_headline_ci_is_the_mean_over_sizes_statistic():
