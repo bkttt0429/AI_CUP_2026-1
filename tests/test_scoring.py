@@ -112,3 +112,22 @@ def test_read_scored_games_skips_temporary_files_and_rejects_duplicates(tmp_path
     _write_part(tmp_path, 1, 1, ["g1"])
     with pytest.raises(ValueError):
         read_scored_games(tmp_path)
+
+
+def test_compare_scored_games_reports_per_move_differences_and_gaps():
+    import pytest
+
+    from aicup.scoring import compare_scored_games
+
+    ref = pd.DataFrame({"game_key": ["g1", "g2", "g3"], "n_moves": [100, 50, 80],
+                        "sum_1k": [-200.0, -90.0, -150.0], "sum_1d": [-190.0, -95.0, -140.0]})
+    new = pd.DataFrame({"game_key": ["g1", "g2", "g9"], "n_moves": [100, 51, 70],
+                        "sum_1k": [-200.0, -90.0, -1.0], "sum_1d": [-189.8, -95.0, -1.0]})
+    res = compare_scored_games(new, ref)
+    assert res["games"] == 2
+    assert res["missing_in_ref"] == 1
+    assert res["n_moves_mismatch"] == 1
+    assert res["max_abs_sum"] == pytest.approx(0.2)
+    assert res["max_abs_per_move"] == pytest.approx(0.2 / 100)
+    assert res["mean_abs_per_move"] == pytest.approx(0.2 / 100 / 4)
+    assert res["best_profile_agreement"] == 1.0

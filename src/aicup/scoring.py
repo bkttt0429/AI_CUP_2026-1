@@ -189,3 +189,25 @@ def read_scored_games(fold_dir):
     if not games["game_key"].is_unique:
         raise ValueError(f"{fold_dir}: {int(games['game_key'].duplicated().sum())} games scored more than once")
     return games
+
+
+def compare_scored_games(new, ref):
+    """Per-game log p sums of `new` against `ref` (same game_key), e.g. one host against another.
+
+    Differences are absolute, per profile; the per-move figures divide by the reference move
+    count. best_profile_agreement is the share of games whose highest-scoring profile is the same.
+    """
+    cols = [c for c in new.columns if c.startswith("sum_")]
+    m = new.merge(ref[["game_key", "n_moves", *cols]], on="game_key", how="left", suffixes=("", "_ref"), indicator=True)
+    missing = int((m["_merge"] == "left_only").sum())
+    m = m[m["_merge"] == "both"]
+    if m.empty:
+        return {"games": 0, "missing_in_ref": missing}
+    a, b = m[cols].to_numpy(dtype=float), m[[f"{c}_ref" for c in cols]].to_numpy(dtype=float)
+    diff = np.abs(a - b)
+    per_move = diff / m["n_moves_ref"].to_numpy(dtype=float)[:, None]
+    return {"games": int(len(m)), "missing_in_ref": missing,
+            "n_moves_mismatch": int((m["n_moves"] != m["n_moves_ref"]).sum()),
+            "max_abs_sum": float(diff.max()), "max_abs_per_move": float(per_move.max()),
+            "mean_abs_per_move": float(per_move.mean()),
+            "best_profile_agreement": float((a.argmax(axis=1) == b.argmax(axis=1)).mean())}

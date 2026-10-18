@@ -7,7 +7,7 @@ Two different numbers, reported separately:
   * end-to-end      — target_move_logps() over N games exactly as the pilot would call it
                       (SGF replay + features + legality mask + one forward per position),
                       plus the replay+features and legality costs on their own.
-Writes results/bench_0B.json.
+Writes results/bench_0B.json (another host: pass --out).
 """
 import argparse
 import csv
@@ -120,6 +120,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", default=str(ROOT / "data" / "training" / "train_1D.csv"))
     ap.add_argument("--games", type=int, default=200)
+    ap.add_argument("--out", default=str(OUT))
     a = ap.parse_args()
     model, features = load_humansl(str(CKPT), "cuda")
     meta = make_profile_meta("1d")
@@ -132,9 +133,10 @@ def main():
         "pure_inference": bench_pure(model, features, states, meta),
         "end_to_end": bench_end_to_end(model, features, games, meta),
     }
-    OUT.parent.mkdir(exist_ok=True)
-    OUT.write_text(json.dumps(out, indent=1))
-    print(f"wrote {OUT}")
+    path = Path(a.out)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(out, indent=1))
+    print(f"wrote {path}")
 
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -10,7 +11,17 @@ BIN = ROOT / "tools" / "katago" / "katago"
 MODEL = ROOT / "models" / "katago" / "b18c384nbt-humanv0.bin.gz"
 
 
-@pytest.mark.skipif(not (BIN.exists() and MODEL.exists()), reason="KataGo engine assets not present")
+def _engine_runs():
+    """The binary needs libzip and OpenSSL 1.1 (tools/katago-libs on lab01); other hosts may lack them."""
+    if not (BIN.exists() and MODEL.exists()):
+        return False
+    try:
+        return subprocess.run([str(ROOT / "scripts" / "katago.sh"), "version"], capture_output=True, timeout=60).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+@pytest.mark.skipif(not _engine_runs(), reason="KataGo engine not present or cannot start on this host")
 def test_engine_target_logps_on_three_move_game():
     from katago_engine_logp import engine_target_logps
 
