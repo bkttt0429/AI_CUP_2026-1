@@ -45,7 +45,7 @@ from aicup.aggregators import CTM, DeepSets, PooledDelta, QglobDelta, SetTransfo
 from aicup.ladder_data import STATIC_RUNGS, fit_clip_k, pack_questions, static_features
 from aicup.metric import LEVELS, RANK_TO_IDX
 from aicup.pilot import pilot_questions
-from aicup.qeval import P_FLOOR, SIZES, _balanced, balanced_mean_over_n, evaluate, paired_diff
+from aicup.qeval import SIZES, balanced, balanced_mean_over_n, evaluate, nll_brier, paired_diff
 from aicup.qfeatures import sample_questions
 from aicup.rankmodel import N_CLASSES, _softmax, class_weights
 from aicup.scoring import TRAIN_DIR, fold_players, player_games
@@ -440,24 +440,19 @@ def _per_fold(s, y, n, fold):
     return {int(f): balanced_mean_over_n(s[fold == f], y[fold == f], n[fold == f]) for f in np.unique(fold)}
 
 
-def _nll_brier(P, y):
-    """Per question as in qeval.evaluate: -log max(p(true class), P_FLOOR) and sum_k (p_k - 1[k = y])^2."""
-    return -np.log(np.maximum(P[np.arange(len(y)), y], P_FLOOR)), ((P - np.eye(N_CLASSES)[y]) ** 2).sum(axis=1)
-
-
 def _rung_summary(run):
     y, n, fold = _arrays(run["keys"])
     s = run["mean"]
     per_seed = {seed: balanced_mean_over_n(run["scores"][seed], y, n) for seed in run["seeds"]}
-    # per question, the mean over seeds of the NLL and Brier score defined in qeval.evaluate, then class-balanced
-    nll, brier = (np.mean(v, axis=0) for v in zip(*(_nll_brier(run["proba"][seed], y) for seed in run["seeds"])))
+    # per question, the mean over seeds of qeval.nll_brier (evaluate's definitions), then class-balanced
+    nll, brier = (np.mean(v, axis=0) for v in zip(*(nll_brier(run["proba"][seed], y) for seed in run["seeds"])))
     out = {"rung": run["rung"], "kind": run["kind"], "per_player": run["per_player"], "counts": run["counts"],
            "extra": run["extra"], "report_only": run["extra"] is not None, "seeds": run["seeds"], "n_questions": len(y),
            "balanced_mean_over_n": balanced_mean_over_n(s, y, n),
            "balanced_by_n": {m: balanced_mean_over_n(s, y, n, sizes=(m,)) if (n == m).any() else None for m in SIZES},
            "per_fold": _per_fold(s, y, n, fold),
            "per_class": {LEVELS[k]: float(s[y == k].mean()) if (y == k).any() else None for k in range(N_CLASSES)},
-           "nll_balanced": _balanced(nll, y), "brier": _balanced(brier, y),
+           "nll_balanced": balanced(nll, y), "brier": balanced(brier, y),
            "per_seed": per_seed, "seed_sd": float(np.std(list(per_seed.values()), ddof=1)) if len(per_seed) > 1 else None}
     first = run["meta"][run["seeds"][0]]
     if "clip_k" in first:

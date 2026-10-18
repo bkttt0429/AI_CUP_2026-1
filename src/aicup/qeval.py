@@ -15,14 +15,14 @@ N_CLASSES = len(LEVELS)
 P_FLOOR = 1e-12  # probabilities are clipped here before the log in the NLL
 
 
-def _balanced(values, y, mask=None):
+def balanced(values, y, mask=None):
     """Mean over classes present (inside `mask`) of the per-class mean of `values`."""
     mask = np.ones(len(y), dtype=bool) if mask is None else mask
     return float(np.mean([values[mask & (y == k)].mean() for k in range(N_CLASSES) if (mask & (y == k)).any()]))
 
 
 def _balanced_by_n(values, y, n_games, sizes):
-    return {int(m): _balanced(values, y, n_games == m) for m in sizes}
+    return {int(m): balanced(values, y, n_games == m) for m in sizes}
 
 
 def balanced_mean_over_n(scores, y, n_games, sizes=SIZES):
@@ -55,10 +55,18 @@ def evaluate(proba, y, qs, sizes=SIZES):
     conf = np.zeros((N_CLASSES, N_CLASSES), dtype=int)
     np.add.at(conf, (y, pred), 1)
     out["confusion_rows_truth_cols_pred"] = conf.tolist()
-    nll = -np.log(np.maximum(proba[np.arange(len(y)), y], P_FLOOR))
-    out["nll_balanced"] = _balanced(nll, y)
-    out["brier"] = _balanced(((proba - np.eye(N_CLASSES)[y]) ** 2).sum(axis=1), y)
+    nll, brier = nll_brier(proba, y)
+    out["nll_balanced"] = balanced(nll, y)
+    out["brier"] = balanced(brier, y)
     return out, s
+
+
+def nll_brier(proba, y):
+    """Per question: the NLL -log max(p(true class), P_FLOOR) and the multi-class Brier score
+    sum_k (p_k - 1[k = y])^2 (not divided by 10) of probabilities `proba` [Q, 10] -> (nll [Q], brier [Q]).
+    evaluate's nll_balanced and brier are their class-balanced means (see balanced)."""
+    proba, y = np.asarray(proba, dtype=float), np.asarray(y, dtype=int)
+    return -np.log(np.maximum(proba[np.arange(len(y)), y], P_FLOOR)), ((proba - np.eye(N_CLASSES)[y]) ** 2).sum(axis=1)
 
 
 def paired_diff(s_a, s_b, y, player_id, n_games, sizes=SIZES, n=5000, seed=42):
