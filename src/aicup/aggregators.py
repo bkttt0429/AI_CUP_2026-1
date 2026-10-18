@@ -9,7 +9,8 @@ on standardised inputs (aicup.settrain). The output layer starts at zero weights
 before training. The models are permutation invariant over the games and use no positional
 encoding; padding rows are zeroed on entry and excluded from every pooling and attention
 (key_padding_mask = ~mask), so neither their content nor their number changes the output.
-T = 1 models ignore `ticks`. Every question needs at least one game.
+T = 1 models ignore `ticks`; XAttnGRU runs a recurrence of `ticks` steps (default 8) and returns the Δ of every
+tick. Every question needs at least one game.
 """
 import math
 
@@ -140,3 +141,31 @@ class SetTransformer(nn.Module):
             h = sab(h, h, kpm)
         pooled = self.pma(self.seed.expand(len(h), -1, -1), h, kpm)[:, 0]
         return self.head(torch.cat([pooled, qglob], dim=-1))[:, None]
+
+
+class XAttnGRU(nn.Module):
+    """GameEncoder -> a recurrent state h (learned start h0) that reads the games by cross-attention.
+    Each tick: q = W_q h (d_tok), o = MultiheadAttention(q; keys, values = the tokens, key_padding_mask =
+    ~mask), h = GRUCell([o, qglob], h), Δ_t = W_out h (zero-initialised). Returns the Δ of all ticks,
+    [B, T, 10], T = `ticks` (constructor default 8, overridable in forward)."""
+
+    def __init__(self, d_in, d_glob=6, d_tok=128, d_hidden=256, heads=4, ticks=8):
+        super().__init__()
+        self.ticks = ticks
+        self.enc = GameEncoder(d_in, d_tok)
+        self.h0 = nn.Parameter(torch.zeros(d_hidden))
+        self.w_q = nn.Linear(d_hidden, d_tok)
+        self.attn = nn.MultiheadAttention(d_tok, heads, batch_first=True)
+        self.cell = nn.GRUCell(d_tok + d_glob, d_hidden)
+        self.w_out = zero_linear(d_hidden)
+
+    def forward(self, tokens, mask, qglob, ticks=None):
+        kpm = ~mask
+        x = self.enc(_clean(tokens, mask))
+        h = self.h0.expand(len(x), -1)
+        deltas = []
+        for _ in range(self.ticks if ticks is None else ticks):
+            o = self.attn(self.w_q(h)[:, None], x, x, key_padding_mask=kpm, need_weights=False)[0][:, 0]
+            h = self.cell(torch.cat([o, qglob], dim=-1), h)
+            deltas.append(self.w_out(h))
+        return torch.stack(deltas, dim=1)

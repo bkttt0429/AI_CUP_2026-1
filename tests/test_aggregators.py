@@ -4,18 +4,19 @@ import numpy as np
 import pytest
 import torch
 
-from aicup.aggregators import DeepSets, GameEncoder, PooledDelta, QglobDelta, SetTransformer, n_params
+from aicup.aggregators import DeepSets, GameEncoder, PooledDelta, QglobDelta, SetTransformer, XAttnGRU, n_params
 from aicup.rankmodel import _softmax
 from aicup.settrain import TrainCfg, fit_set_model, predict_set_model
 
 D_IN, M, B = 9, 20, 6
 
-# every set model at test size, constructed as make(d_in); Tasks 5 and 6 add XAttnGRU and CTM here
+# every set model at test size, constructed as make(d_in); Task 6 adds CTM here
 MODELS = [
     pytest.param(partial(PooledDelta, hidden=16), id="PooledDelta"),
     pytest.param(partial(QglobDelta, hidden=8), id="QglobDelta"),
     pytest.param(partial(DeepSets, d_tok=16, hidden=32), id="DeepSets"),
     pytest.param(partial(SetTransformer, d_tok=16, heads=4, layers=2, hidden=32), id="SetTransformer"),
+    pytest.param(partial(XAttnGRU, d_tok=16, d_hidden=32, heads=4, ticks=3), id="XAttnGRU"),
 ]
 
 
@@ -88,6 +89,14 @@ def test_padding_invariance(make):
         out = model(tokens, mask, qglob)
         torch.testing.assert_close(model(noisy, mask, qglob), out, atol=1e-6, rtol=0)
         torch.testing.assert_close(model(longer, longer_mask, qglob), out, atol=1e-6, rtol=0)
+    # non-prefix padding: the same games scattered among the padding slots, in a different order
+    perm = torch.stack([torch.randperm(M, generator=g) for _ in range(B)])
+    rows = torch.arange(B)[:, None]
+    scattered_mask = mask[rows, perm]
+    assert not torch.equal(scattered_mask, mask) and not scattered_mask[:, :1].all()  # padding comes first somewhere
+    scattered = torch.where(scattered_mask[..., None], tokens[rows, perm], 100.0 * torch.randn(tokens.shape, generator=g))
+    with torch.no_grad():
+        torch.testing.assert_close(model(scattered, scattered_mask, qglob), out, atol=1e-5, rtol=0)
 
 
 @pytest.mark.parametrize("make", MODELS)
@@ -132,3 +141,20 @@ def test_single_tick_shapes_and_sizes():
     assert n_params(DeepSets(D_IN)) == enc128 + head(2 * 128 + 6)
     mab = (4 * 128 * 128 + 4 * 128) + 2 * 2 * 128 + 2 * (128 * 128 + 128)  # MHA, 2 LayerNorms, rFF
     assert n_params(SetTransformer(D_IN)) == enc128 + 3 * mab + 128 + head(128 + 6)  # 2 SABs, PMA, seed
+
+
+def test_xattn_shapes_and_tick_override():
+    tokens, mask, qglob = _inputs()
+    model = _randomised(partial(XAttnGRU, d_tok=16, d_hidden=32, heads=4))  # default 8 ticks
+    with torch.no_grad():
+        out = model(tokens, mask, qglob)
+        assert out.shape == (B, 8, 10)
+        out16 = model(tokens, mask, qglob, ticks=16)
+        assert out16.shape == (B, 16, 10)
+        assert model(tokens, mask, qglob, ticks=1).shape == (B, 1, 10)
+    torch.testing.assert_close(out16[:, :8], out, atol=1e-6, rtol=0)  # the ticks are one recurrence, T only truncates it
+    assert not torch.allclose(out[:, 0], out[:, 1])  # the state moves from tick to tick
+    assert _randomised(partial(XAttnGRU, d_tok=16, d_hidden=32, heads=4, ticks=5))(tokens, mask, qglob).shape == (B, 5, 10)
+    gru = 3 * 256 * (128 + 6) + 3 * 256 * 256 + 2 * 3 * 256  # GRUCell(o ++ qglob, h): W_ih, W_hh, both biases
+    enc128 = (D_IN * 128 + 128) + (128 * 128 + 128) + 2 * 128
+    assert n_params(XAttnGRU(D_IN)) == enc128 + 256 + (256 * 128 + 128) + (4 * 128 * 128 + 4 * 128) + gru + (256 * 10 + 10)
