@@ -21,5 +21,7 @@ data/mock_tests/
 submission_rank*.csv
 submission_rank*.json
 results/replay/
+results/ladder/vectors/
+results/ladder/cv/*.npz
 !results/scores/games_fold*.csv.gz
 !results/models/
