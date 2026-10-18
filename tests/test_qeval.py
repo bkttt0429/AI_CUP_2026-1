@@ -129,11 +129,12 @@ def test_nll_brier_are_class_balanced():
 
 
 @pytest.mark.filterwarnings("ignore:Mean of empty slice", "ignore:invalid value encountered")
-def test_nll_is_infinite_for_a_one_hot_miss_and_brier_is_two():
-    """One-hot models (ThresholdModel) have no probability on a wrong class: NLL is inf, Brier 2 per miss."""
+def test_nll_clips_at_1e12_for_a_one_hot_miss_and_brier_is_two():
+    """One-hot models (ThresholdModel) put p = 0 on a wrong class: NLL is clipped (finite), Brier is 2 per miss."""
     proba = np.eye(10)[[0, 0]]
     y = np.array([0, 1])
     qs = pd.DataFrame({"player_id": ["a", "b"], "n_games": [5, 5]})
     got, _ = qeval.evaluate(proba, y, qs)
-    assert got["nll_balanced"] == np.inf
+    assert np.isfinite(got["nll_balanced"])
+    assert got["nll_balanced"] == pytest.approx((0.0 - np.log(1e-12)) / 2, abs=1e-12)
     assert got["brier"] == pytest.approx((0.0 + 2.0) / 2, abs=1e-12)

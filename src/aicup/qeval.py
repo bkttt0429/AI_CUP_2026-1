@@ -12,6 +12,7 @@ from aicup.metric import LEVELS, expected_score_decision, score
 
 SIZES = (5, 10, 20)
 N_CLASSES = len(LEVELS)
+P_FLOOR = 1e-12  # probabilities are clipped here before the log in the NLL
 
 
 def _balanced(values, y, mask=None):
@@ -34,9 +35,10 @@ def evaluate(proba, y, qs, sizes=SIZES):
     """Official scores and diagnostics of class probabilities `proba` [Q, 10] for true classes `y` [Q].
 
     qs: DataFrame with an n_games column (question size). Returns (metrics, scores [Q]).
-    `nll_balanced` is the class-balanced mean of -log p(true class) (infinite when a true class
-    gets probability 0, as for one-hot models) and `brier` the class-balanced mean of the
-    multi-class Brier score sum_k (p_k - 1[k = y])^2.
+    `nll_balanced`: per true class, the mean of -log max(p(true class), 1e-12), then the mean over the
+    classes present. The clip keeps one-hot models finite (a miss costs -log 1e-12 = 27.63).
+    `brier`: per true class, the mean of the multi-class Brier score sum_k (p_k - 1[k = y])^2 over the
+    10 classes (0 for a perfect, 2 for a one-hot miss; not divided by 10), then the mean over the classes present.
     """
     proba = np.asarray(proba, dtype=float)
     y = np.asarray(y, dtype=int)
@@ -53,8 +55,7 @@ def evaluate(proba, y, qs, sizes=SIZES):
     conf = np.zeros((N_CLASSES, N_CLASSES), dtype=int)
     np.add.at(conf, (y, pred), 1)
     out["confusion_rows_truth_cols_pred"] = conf.tolist()
-    with np.errstate(divide="ignore"):
-        nll = -np.log(proba[np.arange(len(y)), y])
+    nll = -np.log(np.maximum(proba[np.arange(len(y)), y], P_FLOOR))
     out["nll_balanced"] = _balanced(nll, y)
     out["brier"] = _balanced(((proba - np.eye(N_CLASSES)[y]) ** 2).sum(axis=1), y)
     return out, s
