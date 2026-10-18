@@ -9,8 +9,8 @@ on standardised inputs (aicup.settrain). The output layer starts at zero weights
 before training. The models are permutation invariant over the games and use no positional
 encoding; padding rows are zeroed on entry and excluded from every pooling and attention
 (key_padding_mask = ~mask), so neither their content nor their number changes the output.
-T = 1 models ignore `ticks`; XAttnGRU runs a recurrence of `ticks` steps (default 8) and returns the Δ of every
-tick. Every question needs at least one game.
+T = 1 models ignore `ticks`; XAttnGRU and CTM run a recurrence of `ticks` steps (default 8) and return the Δ
+of every tick. Every question needs at least one game.
 """
 import math
 
@@ -168,4 +168,93 @@ class XAttnGRU(nn.Module):
             o = self.attn(self.w_q(h)[:, None], x, x, key_padding_mask=kpm, need_weights=False)[0][:, 0]
             h = self.cell(torch.cat([o, qglob], dim=-1), h)
             deltas.append(self.w_out(h))
+        return torch.stack(deltas, dim=1)
+
+
+class _NLM(nn.Module):
+    """Neuron-level models: each of the n neurons maps its own history of `history` pre-activations
+    through its own MLP history -> hidden -> 1 (ReLU), all neurons at once by einsum.
+    A [B, n, history] -> z [B, n]. Initialised as nn.Linear per neuron (U(±1/sqrt(fan_in)))."""
+
+    def __init__(self, n, history, hidden):
+        super().__init__()
+        b1, b2 = 1 / math.sqrt(history), 1 / math.sqrt(hidden)
+        self.w1 = nn.Parameter(torch.empty(n, history, hidden).uniform_(-b1, b1))
+        self.b1 = nn.Parameter(torch.empty(n, hidden).uniform_(-b1, b1))
+        self.w2 = nn.Parameter(torch.empty(n, hidden).uniform_(-b2, b2))
+        self.b2 = nn.Parameter(torch.empty(n).uniform_(-b2, b2))
+
+    def forward(self, A):
+        h = torch.relu(torch.einsum("bnm,nmh->bnh", A, self.w1) + self.b1)
+        return torch.einsum("bnh,nh->bn", h, self.w2) + self.b2
+
+
+def _sync(Z, idx, r):
+    """Synchronisation of the neuron pairs idx [P, 2] over the history Z (a list of [B, n], oldest
+    first): S_p = Σ_τ w_τ z_i^τ z_j^τ / sqrt(Σ_τ w_τ), w_τ = exp(−r_p (τ_now − τ)) -> [B, P].
+    r [P] must already lie in [0, 15] (CTM.forward projects it): a clamp inside the graph would pass
+    no gradient at r = 0, where the decays start, and they would never move."""
+    Zs = torch.stack(Z, dim=1)  # [B, τ, n]
+    age = torch.arange(len(Z) - 1, -1, -1, dtype=Zs.dtype, device=Zs.device)  # τ_now − τ
+    w = torch.exp(-r[None, :] * age[:, None])  # [τ, P]
+    return (w * Zs[..., idx[:, 0]] * Zs[..., idx[:, 1]]).sum(dim=1) / w.sum(dim=0).sqrt()
+
+
+class CTM(nn.Module):
+    """Continuous Thought Machine (Darlow et al. 2025) as a set aggregator: GameEncoder -> a latent
+    of d_latent neurons, each with its own history of `history` pre-activations A and its own MLP
+    (NLM) giving its post-activation z. The neurons talk to the games and to the output only through
+    synchronisation S_p (see _sync) of n_sync_action / n_sync_out neuron pairs i <= j, drawn without
+    replacement from the d_latent (d_latent + 1) / 2 pairs by a randperm seeded with pair_seed (the
+    first n_sync_action for action, the next n_sync_out for output), each pair with a learned decay
+    r_p (starts at 0 = no decay; projected to [0, 15] on every forward, as in the original).
+
+    Each tick: s_act = sync over [z0, z1, ...] (the action history starts with the learned z0);
+    o = MultiheadAttention(W_q s_act; keys, values = the tokens, key_padding_mask = ~mask);
+    a = synapse([z, o, qglob]) (Linear -> GLU -> LayerNorm(d_latent)); A keeps the last `history`
+    a's (starting from the learned A0); z = NLM(A); Δ_t = W_out(sync over [z1, ...]) (the output
+    history leaves z0 out; W_out zero-initialised). Returns the Δ of all ticks, [B, T, 10],
+    T = `ticks` (constructor default 8, overridable in forward)."""
+
+    def __init__(self, d_in, d_glob=6, d_tok=128, d_latent=256, history=8, nlm_hidden=16, heads=4, ticks=8,
+                 n_sync_action=512, n_sync_out=512, pair_seed=0):
+        super().__init__()
+        self.ticks = ticks
+        pairs = torch.triu_indices(d_latent, d_latent).T  # [d_latent (d_latent + 1) / 2, 2], i <= j
+        if n_sync_action + n_sync_out > len(pairs):
+            raise ValueError(f"{n_sync_action} + {n_sync_out} sync pairs exceed the {len(pairs)} pairs of {d_latent} neurons")
+        perm = torch.randperm(len(pairs), generator=torch.Generator().manual_seed(pair_seed))
+        self.register_buffer("idx_act", pairs[perm[:n_sync_action]].clone())
+        self.register_buffer("idx_out", pairs[perm[n_sync_action:n_sync_action + n_sync_out]].clone())
+        self.r_act = nn.Parameter(torch.zeros(n_sync_action))
+        self.r_out = nn.Parameter(torch.zeros(n_sync_out))
+        self.enc = GameEncoder(d_in, d_tok)
+        b_a, b_z = 1 / math.sqrt(d_latent + history), 1 / math.sqrt(d_latent)  # the original's start values
+        self.A0 = nn.Parameter(torch.empty(d_latent, history).uniform_(-b_a, b_a))
+        self.z0 = nn.Parameter(torch.empty(d_latent).uniform_(-b_z, b_z))
+        self.w_q = nn.Linear(n_sync_action, d_tok)
+        self.attn = nn.MultiheadAttention(d_tok, heads, batch_first=True)
+        self.synapse = nn.Sequential(nn.Linear(d_latent + d_tok + d_glob, 2 * d_latent), nn.GLU(), nn.LayerNorm(d_latent))
+        self.nlm = _NLM(d_latent, history, nlm_hidden)
+        self.w_out = zero_linear(n_sync_out)
+
+    def forward(self, tokens, mask, qglob, ticks=None):
+        # clamp the decays to [0, 15] by projecting the parameters in place, as the original does
+        # (decay_params.data = clamp(...)); _sync then uses them unclamped, so the gradient reaches them
+        self.r_act.data.clamp_(0.0, 15.0)
+        self.r_out.data.clamp_(0.0, 15.0)
+        kpm = ~mask
+        x = self.enc(_clean(tokens, mask))
+        A = self.A0.expand(len(x), -1, -1)
+        z = self.z0.expand(len(x), -1)
+        Z_act, Z_out, deltas = [z], [], []
+        for _ in range(self.ticks if ticks is None else ticks):
+            s_act = _sync(Z_act, self.idx_act, self.r_act)
+            o = self.attn(self.w_q(s_act)[:, None], x, x, key_padding_mask=kpm, need_weights=False)[0][:, 0]
+            a = self.synapse(torch.cat([z, o, qglob], dim=-1))
+            A = torch.cat([A[:, :, 1:], a[:, :, None]], dim=-1)
+            z = self.nlm(A)
+            Z_act.append(z)
+            Z_out.append(z)
+            deltas.append(self.w_out(_sync(Z_out, self.idx_out, self.r_out)))
         return torch.stack(deltas, dim=1)

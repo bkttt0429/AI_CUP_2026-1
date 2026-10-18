@@ -10,12 +10,16 @@ set) are never copied to float64 and never modified.
 
 Training: AdamW with a cosine schedule over all steps, fixed epochs (no early stopping), a
 seeded shuffle per epoch, class-balanced weights (rankmodel.class_weights). LOSSES and PICKS map
-TrainCfg.loss and predict_set_model's pick to their functions.
+TrainCfg.loss and predict_set_model's pick to their functions: loss "final" (the last tick; the
+primary loss) or "ctm_minmax" (the original CTM's min-loss / max-certainty pair of ticks, the
+r5_ctm_minmax control); pick "final" (the last tick; every primary score) or "certain" (each
+question's most certain tick, label-free; report-only).
 
 crossfit_base_logits gives the base logits: for each training fold from a static model fitted on
 the other training folds, for the evaluation questions from one fitted on all of them (the static
 rung itself).
 """
+import math
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -62,12 +66,53 @@ def final_loss(logits_ticks, deltas, y, w, gamma):
     return (w * ce).sum() / w.sum() + gamma * deltas[:, -1].pow(2).sum(dim=-1).mean()
 
 
+def certainty(logits):
+    """1 − H(softmax(logits)) / log C over the last axis (C classes): 0 for uniform, 1 for one-hot."""
+    logp = logits.log_softmax(dim=-1)
+    return 1.0 + (logp.exp() * logp).sum(dim=-1) / math.log(logits.shape[-1])
+
+
+def _last_argmax(x):
+    """argmax over dim 1 of x [B, T]; ties go to the later tick."""
+    return x.shape[1] - 1 - x.flip(1).argmax(dim=1)
+
+
+def minmax_ticks(logits_ticks, y):
+    """Per sample the tick t1 of lowest CE(logits_t, y) and the tick t2 of highest certainty;
+    ties go to the later tick. logits_ticks [B, T, 10] -> (t1 [B], t2 [B])."""
+    with torch.no_grad():
+        logp = logits_ticks.log_softmax(dim=-1)
+        ce = -logp.gather(-1, y[:, None, None].expand(-1, logp.shape[1], 1))[..., 0]
+        return _last_argmax(-ce), _last_argmax(certainty(logits_ticks))
+
+
+def ctm_minmax_loss(logits_ticks, deltas, y, w, gamma):
+    """The original CTM loss on a pair of ticks per sample (minmax_ticks: t1 lowest CE, t2 most
+    certain): (CE_t1 + CE_t2) / 2 weighted by w (normalised by the batch's sum of w) +
+    γ · mean (‖Δ_t1‖² + ‖Δ_t2‖²) / 2 -- weighted as final_loss, so the two differ only in the ticks.
+
+    logits_ticks, deltas: [B, T, 10]."""
+    t1, t2 = minmax_ticks(logits_ticks, y)
+    rows = torch.arange(len(y), device=logits_ticks.device)
+    ce = (F.cross_entropy(logits_ticks[rows, t1], y, reduction="none")
+          + F.cross_entropy(logits_ticks[rows, t2], y, reduction="none")) / 2
+    pen = (deltas[rows, t1].pow(2).sum(dim=-1) + deltas[rows, t2].pow(2).sum(dim=-1)) / 2
+    return (w * ce).sum() / w.sum() + gamma * pen.mean()
+
+
 def _pick_final(logits_ticks):
     return logits_ticks[:, -1]
 
 
-LOSSES = {"final": final_loss}
-PICKS = {"final": _pick_final}  # logits [Q, T, 10] (float64) -> the logits used per question [Q, 10]
+def _pick_certain(logits_ticks):
+    """Each question's most certain tick (1 − H / log 10; ties -> the later tick), label-free."""
+    t = _last_argmax(certainty(torch.from_numpy(np.asarray(logits_ticks, dtype=np.float64)))).numpy()
+    return logits_ticks[np.arange(len(t)), t]
+
+
+LOSSES = {"final": final_loss, "ctm_minmax": ctm_minmax_loss}
+# logits [Q, T, 10] (float64) -> the logits used per question [Q, 10]; "certain" is report-only
+PICKS = {"final": _pick_final, "certain": _pick_certain}
 
 
 def _token_stats(tokens, mask, chunk=STATS_CHUNK):
@@ -171,8 +216,8 @@ def fit_set_model(make: Callable[[int], nn.Module], data: dict, base, cfg: Train
 
 
 def predict_set_model(fitted: Fitted, data: dict, base, ticks=None, pick="final"):
-    """softmax(base + Δ) [Q, 10] (float64), Δ taken at the tick chosen by `pick` ("final": the last);
-    ticks overrides the model's number of ticks."""
+    """softmax(base + Δ) [Q, 10] (float64), Δ taken at the tick chosen by `pick` ("final": the last;
+    "certain": each question's most certain tick, report-only); ticks overrides the model's number of ticks."""
     if pick not in PICKS:
         raise ValueError(f"unknown pick {pick!r}; known: {list(PICKS)}")
     base = _check(data, base)

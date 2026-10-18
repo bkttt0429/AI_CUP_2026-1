@@ -8,12 +8,13 @@ import pytest
 import torch
 
 from aicup import settrain
-from aicup.aggregators import DeepSets, PooledDelta, SetTransformer
+from aicup.aggregators import CTM, DeepSets, PooledDelta, SetTransformer, XAttnGRU
 from aicup.gamevec import SEGMENTS, WHOLE, vec_names
 from aicup.ladder_data import count_cols, pack_questions
 from aicup.metric import RANK_TO_IDX
-from aicup.rankmodel import MLPModel, _softmax, _standardise
-from aicup.settrain import TrainCfg, crossfit_base_logits, final_loss, fit_set_model, predict_set_model
+from aicup.rankmodel import MLPModel, _softmax, _standardise, class_weights
+from aicup.settrain import (TrainCfg, crossfit_base_logits, ctm_minmax_loss, final_loss, fit_set_model,
+                            minmax_ticks, predict_set_model)
 
 VECTORS = Path(__file__).resolve().parents[1] / "results" / "ladder" / "vectors"
 STAGED, WHOLE_NAMES = vec_names(SEGMENTS), vec_names(WHOLE)
@@ -184,6 +185,112 @@ def test_final_loss_value():
     logits2[:, :2] += 5.0
     deltas2[:, :2] *= 3.0
     torch.testing.assert_close(final_loss(logits2, deltas2, y, w, 0.1), got)  # only the last tick counts
+
+
+def _minmax_case():
+    """Hand-made logits [4, 4, 10] whose min-CE tick t1 and max-certainty tick t2 are known:
+    q0 distinct ticks (t1 = 1, t2 = 2); q1 exact ties, ticks 0 = 2 at the lowest CE and 1 = 3 at the
+    highest certainty (t1 = 2, t2 = 3: the later tick); q2 all ticks equal (t1 = t2 = 3); q3 one
+    tick both most certain and best (t1 = t2 = 0). The deltas are not base-consistent on purpose:
+    tied ticks get different ‖Δ‖², so the loss value shows which of the tied ticks was taken."""
+    L = torch.zeros(4, 4, 10, dtype=torch.float64)
+    y = torch.tensor([2, 0, 5, 9])
+    L[0, 1, 2], L[0, 2, 5], L[0, 3, 2] = 3.0, 6.0, 1.0  # tick 0 uniform; 1 good; 2 confident but wrong; 3 weak
+    L[1, 0, 0] = L[1, 2, 0] = 2.0  # lowest CE, tie
+    L[1, 1, 7] = L[1, 3, 7] = 6.0  # highest certainty, tie
+    L[2] = torch.randn(10, generator=torch.Generator().manual_seed(0), dtype=torch.float64)
+    L[3, 0, 9], L[3, 1, 9], L[3, 2, 4], L[3, 3, 9] = 8.0, 1.0, 0.5, 2.0
+    deltas = torch.arange(1, 4 * 4 * 10 + 1, dtype=torch.float64).reshape(4, 4, 10) / 100.0
+    return L, deltas, y, torch.tensor([1, 2, 3, 0]), torch.tensor([2, 3, 3, 0])  # t1, t2
+
+
+def test_minmax_loss_picks_ticks():
+    L, deltas, y, t1_want, t2_want = _minmax_case()
+    w = torch.tensor([0.5, 1.0, 2.0, 1.5], dtype=torch.float64)
+    ce = -L.log_softmax(dim=-1)[torch.arange(4), :, y]  # [4, T]
+    p = L.softmax(dim=-1)
+    cert = 1.0 + (p * p.log()).sum(dim=-1) / np.log(10)  # 1 − H / log 10
+    assert torch.equal(ce[1, 0], ce[1, 2]) and torch.equal(cert[1, 1], cert[1, 3])  # the ties are exact
+    assert torch.all(ce[[0, 1, 2, 3], t1_want] == ce.min(dim=1).values)
+    assert torch.all(cert[[0, 1, 2, 3], t2_want] == cert.max(dim=1).values)
+    t1, t2 = minmax_ticks(L, y)
+    assert t1.tolist() == t1_want.tolist() and t2.tolist() == t2_want.tolist()
+    rows = torch.arange(4)
+    pen = (deltas[rows, t1_want].pow(2).sum(-1) + deltas[rows, t2_want].pow(2).sum(-1)) / 2
+    want = (w * (ce[rows, t1_want] + ce[rows, t2_want]) / 2).sum() / w.sum() + 0.1 * pen.mean()
+    got = ctm_minmax_loss(L, deltas, y, w, 0.1)
+    torch.testing.assert_close(got, want, rtol=1e-12, atol=1e-12)
+    early = (deltas[rows, [1, 0, 0, 0]].pow(2).sum(-1) + deltas[rows, [2, 1, 0, 0]].pow(2).sum(-1)) / 2
+    assert abs(float(early.mean() - pen.mean())) > 1e-3  # earlier-tick tie-breaking would give another value
+    # T = 1, or all ticks equal (Δ ≡ 0 at initialisation): the same as the final-tick loss
+    torch.testing.assert_close(ctm_minmax_loss(L[:, -1:], deltas[:, -1:], y, w, 0.1),
+                               final_loss(L[:, -1:], deltas[:, -1:], y, w, 0.1), rtol=1e-12, atol=1e-12)
+    same = L[:, -1:].expand(-1, 4, -1)
+    torch.testing.assert_close(ctm_minmax_loss(same, deltas, y, w, 0.1), final_loss(same, deltas, y, w, 0.1),
+                               rtol=1e-12, atol=1e-12)
+
+
+def test_pick_certain_per_question():
+    L, _, _, _, t2_want = _minmax_case()
+    base = np.random.RandomState(0).randn(4, 10)
+    logits = base[:, None, :] + L.numpy()
+    picked = settrain.PICKS["certain"](logits)
+    np.testing.assert_array_equal(picked, logits[np.arange(4), t2_want.numpy()])  # label-free, ties -> later tick
+    np.testing.assert_array_equal(settrain.PICKS["final"](logits), logits[:, -1])
+    # a visible tie: ticks 0 and 1 differ by an exact integer shift, same softmax and the same certainty to the bit
+    shifted = np.zeros((1, 3, 10))
+    shifted[0, 0, 3], shifted[0, 1], shifted[0, 2, 3] = 4.0, 2.0, 1.0
+    shifted[0, 1, 3] = 6.0
+    cert = settrain.certainty(torch.from_numpy(shifted))[0]
+    assert cert[0] == cert[1] > cert[2]
+    np.testing.assert_array_equal(settrain.PICKS["certain"](shifted), shifted[:, 1])
+
+    class Fixed(torch.nn.Module):
+        """Returns the Δ of question qglob[:, 0] (passed through standardisation unchanged)."""
+
+        def __init__(self, table):
+            super().__init__()
+            self.table = torch.nn.Parameter(table.float(), requires_grad=False)
+
+        def forward(self, tokens, mask, qglob, ticks=None):
+            return self.table[qglob[:, 0].round().long()]
+
+    data, _ = _packed(Q=4)
+    data["qglob"][:, 0] = np.arange(4)
+    fitted = settrain.Fitted(Fixed(L), np.zeros(6), np.ones(6), np.zeros(6), np.ones(6), TrainCfg(batch=3, device="cpu"))
+    np.testing.assert_allclose(predict_set_model(fitted, data, base, pick="certain"),
+                               _softmax(base + L.numpy()[np.arange(4), t2_want.numpy()]), rtol=0, atol=1e-6)
+    np.testing.assert_allclose(predict_set_model(fitted, data, base), _softmax(base + L.numpy()[:, -1]), rtol=0, atol=1e-6)
+
+
+@pytest.mark.parametrize("loss", ["final", "ctm_minmax"])
+def test_fit_applies_class_weights(loss):
+    """epochs = 1 and batch >= Q: one forward pass with Δ ≡ 0 (zero-initialised output), so the
+    recorded loss is the class-weighted CE of the base logits."""
+    data, base = _packed(Q=30)
+    y = np.array([0] * 18 + [1] * 6 + [2] * 3 + [3] * 2 + [4])
+    data["y"] = y
+    cfg = TrainCfg(epochs=1, batch=64, loss=loss, device="cpu")
+    fitted = fit_set_model(partial(XAttnGRU, d_tok=8, d_hidden=8, heads=2, ticks=3), data, base, cfg)
+    ce = -torch.tensor(base).log_softmax(dim=-1)[torch.arange(30), torch.tensor(y)].numpy()
+    w = class_weights(y)
+    assert len(fitted.losses) == 1
+    np.testing.assert_allclose(fitted.losses[0], (w * ce).sum() / w.sum(), rtol=1e-5)
+    assert abs((w * ce).sum() / w.sum() - ce.mean()) > 1e-2  # the weights matter on this y
+
+
+def test_ctm_minmax_training_and_certain_pick():
+    data, base = _packed(Q=24)
+    make = partial(CTM, d_tok=8, d_latent=16, history=4, nlm_hidden=4, heads=2, ticks=3, n_sync_action=12, n_sync_out=12)
+    fitted = fit_set_model(make, data, base, TrainCfg(epochs=2, batch=8, lr=1e-2, loss="ctm_minmax", device="cpu"))
+    assert len(fitted.losses) == 2 and np.all(np.isfinite(fitted.losses))
+    for pick in ("final", "certain"):
+        P = predict_set_model(fitted, data, base, pick=pick)
+        assert P.shape == (24, 10) and np.all(np.isfinite(P))
+        np.testing.assert_allclose(P.sum(axis=1), 1.0, rtol=0, atol=1e-12)
+        assert not np.allclose(P, _softmax(base))
+    r = fitted.model.r_act.detach()
+    assert float(r.min()) >= 0.0 and 0.0 < float(r.max()) <= 15.0  # trained off 0, projected again by predict's forward
 
 
 def test_crossfit_never_sees_own_fold():
