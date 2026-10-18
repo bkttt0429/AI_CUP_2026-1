@@ -1,5 +1,6 @@
 import copy
 import dataclasses
+import hashlib
 import json
 import math
 import subprocess
@@ -12,18 +13,20 @@ import pandas as pd
 import pytest
 import torch
 
-from aicup import ladder
+from aicup import ladder, ladder_fold0
 from aicup.aggregators import CTM, XAttnGRU
 from aicup.gamevec import SEGMENTS, WHOLE, vec_names
 from aicup.ladder_data import pack_questions, static_features
 from aicup.metric import ADJACENT, LEVELS, RANK_TO_IDX
-from aicup.qeval import balanced_mean_over_n
-from aicup.qfeatures import sample_questions
-from aicup.rankmodel import _softmax
+from aicup.qeval import balanced_mean_over_n, evaluate, paired_diff
+from aicup.qfeatures import FEATURE_NAMES, SUM_COLS, build_matrix, sample_questions
+from aicup.rankmodel import MLPModel, _softmax
 
 ROOT = Path(__file__).resolve().parents[1]
 VECTORS = ROOT / "results" / "ladder" / "vectors"
 SCRIPT = ROOT / "scripts" / "ladder_cv.py"
+FOLD0_SCRIPT = ROOT / "scripts" / "ladder_eval_fold0.py"
+ALL_FOLDS = (0, 1, 2, 3, 4)
 STAGED, WHOLE_NAMES = vec_names(SEGMENTS), vec_names(WHOLE)
 RANKS = list(RANK_TO_IDX)
 KEYS = ["question_id", "fold", "player_id", "y", "n_games"]
@@ -441,3 +444,225 @@ def test_reproduces_rank_model_eval_per_fold():
     got = [balanced_mean_over_n(d["score"], d["y"], d["n_games"]) for _, d in df.groupby("fold", sort=True)]
     assert sorted(df["fold"].unique()) == [1, 2, 3, 4]
     assert got == pytest.approx(ref["cv"]["mlp_h32"]["per_fold"], abs=1e-9)
+
+
+# ---------------------------------------------------------------- fold 0 (one shot)
+
+def _games_frame(vec):
+    """qfeatures.build_matrix's games frame from the vectors (their sums and n_moves are the score CSVs' values)."""
+    return pd.DataFrame({"game_key": vec["game_key"], **{c: vec["sums"][:, i] for i, c in enumerate(SUM_COLS)},
+                         "n_moves": vec["n_moves"]})
+
+
+def _production_doc(players, vec, pp):
+    """A production model made as fit_rank_model makes its final model -- one RandomState(42), folds 1-4
+    ascending, pp questions per player, MLPModel(hidden=32) on build_matrix features -- after the JSON
+    round trip of rank_model.json."""
+    rng = np.random.RandomState(42)
+    qs = pd.concat([sample_questions(players[f], pp, rng) for f in (1, 2, 3, 4)], ignore_index=True)
+    X, y, _ = build_matrix(_games_frame(vec), qs)
+    doc = {"name": "mlp_h32", "features": FEATURE_NAMES, "train_folds": [1, 2, 3, 4],
+           "state": MLPModel(hidden=32).fit(X, y).state_dict()}
+    return json.loads(json.dumps(doc))
+
+
+def _fold0_case(tmp_path, labels, pp=4, per_rank=2):
+    """Synthetic folds 0-4 with their players, a CV summary holding `labels` and a production model file."""
+    vec_dir, players = _synthetic(tmp_path, ALL_FOLDS, per_rank=per_rank)
+    vec, _ = ladder.load_vectors(vec_dir, ALL_FOLDS)
+    summary = tmp_path / "cv_summary.json"
+    summary.write_text(json.dumps({"rungs": {lab: {"balanced_mean_over_n": 0.5, "seeds": [0]} for lab in labels},
+                                   "comparisons": {}}))
+    model = tmp_path / "rank_model.json"
+    model.write_text(json.dumps(_production_doc(players, vec, pp)))
+    return vec_dir, players, vec, summary, model
+
+
+def _run_fold0_cli(*args):
+    return subprocess.run([sys.executable, "-I", str(FOLD0_SCRIPT), *map(str, args)], capture_output=True, text=True,
+                          timeout=600)
+
+
+def _strict(text):
+    return json.loads(text, parse_constant=lambda c: pytest.fail(f"non-standard JSON constant {c}"))
+
+
+def test_refuses_second_fold0_eval(tmp_path, monkeypatch):
+    vec_dir, players, _, summary, model = _fold0_case(tmp_path, ["r2_mlp24@pp4"])
+    out = tmp_path / "ladder" / "fold0_eval.json"
+    kw = dict(out=out, chosen_from=summary, vectors_dir=vec_dir, rank_model=model, per_player=4, device="cpu", n_boot=50)
+    res = ladder_fold0.run("r2_mlp24", players=players, **kw)
+    first = out.read_bytes()
+    saved = _strict(first)
+    assert saved == _strict(ladder.to_json(res))
+    assert [p.name for p in out.parent.iterdir()] == ["fold0_eval.json"]  # written atomically, no temp file left
+    # provenance: what was evaluated, chosen from which summary (path and sha256), at which commit
+    assert (saved["rung"], saved["kind"], saved["seeds"], saved["per_player"], saved["counts"]) == ("r2_mlp24", "static", None,
+                                                                                                    4, True)
+    assert saved["chosen_from"] == str(summary.resolve()) and saved["cv_label"] == "r2_mlp24@pp4"
+    assert saved["cv_summary_sha256"] == hashlib.sha256(summary.read_bytes()).hexdigest()
+    assert saved["production_model"]["sha256"] == hashlib.sha256(model.read_bytes()).hexdigest()
+    assert saved["eval_fold"] == 0 and saved["train_folds"] == [1, 2, 3, 4] and saved["n_questions"] == 20 * 7
+    assert "git_head" in saved and saved["headline"]["n_boot"] == 50 and len(saved["headline"]["ci95"]) == 2
+    assert "r2_mlp24@pp8" in saved["note_production"] and saved["cv_pp8_vs_base"] is None
+    assert ladder_fold0.repo_path(ROOT / "results" / "ladder" / "cv_summary.json") == "results/ladder/cv_summary.json"
+
+    def no_loading(*a, **k):
+        raise AssertionError("data loaded although fold 0 was evaluated already")
+
+    monkeypatch.setattr(ladder_fold0, "load_inputs", no_loading)
+    with pytest.raises(ladder_fold0.Refused, match="fold 0"):
+        ladder_fold0.run("r2_mlp24", players=players, **kw)
+    # the CLI exits with 2 before reading anything (its vectors directory does not even exist)
+    r = _run_fold0_cli("--rung", "r2_mlp24", "--per-player", 4, "--out", out, "--chosen-from", summary,
+                       "--vectors", tmp_path / "none", "--rank-model", model)
+    assert r.returncode == 2, r.stderr
+    assert "fold 0" in r.stderr and str(out) in r.stderr
+    # a run that reaches the end after another one wrote the file does not overwrite it either
+    with pytest.raises(FileExistsError):
+        ladder_fold0.write_once(out, {"rung": "other"})
+    assert out.read_bytes() == first and [p.name for p in out.parent.iterdir()] == ["fold0_eval.json"]
+
+
+def test_fold0_paired_alignment():
+    rng = np.random.RandomState(5)
+    keys = _keys_table(folds=(0,), per_class=3)
+    a = keys.assign(score=rng.choice([0.0, ADJACENT, 1.0], size=len(keys)))
+    b = keys.assign(score=rng.choice([0.0, ADJACENT, 1.0], size=len(keys)))
+    d = ladder_fold0.paired(a, b, "a vs b", n_boot=200)
+    ref = paired_diff(a["score"], b["score"], keys["y"], keys["player_id"], keys["n_games"], n=200)
+    assert (d["diff"], d["ci95"], d["by_n"], d["n_boot"]) == (ref["diff"], ref["ci95"], ref["by_n"], 200)
+    assert ladder_fold0.paired(a, a, "a vs a", n_boot=50)["diff"] == 0.0
+    shuffled = b.sample(frac=1.0, random_state=0).reset_index(drop=True)  # same questions, another order
+    dropped = b.iloc[1:].reset_index(drop=True)
+    renamed = b.assign(question_id=b["question_id"].where(b.index != 3, "other_question"))
+    for bad in (shuffled, dropped, renamed):
+        with pytest.raises(ValueError, match="question_id"):
+            ladder_fold0.paired(a, bad, "a vs bad", n_boot=50)
+        with pytest.raises(ValueError, match="question_id"):
+            ladder_fold0.paired(bad, a, "bad vs a", n_boot=50)
+
+
+def test_fold0_static_rung_is_fitted_once(tmp_path, monkeypatch):
+    _, players, vec, _, model = _fold0_case(tmp_path, [])
+    doc = _strict(model.read_text())
+    calls = []
+    orig = ladder_fold0._static_split
+
+    def spy(rung, vec, train_q, val_q, counts):
+        calls.append(rung)
+        assert sorted(train_q["fold"].unique()) == [1, 2, 3, 4] and set(val_q["fold"]) == {0}
+        return orig(rung, vec, train_q, val_q, counts)
+
+    monkeypatch.setattr(ladder_fold0, "_static_split", spy)
+    kw = dict(production=doc, seeds=(0, 1, 2), per_player=4, device="cpu", n_boot=50)
+    res = ladder_fold0.evaluate_fold0("r2_mlp24", vec, players, **kw)
+    assert calls == ["r2_mlp24"]  # deterministic: fitted once, whatever the seeds, and it is its own base
+    assert (res["kind"], res["seeds"], res["per_player"], res["counts"]) == ("static", None, 4, True)
+    assert res["n_questions"] == 20 * 7 and res["n_players"] == 20 and res["n_train_questions"] == 4 * 20 * 4
+    h = res["headline"]
+    assert h["ci95"][0] <= h["balanced_mean_over_n"] <= h["ci95"][1] and h["n_boot"] == 50 and "per_seed" not in h
+    assert res["vs_base"]["diff"] == 0.0 and res["vs_base"]["ci95"] == [0.0, 0.0]
+    # retrained on fold 0's split exactly as fit_rank_model trains its final model: the production model itself
+    assert res["vs_production"]["diff"] == 0.0 and res["vs_production"]["ci95"] == [0.0, 0.0]
+    assert h["balanced_mean_over_n"] == res["production"]["balanced_mean_over_n"] == res["base"]["balanced_mean_over_n"]
+
+    calls.clear()
+    res = ladder_fold0.evaluate_fold0("r0_sum", vec, players, **kw)
+    assert calls == ["r0_sum", "r2_mlp24"] and res["seeds"] is None  # the rung once, then its base: r2_mlp24 refitted
+    assert res["vs_base"]["diff"] == pytest.approx(res["headline"]["balanced_mean_over_n"] - res["base"]["balanced_mean_over_n"],
+                                                   abs=1e-12)
+    assert res["base"]["balanced_mean_over_n"] == res["production"]["balanced_mean_over_n"]
+
+
+def test_fold0_set_rung_seed_mean(tmp_path, monkeypatch):
+    _, players, vec, _, model = _fold0_case(tmp_path, [], pp=2)
+    doc = _strict(model.read_text())
+    runs, crossfits = {}, []
+    orig_split, orig_crossfit = ladder_fold0._set_split, ladder.crossfit_base_logits
+
+    def spy_split(rung, v, vec, train_q, val_q, counts, per_player, seed, device, cache):
+        out, info = orig_split(rung, v, vec, train_q, val_q, counts, per_player, seed, device, cache)
+        assert v == 0 and sorted(train_q["fold"].unique()) == [1, 2, 3, 4] and set(val_q["fold"]) == {0}
+        runs[seed] = (val_q, out[""])
+        return out, info
+
+    def spy_crossfit(*a, **k):
+        crossfits.append(1)
+        return orig_crossfit(*a, **k)
+
+    monkeypatch.setattr(ladder_fold0, "_set_split", spy_split)
+    monkeypatch.setattr(ladder, "crossfit_base_logits", spy_crossfit)
+    res = ladder_fold0.evaluate_fold0("r3_null", vec, players, production=doc, seeds=(0, 1), per_player=2, device="cpu",
+                                      n_boot=50)
+    assert sorted(runs) == [0, 1] and len(crossfits) == 1  # one training per seed; one 4-fold base shared by the seeds
+    assert (res["kind"], res["seeds"]) == ("set", [0, 1])
+    val_q = runs[0][0]
+    y, n = val_q["rank"].map(RANK_TO_IDX).to_numpy(), val_q["n_games"].to_numpy()
+    scores = {s: evaluate(P, y, val_q)[1] for s, (_, P) in runs.items()}
+    s_mean = (scores[0] + scores[1]) / 2  # per question the mean over seeds, as the CV summary
+    h = res["headline"]
+    assert h["balanced_mean_over_n"] == pytest.approx(balanced_mean_over_n(s_mean, y, n), abs=1e-12)
+    assert h["per_seed"] == pytest.approx({str(s): balanced_mean_over_n(scores[s], y, n) for s in (0, 1)}, abs=1e-12)
+    # the base is the 4-fold cross-fit's validation base (Δ ≡ 0) of the same training questions
+    tq, vq = ladder.training_questions(players, 0, (1, 2, 3, 4), 2), ladder.validation_questions(players, 0)
+    _, base_val, _ = ladder.split_base(0, vec, tq, vq, per_player=2)
+    s_base = evaluate(_softmax(base_val), y, vq)[1]
+    assert res["base"]["balanced_mean_over_n"] == pytest.approx(balanced_mean_over_n(s_base, y, n), abs=1e-12)
+    for key, ref in (("vs_base", res["base"]), ("vs_production", res["production"])):
+        c = res[key]
+        assert c["diff"] == pytest.approx(h["balanced_mean_over_n"] - ref["balanced_mean_over_n"], abs=1e-12)
+        assert c["per_seed"] == pytest.approx({s: h["per_seed"][s] - ref["balanced_mean_over_n"] for s in ("0", "1")},
+                                              abs=1e-12)
+    json.loads(ladder.to_json(res))
+
+
+def test_fold0_cli_refusals_before_loading(tmp_path):
+    out, summary = tmp_path / "fold0_eval.json", tmp_path / "cv_summary.json"
+    common = ["--out", out, "--chosen-from", summary, "--vectors", tmp_path / "none", "--rank-model", tmp_path / "none.json"]
+    r = _run_fold0_cli("--rung", "r3_null", *common)  # the summary the rung was chosen from is missing
+    assert r.returncode == 2, r.stderr
+    assert str(summary) in r.stderr
+    summary.write_text(json.dumps({"rungs": {"r3_null@nocounts": {}, "r2_mlp24@pp8": {}}}))
+    for args, label in ((["--rung", "r3_null"], "r3_null"), (["--rung", "r2_mlp24"], "r2_mlp24"),
+                        (["--rung", "r2_mlp24", "--per-player", 16], "r2_mlp24@pp16")):
+        r = _run_fold0_cli(*args, *common)  # no CV results for this configuration
+        assert r.returncode == 2, r.stderr
+        assert f"'{label}'" in r.stderr
+    for args in (["--rung", "r3_null", "--no-counts"], ["--rung", "r2_mlp24", "--per-player", 8]):
+        r = _run_fold0_cli(*args, *common)  # the label is in the summary: past the refusals, stops at the missing inputs
+        assert r.returncode not in (0, 2), r.stderr
+        assert "fold0.npz" in r.stderr and "none.json" in r.stderr
+    out.write_text("{}")
+    summary.unlink()
+    r = _run_fold0_cli("--rung", "r3_null", *common)  # an existing output is refused first
+    assert r.returncode == 2, r.stderr
+    assert "fold 0" in r.stderr and out.read_text() == "{}"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["fold0_eval.json"]
+
+
+def _fold0_skip_reason():
+    need = {"results/ladder/vectors/fold0.npz (scripts/ladder_build_vectors.py --folds 0)": VECTORS / "fold0.npz",
+            "results/rank_model_eval.json": ROOT / "results" / "rank_model_eval.json",
+            "results/models/rank_model.json": ROOT / "results" / "models" / "rank_model.json",
+            "data/training (the training CSVs)": ROOT / "data" / "training",
+            "splits/player_folds.csv": ROOT / "splits" / "player_folds.csv"}
+    missing = [name for name, path in need.items() if not path.exists()]
+    return f"absent: {', '.join(missing)}" if missing else ""
+
+
+@pytest.mark.skipif(bool(_fold0_skip_reason()), reason=_fold0_skip_reason())
+def test_fold0_production_reproduces_rank_model_eval():
+    # the production model's fold-0 score was reported already (rank_model_eval.json): this trains no rung and
+    # spends nothing; it pins the fold-0 loading path of ladder_fold0 (players, vectors, pilot questions, features)
+    ref = _strict((ROOT / "results" / "rank_model_eval.json").read_text())
+    assert ref["eval_fold"] == 0 and ref["choice"] == "mlp_h32"
+    want = ref["eval"]["mlp_h32"]["balanced_mean_over_n"]
+    assert want == 0.6130870708449819
+    doc = _strict(ladder_fold0.RANK_MODEL.read_text())
+    vec, fold_of, players = ladder_fold0.load_inputs(VECTORS, folds=(0,))
+    assert set(fold_of) == {0} and list(players) == [0]
+    df = ladder_fold0.production_frame(doc, vec, ladder.validation_questions(players, 0))
+    got = balanced_mean_over_n(df["score"], df["y"], df["n_games"])
+    assert abs(got - want) <= 1e-12, got - want
+    assert len(df) == np.sum(ref["eval"]["mlp_h32"]["confusion_rows_truth_cols_pred"]) and set(df["fold"]) == {0}

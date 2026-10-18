@@ -89,6 +89,33 @@ sbatch -p 8gpus --gres=gpu:8 -c 96 -t 2-00:00:00 -J score8 scripts/nano4/run.sba
 
 常用指令：`squeue -u $USER` 看排隊和執行中的工作，`scancel <jobid>` 取消，`sacct -j <jobid>` 看結束後的狀態。
 
+L3 聚合器梯子（`docs/superpowers/plans/2026-10-19-l3-aggregator-ladder-ctm.md` Task 9）的工作都在 `~/BK_AICUP_2026-1` 下送出，並一律加 `--exclude=25a-hgpn[001,003,004,007,062]` 避開壞 GPU 節點。輸出全部在 `results/ladder/`。
+
+建每局向量（folds 0–4）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J ladvec scripts/nano4/run.sbatch python -I scripts/ladder_build_vectors.py --folds 0 1 2 3 4
+```
+
+folds 1–4 的 CV：靜態梯子、(3) 和對照，再跑一次每人 8 題的 `r2_mlp24`（摘要裡的 `r2_mlp24@pp8`，正式模型的訓練量）。摘要寫到 `results/ladder/cv_summary.json`：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus -t 12:00:00 -J ladder3 scripts/nano4/run.sbatch python -I scripts/ladder_cv.py --rungs r0_sum r1_clip r1_trim r2_mlp24 r2_staged r2_whole r2_length_only r2_pooled_delta r3_null r3_deepsets r3_deepsets_whole r3_settf
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus -t 12:00:00 -J ladder3 scripts/nano4/run.sbatch python -I scripts/ladder_cv.py --rungs r2_mlp24 --per-player 8
+```
+
+(4)(5) 只在摘要的 `G_set` 成立時跑；不成立時腳本 exit 2，要跑就得另加 `--force`：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus -t 24:00:00 -J ladder45 scripts/nano4/run.sbatch python -I scripts/ladder_cv.py --rungs r4_xattn r5_ctm r5_ctm_minmax
+```
+
+fold 0 的評估**只跑一次**，而且只在使用者從 `cv_summary.json` 選定 rung 之後才跑。CV 若用了 `--per-player` 或 `--no-counts`，這裡要給一樣的參數，讓設定對得上摘要裡的標籤（對不上就 exit 2）。結果寫到 `results/ladder/fold0_eval.json`，這個檔已存在時腳本 exit 2，不會重評：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus -t 12:00:00 -J ladf0 scripts/nano4/run.sbatch python -I scripts/ladder_eval_fold0.py --rung <選定>
+```
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：
