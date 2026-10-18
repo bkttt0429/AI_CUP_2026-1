@@ -1,6 +1,13 @@
 # 國網 nano4 使用說明
 
-把專案搬到 NCHC nano4（每個節點 8 張 H200），並在上面跑 GPU 工作。nano4 只接受密碼加 OTP 登入，所以下面每一個 `scp` 和 `ssh` 都要你自己輸入。腳本都放在 `scripts/nano4/`。
+把專案搬到 NCHC nano4（每個節點 8 張 H200），並在上面跑 GPU 工作。nano4 只接受密碼加 2FA 登入，所以下面每一個 `scp` 和 `ssh` 都要你自己輸入。腳本都放在 `scripts/nano4/`。
+
+nano4 用同一個主機名稱 `nano4.nchc.org.tw` 提供兩種服務（見[官方手冊：登入與傳輸節點](https://man.twcc.ai/@nano4-manual/BydP-_lvZg)、[資料傳輸節點操作流程](https://man.twcc.ai/@nano4-manual/Hkayr3zvWl)）：
+
+| 連接埠 | 節點 | 用途 |
+| --- | --- | --- |
+| 22 | 登入節點 | `ssh` 登入、`sbatch` 送工作；沒有 SFTP，`scp` 到這裡會在 2FA 之後出現 `Connection closed` |
+| 2222 | 資料傳輸節點 | 只能傳檔（`scp -P 2222`、`sftp -P 2222`、WinSCP／FileZilla 選 SFTP、埠號 2222），不能登入 |
 
 ## 1. 上傳與解開（只做一次）
 
@@ -11,8 +18,10 @@ cd D:/AICUP_transfer
 ```
 
 ```bash
-scp AICUP_2026-1.tar.xz AICUP_2026-1.tar.xz.sha256 AICUP_2026-1.files.sha256 AICUP_2026-1_nano4.tar.gz nano4:~/
+scp -P 2222 AICUP_2026-1.tar.xz AICUP_2026-1.tar.xz.sha256 AICUP_2026-1.files.sha256 AICUP_2026-1_nano4.tar.gz nano4:~/
 ```
+
+傳到一半斷線時，`scp` 會從頭重傳；改用 `sftp -P 2222 nano4`，連上後輸入 `reput AICUP_2026-1.tar.xz` 可以從中斷處接著傳。
 
 登入 nano4 後，解開並核對：
 
@@ -82,7 +91,7 @@ sbatch -p 8gpus --gres=gpu:8 -c 96 -t 2-00:00:00 -J score8 scripts/nano4/run.sba
 
 ## 5. 同步程式碼、取回結果
 
-在本機改完程式後，用 Git Bash 同步。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：
+在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：
 
 ```bash
 bash scripts/sync_to_nano4.sh
@@ -91,11 +100,12 @@ bash scripts/sync_to_nano4.sh
 從國網把結果拉回本機，例如：
 
 ```bash
-scp nano4:AICUP_2026-1/results/bench_nano4.json results/
+scp -P 2222 nano4:AICUP_2026-1/results/bench_nano4.json results/
 ```
 
 ## 6. 被拒或出錯時
 
+- `scp` 在 2FA 之後出現 `Connection closed`：連到了 22 埠的登入節點，加上 `-P 2222` 改走傳輸節點。
 - 計畫或分區不對：用 `-A <計畫代號>` 或 `-p <分區>` 覆蓋。預設計畫是 gov113074。
 - CPU 或 GPU 數量不符合分區規定：用 `-c` 和 `--gres=gpu:N` 調整，錯誤訊息通常會寫出上限。
 - 記憶體不足：加上 `--mem=64G` 之類的參數。
