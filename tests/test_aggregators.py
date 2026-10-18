@@ -245,10 +245,11 @@ def test_ctm_action_sync_includes_z0():
     torch.testing.assert_close(a1, z0[:, ia[:, 0]] * z0[:, ia[:, 1]], atol=1e-6, rtol=1e-5)
     torch.testing.assert_close(a2, (z0[:, ia[:, 0]] * z0[:, ia[:, 1]] + z1[:, ia[:, 0]] * z1[:, ia[:, 1]]) / 2 ** 0.5,
                                atol=1e-6, rtol=1e-5)
-    # output: the history leaves z0 out, so tick 1 reads [z1] and tick 2 [z1, z2]
-    torch.testing.assert_close(o1, z1[:, io[:, 0]] * z1[:, io[:, 1]], atol=1e-6, rtol=1e-5)
-    torch.testing.assert_close(o2, (z1[:, io[:, 0]] * z1[:, io[:, 1]] + z2[:, io[:, 0]] * z2[:, io[:, 1]]) / 2 ** 0.5,
-                               atol=1e-6, rtol=1e-5)
+    # output (pinned here too): the history also starts with z0 (the original seeds the 'out'
+    # accumulators with the start state before the loop), so tick 1 reads [z0, z1], tick 2 [z0, z1, z2]
+    pp = lambda z: z[:, io[:, 0]] * z[:, io[:, 1]]
+    torch.testing.assert_close(o1, (pp(z0) + pp(z1)) / 2 ** 0.5, atol=1e-6, rtol=1e-5)
+    torch.testing.assert_close(o2, (pp(z0) + pp(z1) + pp(z2)) / 3 ** 0.5, atol=1e-6, rtol=1e-5)
     with torch.no_grad():
         torch.testing.assert_close(out, torch.stack([model.w_out(o1), model.w_out(o2)], dim=1), atol=1e-6, rtol=1e-5)
 
@@ -263,7 +264,7 @@ def test_ctm_action_sync_includes_z0():
     Z = [z0] + tap.z
     for t in range(3):
         torch.testing.assert_close(tap.s_act[t], _ctm_sync(Z[:t + 1], ia, r_act), atol=1e-6, rtol=1e-5)
-        torch.testing.assert_close(tap.s_out[t], _ctm_sync(Z[1:t + 2], io, r_out), atol=1e-6, rtol=1e-5)
+        torch.testing.assert_close(tap.s_out[t], _ctm_sync(Z[:t + 2], io, r_out), atol=1e-6, rtol=1e-5)
     assert float(model.r_act.detach().min()) == 0.0 and float(model.r_act.detach().max()) == 15.0  # projected in place
 
 

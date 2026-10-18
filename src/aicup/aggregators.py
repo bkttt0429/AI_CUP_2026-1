@@ -209,12 +209,12 @@ class CTM(nn.Module):
     first n_sync_action for action, the next n_sync_out for output), each pair with a learned decay
     r_p (starts at 0 = no decay; projected to [0, 15] on every forward, as in the original).
 
-    Each tick: s_act = sync over [z0, z1, ...] (the action history starts with the learned z0);
-    o = MultiheadAttention(W_q s_act; keys, values = the tokens, key_padding_mask = ~mask);
-    a = synapse([z, o, qglob]) (Linear -> GLU -> LayerNorm(d_latent)); A keeps the last `history`
-    a's (starting from the learned A0); z = NLM(A); Δ_t = W_out(sync over [z1, ...]) (the output
-    history leaves z0 out; W_out zero-initialised). Returns the Δ of all ticks, [B, T, 10],
-    T = `ticks` (constructor default 8, overridable in forward)."""
+    Each tick t: s_act = sync over [z0, ..., z_{t-1}]; o = MultiheadAttention(W_q s_act; keys,
+    values = the tokens, key_padding_mask = ~mask); a = synapse([z, o, qglob]) (Linear -> GLU ->
+    LayerNorm(d_latent)); A keeps the last `history` a's (starting from the learned A0); z_t = NLM(A);
+    Δ_t = W_out(sync over [z0, ..., z_t]) (W_out zero-initialised). Both histories start with the
+    learned z0, as in the original, which seeds the action and the output accumulators with the start
+    state. Returns the Δ of all ticks, [B, T, 10], T = `ticks` (constructor default 8, overridable in forward)."""
 
     def __init__(self, d_in, d_glob=6, d_tok=128, d_latent=256, history=8, nlm_hidden=16, heads=4, ticks=8,
                  n_sync_action=512, n_sync_out=512, pair_seed=0):
@@ -247,7 +247,7 @@ class CTM(nn.Module):
         x = self.enc(_clean(tokens, mask))
         A = self.A0.expand(len(x), -1, -1)
         z = self.z0.expand(len(x), -1)
-        Z_act, Z_out, deltas = [z], [], []
+        Z_act, Z_out, deltas = [z], [z], []  # both sync histories start with z0
         for _ in range(self.ticks if ticks is None else ticks):
             s_act = _sync(Z_act, self.idx_act, self.r_act)
             o = self.attn(self.w_q(s_act)[:, None], x, x, key_padding_mask=kpm, need_weights=False)[0][:, 0]
