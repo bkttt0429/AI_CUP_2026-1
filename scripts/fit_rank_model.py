@@ -22,13 +22,12 @@ if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 from aicup.evidence import bootstrap_ci, bootstrap_ci_mean_over_sizes  # noqa: E402
 from aicup.humansl import PROFILES  # noqa: E402
-from aicup.metric import LEVELS, expected_score_decision, score  # noqa: E402
 from aicup.pilot import pilot_questions  # noqa: E402
+from aicup.qeval import SIZES, evaluate  # noqa: E402
 from aicup.qfeatures import FEATURE_NAMES, build_matrix, sample_questions  # noqa: E402
 from aicup.rankmodel import MLPModel, SoftmaxModel, ThresholdModel  # noqa: E402
 from aicup.scoring import fold_players, player_games, read_scored_games  # noqa: E402
 
-SIZES = (5, 10, 20)
 CANDIDATES = {
     "threshold_pmi": lambda: ThresholdModel(feature=FEATURE_NAMES.index("pmi_sum")),
     "threshold_peak": lambda: ThresholdModel(feature=FEATURE_NAMES.index("peak_interp")),
@@ -50,26 +49,6 @@ def load_fold(fold, all_games, folds_df, scores_dir):
     if games.isna().any().any():
         raise ValueError(f"fold {fold}: NaN in scored games")
     return games, players
-
-
-def evaluate(proba, y, qs):
-    pred = np.array([expected_score_decision(p) for p in proba])
-    s = np.array([score(p, t) for p, t in zip(pred, y)])
-    n = qs["n_games"].to_numpy()
-
-    def balanced(mask):
-        return float(np.mean([s[mask & (y == k)].mean() for k in range(10) if (mask & (y == k)).any()]))
-
-    out = {"balanced_by_n": {int(m): balanced(n == m) for m in SIZES}}
-    out["balanced_mean_over_n"] = float(np.mean(list(out["balanced_by_n"].values())))
-    out["question_mean"] = float(s.mean())
-    out["per_class"] = {LEVELS[k]: float(s[y == k].mean()) for k in range(10)}
-    out["exact"] = float((pred == y).mean())
-    out["within1"] = float((np.abs(pred - y) <= 1).mean())
-    conf = np.zeros((10, 10), dtype=int)
-    np.add.at(conf, (y, pred), 1)
-    out["confusion_rows_truth_cols_pred"] = conf.tolist()
-    return out, s
 
 
 def main():
