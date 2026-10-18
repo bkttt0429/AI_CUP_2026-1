@@ -5,8 +5,9 @@ For every requested rung and seed (static rungs: seed 0 only, they are determini
 --seeds, default 0 1 2) runs aicup.ladder.run_rung_cv and writes
 <out>/{rung}[_pp{N}][_nocounts]_s{seed}.npz; existing files are skipped, so a rerun resumes. The set
 rungs' base logits are cached in <out>/base_v{v}[_pp{N}][_nocounts].npz. At the end every file in
-<out> is summarised (aicup.ladder.summarize, gates) into <out>/../cv_summary.json, by default
-results/ladder/cv_summary.json.
+<out> is summarised (aicup.ladder.summarize, gates) into <out.parent>/<out.name>_summary.json: the
+default --out results/ladder/cv gives results/ladder/cv_summary.json, a sibling such as
+results/ladder/cv_pp8 gives cv_pp8_summary.json and never overwrites the main summary.
 
 The iterative rungs (r4_*, r5_*) run only when the summary of <out> holds the r3 rungs and their
 controls and G_set passes; otherwise the reason is printed and the exit code is 2 (--force overrides).
@@ -36,7 +37,9 @@ def main(argv=None):
     ap.add_argument("--folds", type=int, nargs="+", default=list(CV_FOLDS))
     ap.add_argument("--per-player", type=int, default=DEFAULT_PER_PLAYER)
     ap.add_argument("--vectors", default=str(ROOT / "results" / "ladder" / "vectors"))
-    ap.add_argument("--out", default=str(ROOT / "results" / "ladder" / "cv"))
+    ap.add_argument("--out", default=str(ROOT / "results" / "ladder" / "cv"),
+                    help="CV files and base caches; the summary goes to <out.parent>/<out.name>_summary.json "
+                         "(default results/ladder/cv_summary.json)")
     ap.add_argument("--no-counts", action="store_true", help="game-length ablation (ladder_data counts=False)")
     ap.add_argument("--force", action="store_true", help="run r4/r5 even when G_set does not hold")
     ap.add_argument("--summarize-only", action="store_true")
@@ -77,7 +80,7 @@ def main(argv=None):
 
     summary = summarize(out)
     summary["gates"] = gates(summary)
-    summary_path = out.parent / "cv_summary.json"
+    summary_path = out.parent / f"{out.name}_summary.json"
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(to_json(summary, indent=1) + "\n")
     for label, r in summary["rungs"].items():

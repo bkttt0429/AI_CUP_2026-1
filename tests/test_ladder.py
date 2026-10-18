@@ -1,4 +1,5 @@
 import copy
+import dataclasses
 import json
 import math
 import subprocess
@@ -223,6 +224,7 @@ def _bal(s, y, n):
     return np.mean([np.mean([s[(y == k) & (n == m)].mean() for k in np.unique(y[n == m])]) for m in (5, 10, 20)])
 
 
+@pytest.mark.filterwarnings("error::RuntimeWarning")  # the summary of a fold set missing classes stays quiet
 def test_summarize_pools_folds_and_seed_mean(tmp_path):
     rng = np.random.RandomState(3)
     keys = _keys_table()
@@ -232,6 +234,7 @@ def test_summarize_pools_folds_and_seed_mean(tmp_path):
               ("r2_mlp24", 0, 8): _frame(keys, rng, "r2_mlp24", 0, per_player=8)}
     for s in (0, 1, 2):
         frames[("r3_settf", s, 32)] = _frame(keys, rng, "r3_settf", s)
+    frames[("r3_deepsets", 0, 32)] = _frame(keys, rng, "r3_deepsets", 0)  # a set rung with only seed 0 so far
     for (rung, s, pp), df in frames.items():
         ladder.save_cv(df, cv / ladder.cv_filename(rung, s, per_player=pp))
     back, meta = ladder.load_cv(cv / ladder.cv_filename("r3_settf", 1))
@@ -273,9 +276,19 @@ def test_summarize_pools_folds_and_seed_mean(tmp_path):
     lo, hi = c["ci95"]
     k = math.sqrt(2.33)
     assert c["nb_ci95"] == pytest.approx([c["diff"] - k * (c["diff"] - lo), c["diff"] + k * (hi - c["diff"])], abs=1e-12)
-    assert c["nb_ci95"][0] <= lo <= hi <= c["nb_ci95"][1] and c["set"] is True
+    assert c["nb_ci95"][0] <= lo <= hi <= c["nb_ci95"][1]
+    assert (c["kind_a"], c["kind_b"], c["seeds_a"], c["seeds_b"]) == ("set", "static", [0, 1, 2], [0])
     pp8 = S["comparisons"]["r2_mlp24@pp8 vs r2_mlp24"]
-    assert list(pp8["per_seed"]) == ["0"] and pp8["set"] is False
+    assert list(pp8["per_seed"]) == ["0"] and (pp8["kind_a"], pp8["kind_b"]) == ("static", "static")
+    # set vs set with one side at seed 0 only: one matched seed, and the per-seed condition fails
+    d = S["comparisons"]["r3_settf vs r3_deepsets"]
+    assert list(d["per_seed"]) == ["0"] and d["seeds_b"] == [0]
+    assert d["per_seed"]["0"] == pytest.approx(per_seed[0] - _bal(frames[("r3_deepsets", 0, 32)]["score"].to_numpy(), y, n),
+                                               abs=1e-12)
+    assert ladder.check_comparison({**d, "n_boot": 5000})["conditions"]["every_seed_gt_0"] is False
+    # a 200-replicate summary cannot decide a gate
+    assert c["n_boot"] == 200 and not ladder.check_comparison(c)["pass"]
+    assert any("n_boot" in why for why in ladder.check_comparison(c)["reasons"])
     json.loads(ladder.to_json({**S, "gates": ladder.gates(S)}))  # strict JSON: no NaN / Infinity
 
     bad = frames[("r3_settf", 2, 32)].iloc[::-1].reset_index(drop=True)
@@ -287,9 +300,15 @@ def test_summarize_pools_folds_and_seed_mean(tmp_path):
 
 # ---------------------------------------------------------------- gates
 
-def _cmp(diff=0.01, lo=0.002, folds=(0.01, 0.02, 0.005, -0.001), seeds=(0.01, 0.012, 0.008), set_=True):
+def _cmp(diff=0.01, lo=0.002, folds=(0.01, 0.02, 0.005, -0.001), seeds=(0.01, 0.012, 0.008), kinds=("set", "set"),
+         seeds_a=None, seeds_b=None, n_boot=5000):
+    """A comparison dict as summarize writes it; a static side has seed [0], a set side one seed per per-seed value."""
+    def side(kind, given):
+        return given if given is not None else [0] if kind == "static" else list(range(len(seeds)))
+
     return {"diff": diff, "ci95": [lo, diff + 0.01], "per_fold": {str(f): d for f, d in zip((1, 2, 3, 4), folds)},
-            "per_seed": {str(s): d for s, d in enumerate(seeds)}, "set": set_}
+            "per_seed": {str(s): d for s, d in enumerate(seeds)}, "kind_a": kinds[0], "kind_b": kinds[1],
+            "seeds_a": side(kinds[0], seeds_a), "seeds_b": side(kinds[1], seeds_b), "n_boot": n_boot}
 
 
 def test_gates_logic():
@@ -297,7 +316,7 @@ def test_gates_logic():
     assert set(ladder.GATES) == {"G_rep", "G_set", "G_iter", "G_sync"}
     assert ladder.GATES["G_set"] == [("r3_settf", "r3_deepsets"), ("r3_settf", "r2_pooled_delta")]
     summary = {"comparisons": {f"{a} vs {b}": _cmp() for a, b in pairs}}
-    summary["comparisons"]["r2_staged vs r2_whole"] = _cmp(seeds=(0.01,), set_=False)  # two static rungs: one "seed"
+    summary["comparisons"]["r2_staged vs r2_whole"] = _cmp(seeds=(0.01,), kinds=("static", "static"))  # one "seed"
     g = ladder.gates(summary)
     assert all(g[name]["pass"] for name in ladder.GATES)
 
@@ -313,9 +332,21 @@ def test_gates_logic():
         assert g["G_set"]["comparisons"]["r3_settf vs r3_deepsets"]["pass"]
         assert g["G_rep"]["pass"] and g["G_iter"]["pass"] and g["G_sync"]["pass"]
 
-    s = copy.deepcopy(summary)  # a set rung with only 2 seeds cannot pass "all 3 seeds"
-    s["comparisons"]["r5_ctm vs r4_xattn"] = _cmp(seeds=(0.01, 0.02))
-    assert not ladder.gates(s)["G_sync"]["comparisons"]["r5_ctm vs r4_xattn"]["conditions"]["every_seed_gt_0"]
+    def seeds_ok(c):
+        return ladder.check_comparison(c)["conditions"]["every_seed_gt_0"]
+
+    # set vs set: each side needs its own 3 seeds; a 1-seed side must not be reused against the other's 3
+    assert not seeds_ok(_cmp(seeds=(0.01, 0.02, 0.03), seeds_b=[0]))  # three per-seed values, but b ran s0 only
+    assert not seeds_ok(_cmp(seeds=(0.01,), seeds_b=[0]))
+    assert not seeds_ok(_cmp(seeds=(0.01, 0.02), seeds_b=[0, 1]))
+    assert not seeds_ok(_cmp(seeds=(0.01, 0.02, 0.03), seeds_a=[0, 1]))
+    r = ladder.check_comparison(_cmp(seeds=(0.01, 0.02, 0.03), seeds_b=[0]))
+    assert any("1 seed" in why for why in r["reasons"]), r["reasons"]
+    # a static side (deterministic, seed 0) is compared with each of the set side's 3 seeds
+    assert seeds_ok(_cmp(kinds=("static", "set"))) and seeds_ok(_cmp(kinds=("set", "static")))
+    assert not seeds_ok(_cmp(seeds=(0.01, 0.02), kinds=("set", "static")))
+    assert not seeds_ok(_cmp(seeds=(0.01, -0.02, 0.01), kinds=("static", "set")))
+
     s = copy.deepcopy(summary)  # 3 of 3 folds is not 3 of 4
     s["comparisons"]["r5_ctm vs r4_xattn"]["per_fold"] = {"1": 0.01, "2": 0.01, "3": 0.01}
     assert not ladder.gates(s)["G_sync"]["pass"]
@@ -324,6 +355,31 @@ def test_gates_logic():
     g = ladder.gates(s)
     assert not g["G_iter"]["pass"] and g["G_iter"]["comparisons"]["r4_xattn vs r3_settf"]["missing"]
     assert g["G_iter"]["comparisons"]["r5_ctm vs r3_settf"]["pass"]
+    # an interval from fewer than 5000 bootstrap replicates cannot decide a gate
+    r = ladder.check_comparison(_cmp(n_boot=200))
+    assert not r["pass"] and all(r["conditions"].values()) and any("n_boot" in why for why in r["reasons"])
+
+
+def test_set_rungs_registry():
+    from aicup.aggregators import DeepSets, PooledDelta, QglobDelta, SetTransformer, n_params
+    from aicup.settrain import LOSSES, TrainCfg
+
+    expect = {"r2_pooled_delta": (PooledDelta, "staged", "final"), "r3_null": (QglobDelta, "staged", "final"),
+              "r3_deepsets": (DeepSets, "staged", "final"), "r3_settf": (SetTransformer, "staged", "final"),
+              "r3_deepsets_whole": (DeepSets, "whole", "final"), "r4_xattn": (XAttnGRU, "staged", "final"),
+              "r5_ctm": (CTM, "staged", "final"), "r5_ctm_minmax": (CTM, "staged", "ctm_minmax")}
+    assert set(ladder.SET_RUNGS) == set(expect) and ladder.RUNGS == ladder.STATIC_RUNGS | ladder.SET_RUNGS
+    assert set(ladder.EXTRAS) <= set(ladder.SET_RUNGS)
+    d_in = {"staged": len(STAGED) + 1, "whole": len(WHOLE_NAMES) + 1}  # token width: the vector + log1p(n_moves)
+    models = {}
+    for name, (rep, make, overrides) in ladder.SET_RUNGS.items():
+        cls, want_rep, want_loss = expect[name]
+        models[name] = make(d_in[rep])
+        assert type(models[name]) is cls and rep == want_rep, name
+        loss = dataclasses.replace(TrainCfg(), **overrides).loss
+        assert loss == want_loss and loss in LOSSES, name
+    ratio = n_params(models["r4_xattn"]) / n_params(models["r5_ctm"])
+    assert abs(ratio - 1) <= 0.1, ratio
 
 
 # ---------------------------------------------------------------- CLI gating
@@ -357,6 +413,17 @@ def test_force_required_for_r4_without_g_set(tmp_path):
     summary = json.loads((tmp_path / "cv_summary.json").read_text(),
                          parse_constant=lambda c: pytest.fail(f"non-standard JSON constant {c}"))
     assert summary["gates"]["G_set"]["pass"] is False and set(summary["rungs"]) == {"r3_settf", "r3_deepsets", "r2_pooled_delta"}
+
+
+def test_summary_path_follows_out(tmp_path):
+    out = tmp_path / "cv_pp8"  # a sibling --out must not overwrite the main cv_summary.json
+    df = _frame(_keys_table(folds=(1, 2, 3, 4)), np.random.RandomState(1), "r2_mlp24", 0, per_player=8)
+    ladder.save_cv(df, out / ladder.cv_filename("r2_mlp24", 0, per_player=8))
+    r = _run_cli("--summarize-only", "--out", out)
+    assert r.returncode == 0, r.stderr
+    assert (tmp_path / "cv_pp8_summary.json").exists() and not (tmp_path / "cv_summary.json").exists()
+    assert set(json.loads((tmp_path / "cv_pp8_summary.json").read_text())["rungs"]) == {"r2_mlp24@pp8"}
+    assert "<out.name>_summary.json" in _run_cli("--help").stdout
 
 
 # ---------------------------------------------------------------- real data

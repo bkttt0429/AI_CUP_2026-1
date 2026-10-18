@@ -26,7 +26,8 @@ first, then every metric is the class-balanced mean per question size averaged o
 per validation fold and on the folds pooled. Comparisons are paired on the pooled questions:
 qeval.paired_diff (player bootstrap, n=5000), per-fold and per-seed point differences and the
 Nadeau-Bengio corrected interval (variance x 2.33 = 1 + J n_test / n_train for J = 4 folds) as a
-conservative reference. gates: every pre-specified comparison of a gate must meet all of CONDITIONS.
+conservative reference. gates: every pre-specified comparison of a gate must meet all of CONDITIONS,
+on a summary bootstrapped with at least N_BOOT replicates.
 """
 import hashlib
 import json
@@ -44,7 +45,7 @@ from aicup.aggregators import CTM, DeepSets, PooledDelta, QglobDelta, SetTransfo
 from aicup.ladder_data import STATIC_RUNGS, fit_clip_k, pack_questions, static_features
 from aicup.metric import LEVELS, RANK_TO_IDX
 from aicup.pilot import pilot_questions
-from aicup.qeval import SIZES, balanced_mean_over_n, evaluate, paired_diff
+from aicup.qeval import P_FLOOR, SIZES, _balanced, balanced_mean_over_n, evaluate, paired_diff
 from aicup.qfeatures import sample_questions
 from aicup.rankmodel import N_CLASSES, _softmax, class_weights
 from aicup.scoring import TRAIN_DIR, fold_players, player_games
@@ -439,21 +440,24 @@ def _per_fold(s, y, n, fold):
     return {int(f): balanced_mean_over_n(s[fold == f], y[fold == f], n[fold == f]) for f in np.unique(fold)}
 
 
+def _nll_brier(P, y):
+    """Per question as in qeval.evaluate: -log max(p(true class), P_FLOOR) and sum_k (p_k - 1[k = y])^2."""
+    return -np.log(np.maximum(P[np.arange(len(y)), y], P_FLOOR)), ((P - np.eye(N_CLASSES)[y]) ** 2).sum(axis=1)
+
+
 def _rung_summary(run):
     y, n, fold = _arrays(run["keys"])
     s = run["mean"]
     per_seed = {seed: balanced_mean_over_n(run["scores"][seed], y, n) for seed in run["seeds"]}
-    # NLL and Brier are linear in the per-question values, so the mean over seeds of evaluate's
-    # class-balanced values is the class-balanced value of the per-question seed means
-    evals = [evaluate(run["proba"][seed], y, run["keys"])[0] for seed in run["seeds"]]
+    # per question, the mean over seeds of the NLL and Brier score defined in qeval.evaluate, then class-balanced
+    nll, brier = (np.mean(v, axis=0) for v in zip(*(_nll_brier(run["proba"][seed], y) for seed in run["seeds"])))
     out = {"rung": run["rung"], "kind": run["kind"], "per_player": run["per_player"], "counts": run["counts"],
            "extra": run["extra"], "report_only": run["extra"] is not None, "seeds": run["seeds"], "n_questions": len(y),
            "balanced_mean_over_n": balanced_mean_over_n(s, y, n),
            "balanced_by_n": {m: balanced_mean_over_n(s, y, n, sizes=(m,)) if (n == m).any() else None for m in SIZES},
            "per_fold": _per_fold(s, y, n, fold),
            "per_class": {LEVELS[k]: float(s[y == k].mean()) if (y == k).any() else None for k in range(N_CLASSES)},
-           "nll_balanced": float(np.mean([e["nll_balanced"] for e in evals])),
-           "brier": float(np.mean([e["brier"] for e in evals])),
+           "nll_balanced": _balanced(nll, y), "brier": _balanced(brier, y),
            "per_seed": per_seed, "seed_sd": float(np.std(list(per_seed.values()), ddof=1)) if len(per_seed) > 1 else None}
     first = run["meta"][run["seeds"][0]]
     if "clip_k" in first:
@@ -465,13 +469,18 @@ def _rung_summary(run):
     return out
 
 
-def _seed_pairs(sa, sb):
-    """Matched seeds of two labels: (key, seed of a, seed of b); a single-seed (static) side is reused."""
-    if len(sa) > 1 and len(sb) > 1:
-        return [(s, s, s) for s in sorted(set(sa) & set(sb))]
-    if len(sb) == 1:
+def _seed_pairs(A, B):
+    """Per-seed pairs (key, seed of a, seed of b). Only a static side (deterministic, seed 0) is reused
+    against every seed of the other side; two set rungs pair the seeds both have, so a set rung that
+    has run fewer seeds yields fewer pairs (and check_comparison counts each side's seeds)."""
+    sa, sb = A["seeds"], B["seeds"]
+    if A["kind"] == "static" and B["kind"] == "static":
+        return [(sa[0], sa[0], sb[0])]
+    if B["kind"] == "static":
         return [(s, s, sb[0]) for s in sa]
-    return [(s, sa[0], s) for s in sb]
+    if A["kind"] == "static":
+        return [(s, sa[0], s) for s in sb]
+    return [(s, s, s) for s in sorted(set(sa) & set(sb))]
 
 
 def _compare(a, b, A, B, n_boot):
@@ -486,11 +495,11 @@ def _compare(a, b, A, B, n_boot):
     k = math.sqrt(NB_VARIANCE)
     fa, fb = _per_fold(A["mean"], y, n, fold), _per_fold(B["mean"], y, n, fold)
     per_seed = {key: balanced_mean_over_n(A["scores"][s1], y, n) - balanced_mean_over_n(B["scores"][s2], y, n)
-                for key, s1, s2 in _seed_pairs(A["seeds"], B["seeds"])}
+                for key, s1, s2 in _seed_pairs(A, B)}
     return {"a": a, "b": b, "diff": diff, "ci95": [lo, hi], "by_n": d["by_n"],
             "nb_ci95": [diff - k * (diff - lo), diff + k * (hi - diff)],
             "per_fold": {f: fa[f] - fb[f] for f in fa}, "per_seed": per_seed,
-            "set": A["kind"] == "set" or B["kind"] == "set", "n_boot": n_boot}
+            "kind_a": A["kind"], "kind_b": B["kind"], "seeds_a": A["seeds"], "seeds_b": B["seeds"], "n_boot": n_boot}
 
 
 def comparison_pairs(labels):
@@ -533,25 +542,35 @@ def _gt(x, t):
 
 def check_comparison(c):
     """The four conditions of one comparison: (1) the seed-mean paired CI lower bound > 0, (2) every
-    seed's point difference > 0 with >= 3 seeds when a set rung takes part (one for two static rungs),
-    (3) >= 3 of the 4 validation folds' point differences > 0, (4) the point difference >= 0.005."""
+    per-seed point difference > 0, where each set-rung side must have run >= 3 seeds (a static side is
+    deterministic, seed 0, and is compared with each seed of the other side; two static rungs give
+    one difference) and two set rungs need >= 3 seeds in common, (3) >= 3 of the 4 validation folds'
+    point differences > 0, (4) the point difference >= 0.005. The comparison passes only with all
+    four and a CI from >= N_BOOT bootstrap replicates (a summary made with fewer cannot decide)."""
     per_seed, per_fold = list(c["per_seed"].values()), list(c["per_fold"].values())
-    need = N_SEEDS if c["set"] else 1
+    sides = [(side, c[f"kind_{side}"], len(c[f"seeds_{side}"])) for side in ("a", "b")]
+    short = [f"{side} is a set rung with {k} seed{'s' if k != 1 else ''}" for side, kind, k in sides
+             if kind != "static" and k < N_SEEDS]
+    need = N_SEEDS if any(kind != "static" for _, kind, _ in sides) else 1
     cond = {"ci_lo_gt_0": _gt(c["ci95"][0], 0.0),
-            "every_seed_gt_0": len(per_seed) >= need and all(_gt(d, 0.0) for d in per_seed),
+            "every_seed_gt_0": not short and len(per_seed) >= need and all(_gt(d, 0.0) for d in per_seed),
             "folds_gt_0_3of4": len(per_fold) == len(CV_FOLDS) and sum(_gt(d, 0.0) for d in per_fold) >= MIN_POSITIVE_FOLDS,
             "diff_ge_0.005": c["diff"] is not None and c["diff"] >= MIN_DIFF}
+    boot_ok = (c.get("n_boot") or 0) >= N_BOOT
     reasons = []
     if not cond["ci_lo_gt_0"]:
         reasons.append(f"CI lower bound {c['ci95'][0]} <= 0")
     if not cond["every_seed_gt_0"]:
-        reasons.append(f"per-seed differences {per_seed} (need {need} seeds, all > 0)")
+        reasons.append(f"per-seed differences {per_seed} (need {need} seeds per set rung, all > 0"
+                       + (f"; {', '.join(short)}" if short else "") + ")")
     if not cond["folds_gt_0_3of4"]:
         reasons.append(f"per-fold differences {per_fold} (need {MIN_POSITIVE_FOLDS} of {len(CV_FOLDS)} > 0)")
     if not cond["diff_ge_0.005"]:
         reasons.append(f"difference {c['diff']} < {MIN_DIFF}")
-    return {"pass": all(cond.values()), "missing": False, "conditions": cond, "reasons": reasons,
-            "diff": c["diff"], "ci95": c["ci95"]}
+    if not boot_ok:
+        reasons.append(f"CI from n_boot {c.get('n_boot')} < {N_BOOT} replicates: this summary cannot decide gates")
+    return {"pass": all(cond.values()) and boot_ok, "missing": False, "conditions": cond, "n_boot_ok": boot_ok,
+            "reasons": reasons, "diff": c["diff"], "ci95": c["ci95"]}
 
 
 def gates(summary):
@@ -564,7 +583,7 @@ def gates(summary):
             key = f"{a} vs {b}"
             c = summary.get("comparisons", {}).get(key)
             comps[key] = check_comparison(c) if c is not None else {
-                "pass": False, "missing": True, "conditions": {k: False for k in CONDITIONS},
+                "pass": False, "missing": True, "conditions": {k: False for k in CONDITIONS}, "n_boot_ok": False,
                 "reasons": [f"no CV results for {key}"]}
         out[name] = {"pass": all(c["pass"] for c in comps.values()), "comparisons": comps}
     return out
