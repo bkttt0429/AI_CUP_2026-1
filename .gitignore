@@ -4,6 +4,8 @@ dataset_raw/
 models/
 tools/
 repo/
+.venv/
+logs/
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -14,6 +16,7 @@ results/pilot_smoke/
 results/scores/**/*.npz
 results/scores/fold*/
 results/scores_smoke/
+results/nano4_smoke/
 data/mock_tests/
 submission_rank*.csv
 submission_rank*.json

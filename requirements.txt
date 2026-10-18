@@ -1,0 +1,22 @@
+# Pinned from the lab01 env (Python 3.12.15, 2026-10-19), minus torch and its CUDA wheels:
+# scripts/nano4/setup.sh installs torch==2.14.1+<cuda> from the PyTorch index first.
+braceexpand==0.1.7
+contourpy==1.4.0
+cycler==0.12.1
+fonttools==4.67.0
+iniconfig==2.3.1
+kiwisolver==1.5.1
+matplotlib==3.11.2
+numpy==2.5.4
+packaging==26.3
+pandas==3.0.6
+pillow==12.3.0
+pluggy==1.7.0
+Pygments==2.21.0
+pyparsing==3.3.3
+pytest==9.1.1
+python-dateutil==2.9.0.post0
+PyYAML==6.0.3
+sgfmill==1.1.1
+six==1.17.0
+webdataset==1.0.2

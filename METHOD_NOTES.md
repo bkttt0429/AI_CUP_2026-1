@@ -116,6 +116,7 @@ H200 對 RTX PRO 6000 的單卡速度比 r **未實測**。以 0B 的 4,296 評�
 - 全量 Human SL 特徵（10 個 profile，1.11×10⁹ 次評估）：lab01 約 36 小時；nano4 一個 8 卡節點 r=1 約 9 小時、r=2 約 4.5 小時，都在 8gpus 的 2 天時限內。CPU 特徵 1.11×10⁸ 局面 ÷ 226/秒/核，需要計算節點核數才能估。
 - L1b 一個 epoch（假設訓練吞吐 ≈ 推論的 1/3）：lab01 約 11 小時；nano4 一節點 r=1 約 2.8 小時、r=2 約 1.4 小時。
 - 分工：開發、測試、pilot、加速、評估與校準留在 lab01；全量特徵、L1b 全量訓練與掃描丟 nano4。第一步在 dev 分區用 1 張 H200 跑 `scripts/bench_humansl.py` 與 `nproc`，把 r 和核數換成實測值。
+- nano4 環境與工作腳本（2026-10-19）：`scripts/nano4/`（setup、smoke、run、shards），操作步驟見 `docs/NANO4.md`。torch 2.14.1 預設裝 cu126 版（lab01 是 cu130），其他套件版本照 lab01 釘在 `requirements.txt`。冒煙測試會跑完上面的第一步，並重算 fold 0 的 200 局、和 lab01 的分數逐局比對。
 
 ## 4. 開放問題
 - 測試集玩家是否與訓練集重疊。
