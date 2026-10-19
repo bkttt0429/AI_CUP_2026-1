@@ -62,7 +62,15 @@ cd ~/AICUP_2026-1 && sbatch scripts/nano4/smoke.sbatch
 
 ## 4. 平常跑工作
 
-`scripts/nano4/run.sbatch` 會在專案環境裡執行你給的指令，指令裡的 `python` 就是 `.venv` 的 Python。預設是 dev 分區、1 張 GPU、12 核、4 小時；在腳本名稱前面加 sbatch 參數就能覆蓋預設值。log 在 `logs/nano4/<工作名稱>-<jobid>.out`。
+國網規定：登入節點只用來改檔、管理檔案、查詢和送工作；測試（pytest）、分析腳本、訓練、推論一律用 Slurm 送到計算節點，而且用正式分區（`8gpus`，可以只要 1 張卡），不用 `dev`。
+
+`scripts/nano4/run.sbatch` 會在專案環境裡執行你給的指令，指令裡的 `python` 就是 `.venv` 的 Python。預設是 8gpus 分區、1 張 GPU、12 核、4 小時；在腳本名稱前面加 sbatch 參數就能覆蓋預設值。log 在 `logs/nano4/<工作名稱>-<jobid>.out`。
+
+跑測試也一樣送工作：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -J tests scripts/nano4/run.sbatch python -m pytest -q
+```
 
 ```bash
 sbatch scripts/nano4/run.sbatch python -I scripts/predict_submission.py --workers 10
@@ -82,9 +90,9 @@ sbatch -p 8gpus --gres=gpu:8 -c 96 -t 2-00:00:00 -J score8 scripts/nano4/run.sba
 
 | 分區 | 單次時限 | 用途 |
 | --- | --- | --- |
-| dev | 4 小時 | 測試和短工作（預設） |
+| dev | 4 小時 | 測試分區；正式工作不要用（國網規定） |
 | ngs1gpu、ngs2gpu、ngs4gpu、ngs8gpu | 14 天 | 1–8 張卡的長工作；計畫能不能用還沒確認 |
-| 8gpus | 2 天 | 一整個節點（8 張 H200） |
+| 8gpus | 2 天 | 預設；1–8 張 H200，可以只要 1 張 |
 | 16gpus 以上 | 1–2 天 | 多節點，目前的腳本用不到 |
 
 常用指令：`squeue -u $USER` 看排隊和執行中的工作，`scancel <jobid>` 取消，`sacct -j <jobid>` 看結束後的狀態。
@@ -97,7 +105,7 @@ L3 聚合器梯子（`docs/superpowers/plans/2026-10-19-l3-aggregator-ladder-ctm
 sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J ladvec scripts/nano4/run.sbatch python -I scripts/ladder_build_vectors.py --folds 0 1 2 3 4
 ```
 
-跑 CV 之前，先在 dev 上做一次 CUDA 冒煙：`r3_settf` 和 `r5_ctm` 各用 GPU 跑一個 seed，確認 CUDA 路徑能跑完（損失或機率出現 NaN／inf 時腳本會停下、不寫檔）。輸出在 `results/ladder/cv_smoke/`，摘要是 `results/ladder/cv_smoke_summary.json`；兩者都只是冒煙，已列在 `.gitignore`，不要 commit：
+跑 CV 之前，先做一次 CUDA 冒煙：`r3_settf` 和 `r5_ctm` 各用 GPU 跑一個 seed，確認 CUDA 路徑能跑完（損失或機率出現 NaN／inf 時腳本會停下、不寫檔）。輸出在 `results/ladder/cv_smoke/`，摘要是 `results/ladder/cv_smoke_summary.json`；兩者都只是冒煙，已列在 `.gitignore`，不要 commit：
 
 ```bash
 sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 02:00:00 -J ladsmoke scripts/nano4/run.sbatch python -I scripts/ladder_cv.py --rungs r3_settf r5_ctm --seeds 0 --force --out results/ladder/cv_smoke
@@ -109,7 +117,7 @@ folds 1–4 的 CV：靜態梯子、(3) 和對照，另加只報告、不作門�
 sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus -t 12:00:00 -J ladder3 scripts/nano4/run.sbatch python -I scripts/ladder_cv.py --rungs r0_sum r1_clip r1_trim r2_mlp24 r2_staged r2_whole r2_length_only r2_pooled_delta r3_null r3_deepsets r3_deepsets_whole r3_settf r3_pma
 ```
 
-再跑一次每人 8 題的 `r2_mlp24`（摘要裡的 `r2_mlp24@pp8`，正式模型的訓練量）。這是約 1 分鐘的靜態 CPU 工作，用預設的 dev 分區就好：
+再跑一次每人 8 題的 `r2_mlp24`（摘要裡的 `r2_mlp24@pp8`，正式模型的訓練量）。這是約 1 分鐘的靜態工作，用預設分區、1 小時就好：
 
 ```bash
 sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J ladpp8 scripts/nano4/run.sbatch python -I scripts/ladder_cv.py --rungs r2_mlp24 --per-player 8

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=aicup-smoke
 #SBATCH --account=gov113074
-#SBATCH --partition=dev
+#SBATCH --partition=8gpus
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=12
