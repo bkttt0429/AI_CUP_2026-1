@@ -3,6 +3,7 @@ import dataclasses
 import hashlib
 import json
 import math
+import re
 import subprocess
 import sys
 from functools import partial
@@ -13,7 +14,7 @@ import pandas as pd
 import pytest
 import torch
 
-from aicup import ladder, ladder_fold0
+from aicup import ladder, ladder_fold0, settrain
 from aicup.aggregators import CTM, XAttnGRU
 from aicup.gamevec import SEGMENTS, WHOLE, vec_names
 from aicup.ladder_data import pack_questions, static_features
@@ -208,8 +209,14 @@ def test_non_finite_set_model_is_refused(tmp_path, monkeypatch):
     out = tmp_path / "cv"
     argv = ["--rungs", "r3_deepsets", "--seeds", "1", "--folds", *map(str, folds), "--per-player", "2",
             "--vectors", str(vec_dir), "--out", str(out), "--device", "cpu"]
-    for where, what in (("train", "training loss"), ("predict", "probabilities"), ("extra", "probabilities.*T16")):
-        monkeypatch.setitem(ladder.SET_RUNGS, "r3_deepsets", ("staged", partial(_NaNDelta, where=where), {"epochs": 1}))
+    # fixed epochs (inner_frac = 0): the training loss and the predictions are checked after training;
+    # with the inner split (the default) a model that diverges in training is caught at the next inner
+    # evaluation, and one whose eval-mode output is NaN at evaluation 0 (Δ ≡ 0 in training mode)
+    cases = [(where, {"epochs": 1, "inner_frac": 0}, what)
+             for where, what in (("train", "training loss"), ("predict", "probabilities"), ("extra", "probabilities.*T16"))]
+    cases += [(where, {"epochs": 1}, "inner validation CE") for where in ("train", "predict")]
+    for where, overrides, what in cases:
+        monkeypatch.setitem(ladder.SET_RUNGS, "r3_deepsets", ("staged", partial(_NaNDelta, where=where), overrides))
         with pytest.raises(FloatingPointError, match=f"r3_deepsets seed 1 split 1: non-finite {what}"):
             ladder.run_rung_cv("r3_deepsets", vec_dir, folds=folds, seed=1, per_player=2, device="cpu", players=players)
         with pytest.raises(FloatingPointError, match=f"r3_deepsets seed 1 split 1: non-finite {what}"):
@@ -217,6 +224,44 @@ def test_non_finite_set_model_is_refused(tmp_path, monkeypatch):
         # no CV file and no summary: a diverged run is never scored, and a rerun does not skip it
         assert [p.name for p in out.glob("*.npz") if not p.name.startswith("base_")] == []
         assert not (tmp_path / "cv_summary.json").exists()
+
+
+INNER_ATTRS = ("best_epoch", "inner_ce_init", "inner_ce_best", "stopped_early", "n_inner_players")
+
+
+def test_cv_records_inner_early_stopping(tmp_path, monkeypatch, capsys):
+    import ladder_cv
+
+    folds = (1, 2, 3)
+    vec_dir, players = _synthetic(tmp_path, folds)  # 2 players per rank and fold: 4 per rank in a split's training folds
+    monkeypatch.setattr(ladder_cv, "load_players", lambda f: players)
+
+    def cli(out):
+        assert ladder_cv.main(["--rungs", "r3_null", "--seeds", "0", "--folds", *map(str, folds), "--per-player", "2",
+                               "--vectors", str(vec_dir), "--out", str(out), "--device", "cpu"]) == 0
+        return ladder.load_cv(out / ladder.cv_filename("r3_null", 0, per_player=2))[1], capsys.readouterr().out
+
+    meta, printed = cli(tmp_path / "cv")
+    vec, _ = ladder.load_vectors(vec_dir, folds)
+    for v in folds:
+        tq, vq = ladder.training_questions(players, v, folds, 2), ladder.validation_questions(players, v)
+        base, _, _ = ladder.split_base(v, vec, tq, vq, per_player=2)
+        y = tq["rank"].map(RANK_TO_IDX).to_numpy()
+        held = settrain.inner_players(tq["player_id"].to_numpy(), y, 0.1)
+        k = str(v)
+        assert meta["n_inner_players"][k] == tq["player_id"][held].nunique() == 10  # ceil(0.1 x 4) of each rank
+        assert meta["inner_ce_init"][k] == pytest.approx(ladder._weighted_ce(base[held], y[held]), abs=1e-12)  # Δ ≡ 0
+        assert meta["inner_ce_best"][k] <= meta["inner_ce_init"][k]
+        assert 0.0 <= meta["best_epoch"][k] <= 10 and isinstance(meta["stopped_early"][k], bool)
+    epoch = r"\d+\.\d\d( \(stopped early\))?"
+    assert re.search(rf"r3_null_pp2_s0\.npz: .*\n  best_epoch per split: 1 {epoch}  2 {epoch}  3 {epoch}\n", printed), printed
+
+    # inner_frac = 0 (fixed epochs, no checkpoint chosen): recorded as None, printed as n/a
+    monkeypatch.setitem(ladder.SET_RUNGS, "r3_null", ("staged", ladder.SET_RUNGS["r3_null"][1], {"inner_frac": 0, "epochs": 1}))
+    meta, printed = cli(tmp_path / "cv_fixed")
+    for key in INNER_ATTRS:
+        assert meta[key] == {"1": None, "2": None, "3": None}, key
+    assert "  best_epoch per split: 1 n/a  2 n/a  3 n/a\n" in printed
 
 
 def _code_sha(files):
@@ -251,6 +296,7 @@ def test_cv_records_provenance(tmp_path):
     assert set(ladder.PROVENANCE) <= set(runs["r2_mlp24"].attrs) and set(ladder.PROVENANCE) <= set(runs["r3_null"].attrs)
     assert runs["r3_null"].attrs["train_cfg"] == dataclasses.asdict(TrainCfg(seed=1, device="cpu"))
     assert runs["r3_null"].attrs["n_params"] == n_params(QglobDelta(len(STAGED) + 1))
+    assert set(INNER_ATTRS) <= set(runs["r3_null"].attrs) and not set(INNER_ATTRS) & set(runs["r2_mlp24"].attrs)
     # the summary and evaluation code is not hashed: fixing it must not mark finished training runs stale
     assert not {"src/aicup/ladder.py", "src/aicup/qeval.py", "src/aicup/ladder_fold0.py"} & set(ladder.code_version()["code_files"])
     assert ladder.code_version() == {k: runs["r3_null"].attrs[k] for k in ("git_head", "git_dirty", "code_sha256", "code_files")}

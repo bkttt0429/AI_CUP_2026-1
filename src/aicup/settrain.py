@@ -8,8 +8,14 @@ over their valid games, qglob over the questions, both with the rankmodel._stand
 done batch by batch on the device, so the caller's float32 tokens (several GB for a full fold
 set) are never copied to float64 and never modified.
 
-Training: AdamW with a cosine schedule over all steps, fixed epochs (no early stopping), a
-seeded shuffle per epoch, class-balanced weights (rankmodel.class_weights). LOSSES and PICKS map
+Training: AdamW with a cosine schedule over all steps, a seeded shuffle per epoch, class-balanced
+weights (rankmodel.class_weights). Each training player's games recur across his questions with one
+label, so a set model can memorise games -> rank (CUDA smoke 2026-10-19: training CE 1.27 -> 0.22 over
+20 fixed epochs, validation below the base). With TrainCfg.inner_frac > 0 (the default) fit_set_model
+therefore holds out inner validation players (inner_players: 10% of each rank's training players,
+INNER_SEED, the same for every rung and seed), trains on the others for at most `epochs` epochs and
+returns the weights of the lowest inner CE, evaluation 0 (Δ ≡ 0) included, without refitting on all
+players; inner_frac = 0 trains exactly `epochs` epochs on every question. LOSSES and PICKS map
 TrainCfg.loss and predict_set_model's pick to their functions: loss "final" (the last tick; the
 primary loss) or "ctm_minmax" (the original CTM's min-loss / max-certainty pair of ticks, the
 r5_ctm_minmax control); pick "final" (the last tick; every primary score) or "certain" (each
@@ -21,7 +27,8 @@ rung itself).
 """
 import math
 from dataclasses import dataclass, field
-from typing import Callable
+from decimal import Decimal
+from typing import Callable, Optional
 
 import numpy as np
 import torch
@@ -32,11 +39,16 @@ from aicup.rankmodel import N_CLASSES, _softmax, _standardise, class_weights
 
 BASE_CLIP = 1e-9
 STATS_CHUNK = 4096  # questions per chunk when accumulating the token statistics
+INNER_SEED = 2026  # inner_players' shuffle: fixed, independent of TrainCfg.seed
 
 
 @dataclass(frozen=True)
 class TrainCfg:
-    epochs: int = 20
+    """epochs: the maximum with inner_frac > 0, the exact number with inner_frac = 0. inner_frac: share of
+    each rank's training players held out for early stopping (0: none, data then needs no player_id);
+    evals_per_epoch: inner evaluations per epoch (besides evaluation 0); patience: evaluations in a row
+    without a lower inner CE before training stops."""
+    epochs: int = 10
     batch: int = 512
     lr: float = 1e-3
     weight_decay: float = 1e-4
@@ -44,11 +56,21 @@ class TrainCfg:
     seed: int = 0
     loss: str = "final"
     device: str = "cuda"
+    inner_frac: float = 0.1
+    evals_per_epoch: int = 4
+    patience: int = 8
 
 
 @dataclass
 class Fitted:
-    """A trained set model with its standardisation statistics (float64) and per-epoch mean loss."""
+    """A trained set model with its standardisation statistics (float64) and its training record.
+
+    losses: the mean training loss of each epoch begun -- the last one over the batches done when
+    training stopped inside it. With inner early stopping (cfg.inner_frac > 0): inner_ce, the inner CE
+    of every evaluation, evaluation 0 (Δ ≡ 0) first; best_eval, the evaluation whose weights the model
+    holds; best_epoch, the epochs completed at it (fractional, 0.0 for evaluation 0); stopped_early,
+    whether patience ended training before cfg.epochs; n_inner_players / n_inner_questions, the held-out
+    players and their questions. With inner_frac = 0: inner_ce is [] and the others are None."""
     model: nn.Module
     tok_mean: np.ndarray
     tok_std: np.ndarray
@@ -56,6 +78,12 @@ class Fitted:
     glob_std: np.ndarray
     cfg: TrainCfg
     losses: list = field(default_factory=list)
+    inner_ce: list = field(default_factory=list)
+    best_eval: Optional[int] = None
+    best_epoch: Optional[float] = None
+    stopped_early: Optional[bool] = None
+    n_inner_players: Optional[int] = None
+    n_inner_questions: Optional[int] = None
 
 
 def final_loss(logits_ticks, deltas, y, w, gamma):
@@ -115,18 +143,24 @@ LOSSES = {"final": final_loss, "ctm_minmax": ctm_minmax_loss}
 PICKS = {"final": _pick_final, "certain": _pick_certain}
 
 
-def _token_stats(tokens, mask, chunk=STATS_CHUNK):
-    """rankmodel._standardise(tokens[mask]) -- per-column mean and std (ddof=0) over the valid
-    tokens, std < 1e-12 -> 1 -- accumulated in float64 over chunks of questions (two passes), so
-    no float64 copy of the whole [Q, M, D] array is made."""
-    n = int(mask.sum())
+def _token_stats(tokens, mask, chunk=STATS_CHUNK, rows=None):
+    """rankmodel._standardise(tokens[rows][mask[rows]]) -- per-column mean and std (ddof=0) over the
+    valid tokens of the questions `rows` (all when None), std < 1e-12 -> 1 -- accumulated in float64
+    over chunks of questions (two passes), so no float64 copy of the whole [Q, M, D] array is made
+    (and, with rows, no copy of the selected questions beyond one chunk)."""
+    def chunks():
+        for q in range(0, len(tokens) if rows is None else len(rows), chunk):
+            sel = slice(q, q + chunk) if rows is None else rows[q:q + chunk]
+            yield tokens[sel], mask[sel]
+
+    n = int((mask if rows is None else mask[rows]).sum())
     total = np.zeros(tokens.shape[2])
-    for q in range(0, len(tokens), chunk):
-        total += tokens[q:q + chunk][mask[q:q + chunk]].sum(axis=0, dtype=np.float64)
+    for t, m in chunks():
+        total += t[m].sum(axis=0, dtype=np.float64)
     mean = total / n
     sq = np.zeros(tokens.shape[2])
-    for q in range(0, len(tokens), chunk):
-        x = tokens[q:q + chunk][mask[q:q + chunk]].astype(np.float64) - mean
+    for t, m in chunks():
+        x = t[m].astype(np.float64) - mean
         sq += np.einsum("ij,ij->j", x, x)
     std = np.sqrt(sq / n)
     std[std < 1e-12] = 1.0
@@ -169,25 +203,126 @@ class _Inputs:
         return tokens, mask, self.qglob[ix]
 
 
+def _n_inner(n, frac):
+    """Inner players of a rank with n players: ceil(frac × n) with frac taken as written in decimal
+    (0.1 × 30 is 3, not the 4 of float ceil(3.0000000000000004)), at most n − 1, none when n < 2."""
+    return 0 if n < 2 else min(n - 1, math.ceil(Decimal(repr(float(frac))) * n))
+
+
+def inner_players(player_id, y, frac, seed=INNER_SEED):
+    """Per question whether its player is held out as an inner validation player (bool [Q]).
+
+    Per rank, the rank's distinct players are sorted, shuffled with a fresh RandomState(seed) and the
+    first _n_inner(n, frac) of them are taken: ceil(frac × n) of the rank's n players, none of a rank
+    with one player, never all of them. The choice depends only on the questions' players and ranks --
+    not on their order, on TrainCfg.seed or on the model -- so every rung and seed of a split holds out
+    the same players. Every player must have one rank; 0 <= frac < 1."""
+    pid, y = np.asarray(player_id).astype(str), np.asarray(y, dtype=np.int64)
+    if pid.ndim != 1 or pid.shape != y.shape:
+        raise ValueError(f"player_id {pid.shape} and y {y.shape} must be one value per question")
+    if not 0.0 <= frac < 1.0:
+        raise ValueError(f"inner_frac must be in [0, 1), got {frac}")
+    players, inv = np.unique(pid, return_inverse=True)  # sorted
+    rank = np.empty(len(players), dtype=np.int64)
+    rank[inv] = y
+    if np.any(rank[inv] != y):
+        bad = players[np.unique(inv[rank[inv] != y])]
+        raise ValueError(f"{len(bad)} players have questions of more than one rank, e.g. {bad[:3].tolist()}")
+    chosen = np.zeros(len(players), dtype=bool)
+    for r in np.unique(rank):
+        members = np.flatnonzero(rank == r)  # in sorted player order
+        chosen[np.random.RandomState(seed).permutation(members)[:_n_inner(len(members), frac)]] = True
+    return chosen[inv]
+
+
+class _EarlyStop:
+    """Inner validation of fit_set_model on the questions ix: the CE of log_softmax(base + Δ at the
+    last tick) for the true rank, weighted by class_weights of their ranks, in float64 and without the
+    γ term, computed in eval mode without gradients. Records each CE in fitted.inner_ce, keeps a CPU
+    copy of the weights of the lowest one (ties: the earlier) and says stop after cfg.patience
+    evaluations in a row without a lower CE."""
+
+    def __init__(self, model, inputs, base, y, ix, cfg, fitted):
+        dev = cfg.device
+        self.model, self.inputs, self.batch, self.patience, self.fitted = model, inputs, cfg.batch, cfg.patience, fitted
+        self.ix = torch.from_numpy(ix).to(dev)
+        self.base = torch.tensor(base[ix], dtype=torch.float64, device=dev)
+        self.y = torch.tensor(y[ix], device=dev)
+        self.w = torch.tensor(class_weights(y[ix]), dtype=torch.float64, device=dev)
+        self.best_state, self.bad = None, 0
+
+    def ce(self):
+        self.model.eval()
+        total = torch.zeros((), dtype=torch.float64, device=self.w.device)
+        with torch.no_grad():
+            for q in range(0, len(self.ix), self.batch):
+                sl = slice(q, q + self.batch)
+                logp = (self.base[sl] + self.model(*self.inputs(self.ix[sl]))[:, -1].double()).log_softmax(dim=-1)
+                total += (self.w[sl] * -logp.gather(1, self.y[sl, None])[:, 0]).sum()
+        self.model.train()
+        return float(total / self.w.sum())
+
+    def __call__(self, epochs_done):
+        """Evaluate after epochs_done (fractional) epochs; True when training should stop."""
+        f, ce = self.fitted, self.ce()
+        if not math.isfinite(ce):
+            raise FloatingPointError(f"non-finite inner validation CE ({ce}) at inner evaluation {len(f.inner_ce)} "
+                                     f"(after {epochs_done:.4g} epochs): the model diverged")
+        f.inner_ce.append(ce)
+        if f.best_eval is None or ce < f.inner_ce[f.best_eval]:
+            f.best_eval, f.best_epoch, self.bad = len(f.inner_ce) - 1, float(epochs_done), 0
+            self.best_state = {k: v.detach().to("cpu", copy=True) for k, v in self.model.state_dict().items()}
+        else:
+            self.bad += 1
+        return self.bad >= self.patience
+
+    def restore(self):
+        self.model.load_state_dict(self.best_state)
+
+
 def fit_set_model(make: Callable[[int], nn.Module], data: dict, base, cfg: TrainCfg) -> Fitted:
     """Train make(d_in) on the packed training questions `data` against base logits [Q, 10]
     (cross-fitted, see crossfit_base_logits) with cfg; every question needs a rank (y >= 0) and the
-    standardisation statistics must be finite (ValueError otherwise)."""
+    standardisation statistics must be finite (ValueError otherwise).
+
+    cfg.inner_frac > 0 needs data["player_id"]: inner_players holds those players' questions out, and
+    the standardisation statistics, class weights and training steps use the other (training) questions
+    only. The cosine schedule spans epochs × n_batches steps (n_batches of the training questions). The
+    inner CE (_EarlyStop) is evaluated before the first step (evaluation 0, Δ ≡ 0), then after every
+    ceil(n_batches / evals_per_epoch) batches of an epoch and at its end (once per step); training stops
+    after `patience` evaluations in a row without a lower CE, and the model returned holds the weights
+    of the lowest one -- no refit on all players. A non-finite inner CE raises FloatingPointError.
+    cfg.inner_frac = 0: `epochs` epochs over every question, the last weights; player_id is not needed."""
     if cfg.loss not in LOSSES:
         raise ValueError(f"unknown loss {cfg.loss!r}; known: {list(LOSSES)}")
     if cfg.epochs < 0 or cfg.batch < 1:
         raise ValueError(f"need epochs >= 0 and batch >= 1, got {cfg.epochs}, {cfg.batch}")
+    if not 0.0 <= cfg.inner_frac < 1.0 or cfg.evals_per_epoch < 1 or cfg.patience < 1:
+        raise ValueError(f"need 0 <= inner_frac < 1, evals_per_epoch >= 1 and patience >= 1, got {cfg.inner_frac}, "
+                         f"{cfg.evals_per_epoch}, {cfg.patience}")
     base = _check(data, base)
     y = np.asarray(data["y"], dtype=np.int64)
     if len(y) != len(base) or y.min() < 0 or y.max() >= N_CLASSES:
         raise ValueError("every training question needs a rank (0 <= y < 10)")
     tokens, mask = data["tokens"], np.asarray(data["mask"], dtype=bool)
+    inner_ix = None
+    if cfg.inner_frac > 0:
+        if "player_id" not in data:
+            raise ValueError("inner_frac > 0 holds out players: the data needs player_id (or pass inner_frac=0)")
+        held = inner_players(data["player_id"], y, cfg.inner_frac)
+        if not held.any():
+            raise ValueError("no inner validation players: every rank has fewer than 2 players (pass inner_frac=0)")
+        train_ix, inner_ix = np.flatnonzero(~held), np.flatnonzero(held)
+    else:
+        train_ix = np.arange(len(y))
+    qglob = np.asarray(data["qglob"], dtype=np.float64)
     # a NaN / inf in the valid tokens or in qglob makes its column's statistics non-finite; checking the
     # O(D) statistics instead of the inputs avoids another pass over several GB of tokens, and the
-    # warnings of inf - inf are moot because any of them ends in the error below
+    # warnings of inf - inf are moot because any of them ends in the error below (a NaN / inf among
+    # the inner questions reaches the inner CE instead, which raises too)
     with np.errstate(invalid="ignore", over="ignore"):
-        tok_mean, tok_std = _token_stats(tokens, mask)
-        glob_mean, glob_std = _standardise(np.asarray(data["qglob"], dtype=np.float64))
+        tok_mean, tok_std = _token_stats(tokens, mask, rows=None if inner_ix is None else train_ix)
+        glob_mean, glob_std = _standardise(qglob if inner_ix is None else qglob[train_ix])
     for what, mean, std in (("token", tok_mean, tok_std), ("qglob", glob_mean, glob_std)):
         bad = np.flatnonzero(~(np.isfinite(mean) & np.isfinite(std)))
         if len(bad):
@@ -197,20 +332,32 @@ def fit_set_model(make: Callable[[int], nn.Module], data: dict, base, cfg: Train
         torch.manual_seed(cfg.seed)
         model = make(tokens.shape[2])
     fitted = Fitted(model.to(cfg.device), tok_mean, tok_std, glob_mean, glob_std, cfg)
+    # every question on the device once (a zero-copy view on the CPU); index arrays pick the training and
+    # the inner questions, so the split makes no copy of the tokens
     inputs = _Inputs(data, fitted, cfg.device)
     base_t = torch.tensor(base, dtype=torch.float32, device=cfg.device)
     y_t = torch.tensor(y, device=cfg.device)
-    w_t = torch.tensor(class_weights(y), dtype=torch.float32, device=cfg.device)
+    w = np.zeros(len(y))
+    w[train_ix] = class_weights(y[train_ix])
+    w_t = torch.tensor(w, dtype=torch.float32, device=cfg.device)
 
-    Q, loss_fn = len(y), LOSSES[cfg.loss]
+    Q, loss_fn = len(train_ix), LOSSES[cfg.loss]
     n_batches = -(-Q // cfg.batch)
+    every = -(-n_batches // cfg.evals_per_epoch)
     opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(1, cfg.epochs * n_batches))
     rng = np.random.RandomState(cfg.seed)
+    train_t = torch.from_numpy(train_ix).to(cfg.device)
+    early, stop, steps = None, False, 0
     model.train()
-    for _ in range(cfg.epochs):
-        order = torch.from_numpy(rng.permutation(Q)).to(cfg.device)
-        total = torch.zeros((), device=cfg.device)
+    if inner_ix is not None:
+        fitted.n_inner_players = len(np.unique(np.asarray(data["player_id"])[inner_ix]))
+        fitted.n_inner_questions = len(inner_ix)
+        early = _EarlyStop(model, inputs, base, y, inner_ix, cfg, fitted)
+        early(0.0)  # evaluation 0: Δ ≡ 0, the zero-initialised output layer (the first is the best: no stop)
+    for epoch in range(cfg.epochs):
+        order = train_t[torch.from_numpy(rng.permutation(Q)).to(cfg.device)]
+        total, seen = torch.zeros((), device=cfg.device), 0
         for b in range(n_batches):
             ix = order[b * cfg.batch:(b + 1) * cfg.batch]
             deltas = model(*inputs(ix))
@@ -220,7 +367,17 @@ def fit_set_model(make: Callable[[int], nn.Module], data: dict, base, cfg: Train
             opt.step()
             sched.step()
             total += loss.detach() * len(ix)
-        fitted.losses.append(float(total) / Q)
+            seen, steps = seen + len(ix), steps + 1
+            if early is not None and ((b + 1) % every == 0 or b + 1 == n_batches):
+                stop = early(epoch + (b + 1) / n_batches)
+                if stop:
+                    break
+        fitted.losses.append(float(total) / seen)  # a stop inside the epoch: over the batches done
+        if stop:
+            break
+    if early is not None:
+        early.restore()
+        fitted.stopped_early = steps < cfg.epochs * n_batches
     model.eval()
     return fitted
 

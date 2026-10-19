@@ -12,6 +12,9 @@ Protocol (plan 2026-10-19-l3-aggregator-ladder-ctm, Global Constraints):
   training features. Set rungs (SET_RUNGS: rep, make(d_in), TrainCfg overrides) train a correction Δ
   to cross-fitted base logits (settrain.crossfit_base_logits with the r2_mlp24 model on q24
   features); the validation base is the r2_mlp24 static rung of the split, which split_base checks.
+  Set rungs stop early on inner validation players held out of the training questions
+  (settrain.inner_players: 10% of each rank's players, the same for every rung and seed of a split);
+  the validation fold only scores.
 - Scores are always taken at the final tick; EXTRAS (more ticks at inference, each question's most
   certain tick) are extra columns of the same trained model and never enter the gates.
 
@@ -65,6 +68,8 @@ CHUNK = 8192  # questions packed at a time for the static features
 BASE_RUNG = "r2_mlp24"  # the production model: base of every set rung and reference of every comparison
 BASE_TOL = 1e-12
 KEY_COLS = ["question_id", "fold", "player_id", "y", "n_games"]
+# per-split attrs of a set rung's inner early stopping (run_rung_cv)
+INNER_KEYS = ("best_epoch", "inner_ce_init", "inner_ce_best", "stopped_early", "n_inner_players")
 
 # rung -> (vector rep, make(d_in), TrainCfg overrides); default sizes (Tasks 4-6): XAttnGRU d_hidden 256
 # has 458,250 parameters at d_in 301 and CTM 437,514 (ratio 1.047), so no size change was needed.
@@ -365,9 +370,12 @@ def _set_split(rung, v, vec, train_q, val_q, counts, per_player, seed, device, c
     rep, make, _ = SET_RUNGS[rung]
     base, base_val, base_info = split_base(v, vec, train_q, val_q, counts, per_player, cache)
     data = pack_questions(train_q, vec, rep, counts)
-    fitted = fit_set_model(make, data, base, train_cfg(rung, seed, device))
-    del data  # the training tokens (several GB) before packing the validation questions
     where = f"{rung} seed {seed} split {v}"
+    try:
+        fitted = fit_set_model(make, data, base, train_cfg(rung, seed, device))
+    except FloatingPointError as e:  # a non-finite inner validation CE, named like the checks below
+        raise FloatingPointError(f"{where}: {e}") from e
+    del data  # the training tokens (several GB) before packing the validation questions
     if not np.isfinite(fitted.losses).all():
         raise FloatingPointError(f"{where}: non-finite training loss (per-epoch means {fitted.losses})")
     val = pack_questions(val_q, vec, rep, counts)
@@ -379,7 +387,11 @@ def _set_split(rung, v, vec, train_q, val_q, counts, per_player, seed, device, c
             raise FloatingPointError(f"{where}: non-finite probabilities for {int(bad.sum())} of {len(P)} validation "
                                      f"questions ({name or 'final tick'} prediction)")
         out[name] = P
-    return out, {"base": base_info, "train_loss": fitted.losses, "n_params": n_params(fitted.model)}
+    inner = fitted.inner_ce  # [] with inner_frac = 0: no checkpoint chosen, the inner fields are None
+    return out, {"base": base_info, "train_loss": fitted.losses, "n_params": n_params(fitted.model),
+                 "best_epoch": fitted.best_epoch, "inner_ce_init": inner[0] if inner else None,
+                 "inner_ce_best": inner[fitted.best_eval] if inner else None, "stopped_early": fitted.stopped_early,
+                 "n_inner_players": fitted.n_inner_players}
 
 
 def _frame(val_q, v, probas):
@@ -402,7 +414,10 @@ def run_rung_cv(rung, vectors_dir, folds=CV_FOLDS, seed=0, per_player=DEFAULT_PE
     (and @X columns for EXTRAS). attrs: rung, kind, seed, per_player, counts, folds; the provenance
     of environment() -- git_head, git_dirty, code_sha256, code_files, torch_version, device_name
     ("cpu" for a static rung) -- train_cfg (the TrainCfg used) and n_params (None for a static rung);
-    per split n_train and wall_seconds and, by rung, clip_k (r1_clip) or base / train_loss (set rungs).
+    per split n_train and wall_seconds and, by rung, clip_k (r1_clip) or, for set rungs, base,
+    train_loss (mean per epoch begun) and the inner early stopping: best_epoch (epochs completed at
+    the kept weights, 0.0 for Δ ≡ 0), inner_ce_init (the inner CE of Δ ≡ 0), inner_ce_best,
+    stopped_early and n_inner_players -- all None when the TrainCfg has inner_frac = 0.
 
     base_cache: directory for split_base's files (None: no caching). players: {fold: fold_players
     frame}, loaded with load_players when None.
@@ -431,7 +446,7 @@ def run_rung_cv(rung, vectors_dir, folds=CV_FOLDS, seed=0, per_player=DEFAULT_PE
     # set rungs: the same in every split; static rungs have neither
     df.attrs["train_cfg"] = asdict(train_cfg(rung, seed, device)) if is_set else None
     df.attrs["n_params"] = per_split[str(folds[0])]["n_params"] if is_set else None
-    for key in ("n_train", "wall_seconds", "clip_k", "base", "train_loss"):
+    for key in ("n_train", "wall_seconds", "clip_k", "base", "train_loss", *INNER_KEYS):
         if key in per_split[str(folds[0])]:
             df.attrs[key] = {v: d[key] for v, d in per_split.items()}
     return df

@@ -1,4 +1,5 @@
 import dataclasses
+import math
 from functools import partial
 from pathlib import Path
 
@@ -91,7 +92,8 @@ def test_standardisation_uses_valid_training_tokens_only():
     mask = data["mask"]
     data["tokens"][~mask] = 1e6  # padding content must not enter the statistics
     before = data["tokens"].copy()
-    fitted = fit_set_model(partial(DeepSets, d_tok=8, hidden=8), data, base, TrainCfg(epochs=1, batch=8, device="cpu"))
+    fitted = fit_set_model(partial(DeepSets, d_tok=8, hidden=8), data, base,
+                           TrainCfg(epochs=1, batch=8, device="cpu", inner_frac=0))
     assert np.array_equal(data["tokens"], before)  # the caller's tokens are not modified
     mean, std = _standardise(before[mask].astype(np.float64))
     np.testing.assert_allclose(fitted.tok_mean, mean, rtol=1e-12, atol=1e-12)
@@ -124,7 +126,7 @@ def test_constant_columns_standardise_finite():
     base = np.log(np.full((len(data["y"]), 10), 0.1))
     for make in (partial(PooledDelta, hidden=16), partial(DeepSets, d_tok=16, hidden=16),
                  partial(SetTransformer, d_tok=16, hidden=16)):
-        fitted = fit_set_model(make, data, base, TrainCfg(epochs=1, batch=16, lr=1e-2, device="cpu"))
+        fitted = fit_set_model(make, data, base, TrainCfg(epochs=1, batch=16, lr=1e-2, device="cpu", inner_frac=0))
         assert len(fitted.losses) == 1 and np.all(np.isfinite(fitted.losses))
         assert np.all(fitted.tok_std[const] == 1.0) and np.all(fitted.glob_std[1:] == 1.0)
         P = predict_set_model(fitted, data, base)
@@ -134,7 +136,7 @@ def test_constant_columns_standardise_finite():
 
 def test_non_finite_standardisation_is_refused():
     data, base = _packed()
-    make, cpu = partial(PooledDelta, hidden=4), TrainCfg(epochs=0, device="cpu")
+    make, cpu = partial(PooledDelta, hidden=4), TrainCfg(epochs=0, device="cpu", inner_frac=0)
     for value in (np.nan, np.inf):
         tokens = data["tokens"].copy()
         tokens[0, 0, 1] = value  # a valid game: its statistics (mean, std) are not finite
@@ -177,7 +179,7 @@ def test_learns_set_interaction():
     data = _toy_max()
     base = np.zeros((len(data["y"]), 10))
     make = partial(DeepSets, d_tok=32, hidden=64)
-    cfg = TrainCfg(epochs=30, batch=32, lr=3e-3, device="cpu")
+    cfg = TrainCfg(epochs=30, batch=32, lr=3e-3, device="cpu", inner_frac=0)
     f1 = fit_set_model(make, data, base, cfg)
     P1 = predict_set_model(f1, data, base)
     assert np.mean(P1.argmax(axis=1) == data["y"]) > 0.9
@@ -288,7 +290,7 @@ def test_fit_applies_class_weights(loss):
     data, base = _packed(Q=30)
     y = np.array([0] * 18 + [1] * 6 + [2] * 3 + [3] * 2 + [4])
     data["y"] = y
-    cfg = TrainCfg(epochs=1, batch=64, loss=loss, device="cpu")
+    cfg = TrainCfg(epochs=1, batch=64, loss=loss, device="cpu", inner_frac=0)
     fitted = fit_set_model(partial(XAttnGRU, d_tok=8, d_hidden=8, heads=2, ticks=3), data, base, cfg)
     ce = -torch.tensor(base).log_softmax(dim=-1)[torch.arange(30), torch.tensor(y)].numpy()
     w = class_weights(y)
@@ -300,7 +302,8 @@ def test_fit_applies_class_weights(loss):
 def test_ctm_minmax_training_and_certain_pick():
     data, base = _packed(Q=24)
     make = partial(CTM, d_tok=8, d_latent=16, history=4, nlm_hidden=4, heads=2, ticks=3, n_sync_action=12, n_sync_out=12)
-    fitted = fit_set_model(make, data, base, TrainCfg(epochs=2, batch=8, lr=1e-2, loss="ctm_minmax", device="cpu"))
+    cfg = TrainCfg(epochs=2, batch=8, lr=1e-2, loss="ctm_minmax", device="cpu", inner_frac=0)
+    fitted = fit_set_model(make, data, base, cfg)
     assert len(fitted.losses) == 2 and np.all(np.isfinite(fitted.losses))
     for pick in ("final", "certain"):
         P = predict_set_model(fitted, data, base, pick=pick)
@@ -367,9 +370,10 @@ def test_crossfit_eval_base_matches_static_fit():
 
 
 def test_cfg_and_input_checks():
-    assert dataclasses.astuple(TrainCfg()) == (20, 512, 1e-3, 1e-4, 1e-2, 0, "final", "cuda")
+    assert dataclasses.astuple(TrainCfg()) == (10, 512, 1e-3, 1e-4, 1e-2, 0, "final", "cuda", 0.1, 4, 8)
+    assert settrain.INNER_SEED == 2026
     data, base = _packed()
-    make, cpu = partial(PooledDelta, hidden=4), TrainCfg(epochs=0, device="cpu")
+    make, cpu = partial(PooledDelta, hidden=4), TrainCfg(epochs=0, device="cpu", inner_frac=0)
     with pytest.raises(ValueError, match="loss"):
         fit_set_model(make, data, base, TrainCfg(loss="nope", device="cpu"))
     y = data["y"].copy()
@@ -392,3 +396,200 @@ def test_cfg_and_input_checks():
         crossfit_base_logits(MLPModel, X, yy, np.zeros((2, 2)))
     with pytest.raises(ValueError, match="fold"):
         crossfit_base_logits(MLPModel, {1: X[1], 2: X[1]}, {1: yy[1], 3: yy[1]}, np.zeros((2, 2)))
+
+
+# ---------------------------------------------------------------- inner early stopping
+
+def _player_sets(ranks, q_per_player=8, n_games=20, d=8, seed=0):
+    """Packed questions of synthetic players, one per entry of `ranks` (its rank), player_id p000, p001, ...:
+    every player has n_games fixed random tokens and each of its questions is a random subset of 5..20 of
+    them, so the same games recur across a player's questions with one label, as in the real training
+    questions. qglob holds log m, then zeros."""
+    rng = np.random.RandomState(seed)
+    Q = len(ranks) * q_per_player
+    tokens, mask = np.zeros((Q, M, d), dtype=np.float32), np.zeros((Q, M), dtype=bool)
+    qglob, pid, y = np.zeros((Q, 6), dtype=np.float32), [], []
+    for i, r in enumerate(ranks):
+        games = rng.randn(n_games, d)
+        for q in range(i * q_per_player, (i + 1) * q_per_player):
+            m = rng.randint(5, M + 1)
+            tokens[q, :m], mask[q, :m], qglob[q, 0] = games[rng.choice(n_games, m, replace=False)], True, np.log(m)
+            pid.append(f"p{i:03d}")
+            y.append(int(r))
+    return {"tokens": tokens, "mask": mask, "qglob": qglob, "y": np.asarray(y, dtype=np.int64), "player_id": np.asarray(pid)}
+
+
+def _eval_epochs(n_train, cfg):
+    """The completed epochs at each inner evaluation of a run to cfg.epochs on n_train training questions:
+    0, then after every ceil(n_batches / evals_per_epoch) batches and at each epoch's end (once per step)."""
+    n_batches = -(-n_train // cfg.batch)
+    every = -(-n_batches // cfg.evals_per_epoch)
+    at = [b for b in range(1, n_batches + 1) if b % every == 0 or b == n_batches]
+    return [0.0] + [e + b / n_batches for e in range(cfg.epochs) for b in at]
+
+
+def _weighted_ce(logits, y):
+    """By hand: sum w CE / sum w of log_softmax(logits) with class_weights(y)."""
+    w = class_weights(y)
+    ce = -torch.tensor(logits, dtype=torch.float64).log_softmax(dim=-1).numpy()[np.arange(len(y)), y]
+    return float((w * ce).sum() / w.sum())
+
+
+def _inner_ce(fitted, data, base):
+    """The inner CE of a fitted model, recomputed through predict_set_model on its inner questions."""
+    held = settrain.inner_players(data["player_id"], data["y"], fitted.cfg.inner_frac)
+    y = data["y"][held]
+    P = predict_set_model(fitted, {k: data[k][held] for k in ("tokens", "mask", "qglob")}, base[held])
+    w = class_weights(y)
+    return float((w * -np.log(P[np.arange(len(y)), y])).sum() / w.sum())
+
+
+def test_inner_players_grouped_stratified_seed_free():
+    rng = np.random.RandomState(0)
+    n_players = {0: 1, 1: 2, 2: 3, 3: 10, 4: 11, 5: 30, 7: 45}  # rank -> players
+    # ceil(0.1 n), none of a lone player; 0.1 * 30 is 3.0000000000000004 in floating point, still 3 players
+    want = {0: 0, 1: 1, 2: 1, 3: 1, 4: 2, 5: 3, 7: 5}
+    pid, y = [], []
+    for r, n in n_players.items():
+        for j in range(n):
+            k = rng.randint(1, 6)  # the player's questions
+            pid += [f"r{r}p{j:02d}"] * k
+            y += [r] * k
+    order = rng.permutation(len(pid))
+    pid, y = np.asarray(pid)[order], np.asarray(y)[order]
+    inner = settrain.inner_players(pid, y, 0.1)
+    assert inner.dtype == bool and inner.shape == pid.shape
+    assert not set(pid[inner]) & set(pid[~inner])  # grouped by player: nobody on both sides
+    for r, n in n_players.items():
+        assert len(set(pid[inner & (y == r)])) == want[r], r
+        assert len(set(pid[~inner & (y == r)])) == n - want[r] >= 1, r  # never all of a rank's players
+    # only the players and ranks matter: not the order of the questions; the default seed is INNER_SEED
+    perm = rng.permutation(len(pid))
+    np.testing.assert_array_equal(settrain.inner_players(pid[perm], y[perm], 0.1), inner[perm])
+    np.testing.assert_array_equal(settrain.inner_players(pid, y, 0.1, seed=settrain.INNER_SEED), inner)
+    assert not np.array_equal(settrain.inner_players(pid, y, 0.1, seed=1), inner)
+    assert not settrain.inner_players(pid, y, 0.0).any()
+    for bad in (1.0, -0.1):
+        with pytest.raises(ValueError, match="inner_frac"):
+            settrain.inner_players(pid, y, bad)
+    with pytest.raises(ValueError, match="more than one rank"):
+        settrain.inner_players(np.array(["a", "a", "b", "b"]), np.array([0, 1, 1, 1]), 0.5)
+
+    # fit_set_model holds out the same players whatever cfg.seed: evaluation 0 (Δ ≡ 0) is the class-weighted
+    # CE of the base on exactly those questions for every seed, and the seeds train differently after it
+    data = _player_sets(np.arange(40) % 4)
+    base = rng.randn(len(data["y"]), 10)
+    held = settrain.inner_players(data["player_id"], data["y"], 0.1)
+    fits = [fit_set_model(partial(DeepSets, d_tok=8, hidden=8), data, base,
+                          TrainCfg(epochs=1, batch=32, lr=1e-2, seed=s, device="cpu")) for s in (0, 1)]
+    for f in fits:
+        assert f.inner_ce[0] == pytest.approx(_weighted_ce(base[held], data["y"][held]), abs=1e-12)
+        assert f.n_inner_players == 4 and f.n_inner_questions == held.sum() == 32
+    assert fits[0].inner_ce[0] == fits[1].inner_ce[0] and fits[0].inner_ce[1:] != fits[1].inner_ce[1:]
+
+
+def test_early_stop_restores_best_checkpoint():
+    """Memorisable players (fixed random tokens per player, random ranks 0 / 1, base 0): the inner CE first
+    falls -- the shared class prior (only ranks 0 and 1 occur) is learnt -- then rises as the training
+    players' games are memorised."""
+    data = _player_sets(np.random.RandomState(1).randint(0, 2, size=60))
+    base = np.zeros((len(data["y"]), 10))
+    make = partial(DeepSets, d_tok=32, hidden=64)
+    cfg = TrainCfg(epochs=40, batch=32, lr=2e-3, device="cpu", patience=4)
+    f = fit_set_model(make, data, base, cfg)
+    held = settrain.inner_players(data["player_id"], data["y"], cfg.inner_frac)
+    best, n_eval = f.best_eval, len(f.inner_ce)
+    assert f.stopped_early and 0 < best < n_eval - 1 and n_eval - 1 - best == cfg.patience
+    assert f.inner_ce[best] < f.inner_ce[0] - 1.0 and f.inner_ce[-1] > f.inner_ce[best]  # fell, then rose
+    assert f.inner_ce.index(min(f.inner_ce)) == best  # the lowest (the earliest of equals)
+    at = _eval_epochs(int((~held).sum()), cfg)
+    assert f.best_epoch == at[best] and at[n_eval - 1] < cfg.epochs
+    assert len(f.losses) == math.ceil(at[n_eval - 1])  # one mean per epoch begun, the last one partial
+    assert np.all(np.isfinite(f.losses))
+    # the returned model is the best checkpoint, not the last weights
+    ce = _inner_ce(f, data, base)
+    assert abs(ce - f.inner_ce[best]) < 1e-6 and abs(ce - f.inner_ce[-1]) > 1e-3
+    assert f.n_inner_players == len(set(data["player_id"][held])) and f.n_inner_questions == held.sum()
+    # deterministic on the CPU, checkpoint and all
+    g = fit_set_model(make, data, base, cfg)
+    assert (g.inner_ce, g.losses, g.best_eval, g.best_epoch) == (f.inner_ce, f.losses, f.best_eval, f.best_epoch)
+    assert np.array_equal(predict_set_model(g, data, base), predict_set_model(f, data, base))
+    # a patience longer than the run: every epoch and every evaluation of the schedule, still the best checkpoint
+    long_cfg = dataclasses.replace(cfg, epochs=6, patience=1000)
+    long = fit_set_model(make, data, base, long_cfg)
+    assert not long.stopped_early and len(long.losses) == 6
+    assert len(long.inner_ce) == len(_eval_epochs(int((~held).sum()), long_cfg))
+    assert abs(_inner_ce(long, data, base) - min(long.inner_ce)) < 1e-6
+
+
+def test_eval0_fallback_returns_base():
+    """Training that can only make the inner CE worse: every question shows the same games, so the tokens
+    say nothing about the rank and Δ is one vector c for all questions. The training questions' base is
+    mis-calibrated (b = linspace(-1, 1)), so training moves c towards -b; the inner questions' base is
+    uniform and their 10 ranks balanced, so their CE is logsumexp(c) - mean(c) >= log 10 -- the CE of
+    evaluation 0 (Δ ≡ 0: the zero-initialised output layer) -- with equality only for a constant c."""
+    data = _player_sets(np.arange(50) % 10)
+    for k in ("tokens", "mask", "qglob"):
+        data[k][:] = data[k][0]
+    held = settrain.inner_players(data["player_id"], data["y"], 0.2)
+    base = np.where(held[:, None], 0.0, np.linspace(-1.0, 1.0, 10)[None, :])
+    cfg = TrainCfg(epochs=10, batch=32, lr=1e-2, device="cpu", inner_frac=0.2, patience=4)
+    f = fit_set_model(partial(DeepSets, d_tok=32, hidden=64), data, base, cfg)
+    assert f.inner_ce[0] == pytest.approx(np.log(10), abs=1e-12)
+    assert f.best_eval == 0 and f.best_epoch == 0.0 and f.stopped_early
+    assert len(f.inner_ce) == cfg.patience + 1 and min(f.inner_ce[1:]) > f.inner_ce[0] + 1e-3  # trained, only worse
+    np.testing.assert_allclose(predict_set_model(f, data, base), _softmax(base), rtol=0, atol=1e-12)
+
+
+def test_inner_frac_zero_is_fixed_epochs():
+    rng = np.random.RandomState(3)
+    data = _player_sets(np.array([0] * 12 + [1] * 8 + [2] * 5))
+    base = rng.randn(len(data["y"]), 10)
+    make = partial(DeepSets, d_tok=8, hidden=16)
+    cfg = TrainCfg(epochs=3, batch=32, lr=1e-2, device="cpu", inner_frac=0)
+    f = fit_set_model(make, data, base, cfg)
+    assert len(f.losses) == cfg.epochs and f.inner_ce == []
+    assert (f.best_eval, f.best_epoch, f.stopped_early, f.n_inner_players, f.n_inner_questions) == (None,) * 5
+    P = predict_set_model(f, data, base)
+    assert not np.allclose(P, _softmax(base), atol=1e-3)  # the last weights, trained
+    # no checkpoint is chosen: patience and evals_per_epoch play no part; every question trains and enters the statistics
+    g = fit_set_model(make, data, base, dataclasses.replace(cfg, patience=1, evals_per_epoch=1))
+    assert g.losses == f.losses and np.array_equal(predict_set_model(g, data, base), P)
+    np.testing.assert_allclose(f.tok_mean, _standardise(data["tokens"][data["mask"]].astype(np.float64))[0],
+                               rtol=1e-12, atol=1e-12)
+    # data without player_id (hand-made sets) trains only with inner_frac = 0
+    nopid = {k: v for k, v in data.items() if k != "player_id"}
+    assert fit_set_model(make, nopid, base, cfg).losses == f.losses
+    with pytest.raises(ValueError, match="player_id"):
+        fit_set_model(make, nopid, base, dataclasses.replace(cfg, inner_frac=0.1))
+    # inner_frac > 0: statistics, class weights and training steps use the training players only -- one step
+    # over them all (batch >= their questions) records the class-weighted CE of their base
+    h = fit_set_model(make, data, base, dataclasses.replace(cfg, inner_frac=0.1, epochs=1, batch=1024))
+    out = ~settrain.inner_players(data["player_id"], data["y"], 0.1)
+    assert h.n_inner_players == 2 + 1 + 1 and h.n_inner_questions == (~out).sum()
+    tok_mean, tok_std = _standardise(data["tokens"][out][data["mask"][out]].astype(np.float64))
+    glob_mean, glob_std = _standardise(data["qglob"][out].astype(np.float64))
+    for got, want in ((h.tok_mean, tok_mean), (h.tok_std, tok_std), (h.glob_mean, glob_mean), (h.glob_std, glob_std)):
+        np.testing.assert_allclose(got, want, rtol=1e-12, atol=1e-12)
+    assert len(h.losses) == 1
+    np.testing.assert_allclose(h.losses[0], _weighted_ce(base[out], data["y"][out]), rtol=1e-5)
+    # no rank with two players: nothing to hold out
+    lone = _player_sets(np.arange(10))
+    with pytest.raises(ValueError, match="inner validation players"):
+        fit_set_model(make, lone, np.zeros((len(lone["y"]), 10)), dataclasses.replace(cfg, inner_frac=0.1))
+
+
+def test_non_finite_inner_ce_is_refused():
+    class NaNEval(torch.nn.Module):
+        """Δ = 0 in training mode, NaN in eval mode (where the inner CE is computed)."""
+
+        def __init__(self, d_in):
+            super().__init__()
+            self.w = torch.nn.Parameter(torch.zeros(1))
+
+        def forward(self, tokens, mask, qglob, ticks=None):
+            return self.w.expand(len(tokens), 1, 10) + (0.0 if self.training else float("nan"))
+
+    data = _player_sets(np.arange(20) % 2)
+    with pytest.raises(FloatingPointError, match="non-finite inner validation CE"):
+        fit_set_model(NaNEval, data, np.zeros((len(data["y"]), 10)), TrainCfg(epochs=1, batch=32, device="cpu"))

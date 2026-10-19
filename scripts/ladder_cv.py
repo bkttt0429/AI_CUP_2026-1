@@ -14,6 +14,10 @@ summary of <out> holds the r3 rungs and their controls and G_set passes; otherwi
 printed and the exit code is 2 (--force overrides). Folds containing 0 also exit with 2: fold 0 is
 evaluated once, by scripts/ladder_eval_fold0.py.
 
+After each set-rung run the best_epoch of every split is printed: the epochs completed at the
+weights the inner early stopping kept (0.00: Δ ≡ 0, the base itself), "(stopped early)" when the
+patience ended training before the maximum, n/a for a TrainCfg with inner_frac = 0.
+
 Every file records its provenance (aicup.ladder.run_rung_cv attrs: git head and dirty flag, the
 sha256 of the training modules, TrainCfg, torch, device). Because existing files are skipped, a
 label can end up with seeds trained by different code: the summary lists such labels in
@@ -35,6 +39,12 @@ from aicup.qeval import balanced_mean_over_n  # noqa: E402
 
 def _fmt(x):
     return "n/a" if x is None else f"{x:.4f}"
+
+
+def _best_epochs(attrs):
+    """'1 2.25 (stopped early)  2 10.00  ...': per split the best_epoch of a set-rung run's attrs."""
+    return "  ".join(f"{v} {'n/a' if e is None else f'{e:.2f}'}{' (stopped early)' if attrs['stopped_early'][v] else ''}"
+                     for v, e in attrs["best_epoch"].items())
 
 
 def main(argv=None):
@@ -84,6 +94,8 @@ def main(argv=None):
                                      for f, d in df.groupby("fold", sort=True))
                 pooled = balanced_mean_over_n(df["score"], df["y"], df["n_games"])
                 print(f"{path.name}: {per_fold}  pooled {pooled:.4f}  ({time.time() - t0:.0f} s)", flush=True)
+                if "best_epoch" in df.attrs:  # set rungs: where the inner early stopping kept the weights
+                    print(f"  best_epoch per split: {_best_epochs(df.attrs)}", flush=True)
 
     summary = summarize(out)
     summary["gates"] = gates(summary)

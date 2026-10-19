@@ -111,14 +111,14 @@ def test_zero_init_delta(make):
     assert out.shape[0] == B and out.shape[2] == 10
     assert torch.equal(out, torch.zeros_like(out))
     data, base = _packed()
-    fitted = fit_set_model(make, data, base, TrainCfg(epochs=0, device="cpu"))
+    fitted = fit_set_model(make, data, base, TrainCfg(epochs=0, device="cpu", inner_frac=0))
     np.testing.assert_allclose(predict_set_model(fitted, data, base), _softmax(base), rtol=0, atol=1e-12)
 
 
 @pytest.mark.parametrize("make", MODELS)
 def test_proba_valid(make):
     data, base = _packed()
-    fitted = fit_set_model(make, data, base, TrainCfg(epochs=2, batch=16, lr=1e-2, device="cpu"))
+    fitted = fit_set_model(make, data, base, TrainCfg(epochs=2, batch=16, lr=1e-2, device="cpu", inner_frac=0))
     P = predict_set_model(fitted, data, base)
     assert P.shape == (40, 10) and P.dtype == np.float64
     assert np.all(np.isfinite(P)) and np.all(P >= 0)

@@ -131,6 +131,8 @@ sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus -t 12:00:00 -J ladnocnt 
 
 每個 CV 檔都記下出處：git HEAD、是否有未 commit 的修改（`git_dirty`）、訓練相關模組的 `code_sha256`、TrainCfg、torch 版本、GPU 名稱、每個 split 的秒數和參數量。從 PC 同步過來的程式若沒有在國網上 commit，`git_dirty` 會是 true，版本以 `code_sha256` 為準。已存在的檔會被略過，所以同一個標籤的各 seed 可能出自不同版本的程式；摘要的 `mixed_versions` 會列出這些標籤，腳本也會印一行 `WARNING`（門檻照算，不會因此失敗）。看到時，把舊版本 seed 的檔刪掉重跑。
 
+集合 rung 用內層提早停止：每個 split 從訓練玩家留出 10%（按段位分層）當內層驗證，最多 10 個 epoch，保留內層 CE 最低的權重（可能就是第 0 次，即 Δ ≡ 0、等於基準）。每個集合 rung 的 CV 檔都記下每個 split 的 `best_epoch`（保留的權重訓練了幾個 epoch，可為小數）、`inner_ce_init`、`inner_ce_best`、`stopped_early`、`n_inner_players`，`ladder_cv.py` 每跑完一個集合 rung 會印一行 `best_epoch per split: …`。2026-10-19 之前用固定 20 epoch 訓練的集合 rung CV 檔（例如 `results/ladder/cv_smoke/` 的 `r3_settf_s0.npz`、`r5_ctm_s0.npz`）已經作廢：腳本會略過已存在的檔，所以要先刪掉再重跑。`base_v*.npz`（基準 logits 快取）和靜態 rung 的檔不受影響，可以保留。
+
 GPU 上的集合模型結果不能逐位元重現：index 和 MHA 的 backward 用 atomic add，同一個 seed 重跑會有小差異。「可逐位元重現」只在 CPU 上成立。
 
 fold 0 的評估**只跑一次**，而且只在使用者從 `cv_summary.json` 選定 rung 之後才跑。CV 若用了 `--per-player` 或 `--no-counts`，這裡要給一樣的參數，讓設定對得上摘要裡的標籤；set rung 的 `--seeds` 也要和該標籤的 seeds 相同（預設 0 1 2）。對不上就 exit 2。結果寫到 `results/ladder/fold0_eval.json`，這個檔已存在時，不論 `--out` 指到哪裡，腳本都 exit 2，不會重評。fold 0 只評選定的設定（最後一個 tick），CV 裡只報告的 @T16、@certain 不在 fold 0 上算：
