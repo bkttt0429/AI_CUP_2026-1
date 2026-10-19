@@ -8,9 +8,11 @@ scores fold 0's pilot questions and writes --out (default results/ladder/fold0_e
 headline with its player-bootstrap CI and the paired differences vs the same retrain's base and vs
 the production model (--rank-model, default results/models/rank_model.json).
 
-Exit 2 before any data is read when --out exists (fold 0 was evaluated already), when the summary
-is missing, or when it has no CV results for the configuration (--rung with --per-player and
---no-counts as given to scripts/ladder_cv.py).
+Exit 2 before any data is read when --out or results/ladder/fold0_eval.json exists (fold 0 was
+evaluated already; the canonical file is checked whatever --out is), when the summary is missing,
+when it has no CV results for the configuration (--rung with --per-player and --no-counts as given
+to scripts/ladder_cv.py), or, for a set rung, when --seeds are not the seeds of that CV label. Only
+the final-tick configuration is scored: the CV's report-only extras are not computed on fold 0.
 """
 import argparse
 import sys
@@ -30,13 +32,15 @@ def _ci(c):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--rung", required=True, choices=list(RUNGS))
-    ap.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2], help="set rungs only; a static rung is fitted once")
+    ap.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2],
+                    help="set rungs only, the seeds of the CV label (any order); a static rung is fitted once")
     ap.add_argument("--per-player", type=int, default=DEFAULT_PER_PLAYER)
     ap.add_argument("--no-counts", action="store_true", help="game-length ablation (ladder_data counts=False)")
     ap.add_argument("--chosen-from", default=str(CHOSEN_FROM), help="the CV summary the rung was chosen from")
     ap.add_argument("--vectors", default=str(VECTORS))
     ap.add_argument("--rank-model", default=str(RANK_MODEL), help="the production model to compare with")
-    ap.add_argument("--out", default=str(OUT), help="refused when it exists: fold 0 is evaluated once")
+    ap.add_argument("--out", default=str(OUT),
+                    help="refused when it or results/ladder/fold0_eval.json exists: fold 0 is evaluated once")
     ap.add_argument("--device", default="cuda", help="device of the set models")
     a = ap.parse_args(argv)
     if len(set(a.seeds)) != len(a.seeds):

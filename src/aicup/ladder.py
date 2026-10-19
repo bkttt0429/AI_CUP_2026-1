@@ -16,32 +16,37 @@ Protocol (plan 2026-10-19-l3-aggregator-ladder-ctm, Global Constraints):
   certain tick) are extra columns of the same trained model and never enter the gates.
 
 Files: run_rung_cv returns one frame per (rung, seed) -- question_id, fold, player_id, y, n_games,
-p0..p9, score, plus p0@X..p9@X, score@X for each extra X -- with its settings and per-split
-diagnostics in DataFrame.attrs. save_cv writes it as <cv_dir>/cv_filename(...) (fixed-width unicode
-strings, attrs as a JSON string, loadable with allow_pickle=False); split_base caches the base
-logits as <cv_dir>/base_v{v}[_pp{N}][_nocounts].npz.
+p0..p9, score, plus p0@X..p9@X, score@X for each extra X -- with its settings, provenance (code
+version, torch, device, TrainCfg, parameter count) and per-split diagnostics in DataFrame.attrs; a
+non-finite set-model loss or probability raises instead. save_cv writes it as
+<cv_dir>/cv_filename(...) (fixed-width unicode strings, attrs as a JSON string, loadable with
+allow_pickle=False); split_base caches the base logits as <cv_dir>/base_v{v}[_pp{N}][_nocounts].npz.
 
 summarize: per label (rung[@ppN][@nocounts][@extra]) the per-question score is the mean over seeds
 first, then every metric is the class-balanced mean per question size averaged over sizes 5/10/20,
 per validation fold and on the folds pooled. Comparisons are paired on the pooled questions:
 qeval.paired_diff (player bootstrap, n=5000), per-fold and per-seed point differences and the
 Nadeau-Bengio corrected interval (variance x 2.33 = 1 + J n_test / n_train for J = 4 folds) as a
-conservative reference. gates: every pre-specified comparison of a gate must meet all of CONDITIONS,
-on a summary bootstrapped with at least N_BOOT replicates.
+conservative reference. Labels whose seeds were trained by different code (code_sha256) are listed
+in mixed_versions, a warning only. gates: every pre-specified comparison of a gate must meet all of
+CONDITIONS, on a summary bootstrapped with at least N_BOOT replicates.
 """
 import hashlib
 import json
 import math
 import os
 import re
-from dataclasses import replace
+import subprocess
+import time
+from dataclasses import asdict, replace
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import torch
 
-from aicup.aggregators import CTM, DeepSets, PooledDelta, QglobDelta, SetTransformer, XAttnGRU
+from aicup.aggregators import CTM, DeepSets, PooledDelta, QglobDelta, SetTransformer, XAttnGRU, n_params
 from aicup.ladder_data import STATIC_RUNGS, fit_clip_k, pack_questions, static_features
 from aicup.metric import LEVELS, RANK_TO_IDX
 from aicup.pilot import pilot_questions
@@ -98,6 +103,64 @@ MIN_DIFF = 0.005
 N_SEEDS = 3
 MIN_POSITIVE_FOLDS = 3
 CONDITIONS = ("ci_lo_gt_0", "every_seed_gt_0", "folds_gt_0_3of4", "diff_ge_0.005")
+# the modules whose code trains and scores a rung, hashed in this order into code_sha256; ladder.py,
+# qeval.py and ladder_fold0.py (summary and evaluation code) are left out on purpose, so that fixing
+# them does not mark finished training runs as made by other code
+CODE_FILES = ("gamevec.py", "ladder_data.py", "aggregators.py", "settrain.py", "rankmodel.py", "qfeatures.py", "metric.py")
+# the provenance keys of every CV run's attrs; None where they do not apply (train_cfg and n_params of
+# a static rung) and, through load_cv, in files written before they were recorded
+PROVENANCE = ("git_head", "git_dirty", "code_sha256", "code_files", "torch_version", "device_name", "train_cfg", "n_params",
+              "wall_seconds")
+
+
+# ---------------------------------------------------------------- provenance
+
+def _git(*args):
+    """stdout of `git <args>` in the repository, None when git cannot tell (no git, no .git, an error)."""
+    try:
+        r = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout if r.returncode == 0 else None
+
+
+def read_code_version():
+    """git_head (short sha of HEAD), git_dirty (tracked files differ from HEAD: `git status --porcelain
+    --untracked-files=no` is not empty) -- both None when git cannot tell, e.g. a tree synced without
+    .git -- code_sha256, the sha256 of the bytes of the CODE_FILES that exist, concatenated in order
+    (`cat` them | sha256sum), and code_files, those files repo-relative."""
+    head = _git("rev-parse", "--short", "HEAD")
+    head = (head.strip() or None) if head is not None else None
+    status = _git("status", "--porcelain", "--untracked-files=no") if head is not None else None
+    h, files = hashlib.sha256(), []
+    for name in CODE_FILES:
+        path = Path(__file__).resolve().parent / name
+        if path.is_file():
+            h.update(path.read_bytes())
+            files.append(path.relative_to(ROOT).as_posix())
+    return {"git_head": head, "git_dirty": None if status is None else bool(status.strip()), "code_sha256": h.hexdigest(),
+            "code_files": files}
+
+
+# read once, when this module is imported -- the training modules are imported with it -- so a run
+# records the code the process runs even when files are synced while a long job is still going
+_CODE_VERSION = read_code_version()
+
+
+def code_version():
+    """The provenance of the code this process runs (read_code_version at import), as a new dict."""
+    return dict(_CODE_VERSION)
+
+
+def device_name(device):
+    """torch.cuda.get_device_name of a cuda device, else the device type ("cpu")."""
+    d = torch.device(device)
+    return torch.cuda.get_device_name(d) if d.type == "cuda" else d.type
+
+
+def environment(device="cpu"):
+    """code_version() with torch_version and device_name(device): what every result records."""
+    return {**code_version(), "torch_version": torch.__version__, "device_name": device_name(device)}
 
 
 # ---------------------------------------------------------------- inputs
@@ -281,18 +344,35 @@ def _static_split(rung, vec, train_q, val_q, counts):
     return {"": _fit_predict(make, X_tr, _labels(train_q), X_val)}, info
 
 
-def _set_split(rung, v, vec, train_q, val_q, counts, per_player, seed, device, cache):
-    rep, make, overrides = SET_RUNGS[rung]
+def train_cfg(rung, seed, device):
+    """The TrainCfg of a set rung: the defaults with its seed, device and SET_RUNGS overrides."""
+    return replace(TrainCfg(seed=seed, device=device), **SET_RUNGS[rung][2])
+
+
+def _set_split(rung, v, vec, train_q, val_q, counts, per_player, seed, device, cache, extras=True):
+    """({"": final-tick probabilities, X: each EXTRAS[rung] prediction X unless extras=False}, info).
+
+    A non-finite training loss or probability raises FloatingPointError naming rung, seed and split
+    (evaluate would score an all-NaN row as a guess of D); nothing is returned, so nothing is written
+    and a rerun does not skip the run."""
+    rep, make, _ = SET_RUNGS[rung]
     base, base_val, base_info = split_base(v, vec, train_q, val_q, counts, per_player, cache)
-    cfg = replace(TrainCfg(seed=seed, device=device), **overrides)
     data = pack_questions(train_q, vec, rep, counts)
-    fitted = fit_set_model(make, data, base, cfg)
+    fitted = fit_set_model(make, data, base, train_cfg(rung, seed, device))
     del data  # the training tokens (several GB) before packing the validation questions
+    where = f"{rung} seed {seed} split {v}"
+    if not np.isfinite(fitted.losses).all():
+        raise FloatingPointError(f"{where}: non-finite training loss (per-epoch means {fitted.losses})")
     val = pack_questions(val_q, vec, rep, counts)
-    out = {"": predict_set_model(fitted, val, base_val)}
-    for name, kw in EXTRAS.get(rung, {}).items():
-        out[name] = predict_set_model(fitted, val, base_val, **kw)
-    return out, {"base": base_info, "train_loss": fitted.losses}
+    out = {}
+    for name, kw in [("", {}), *(EXTRAS.get(rung, {}).items() if extras else [])]:
+        P = predict_set_model(fitted, val, base_val, **kw)
+        bad = ~np.isfinite(P).all(axis=1)
+        if bad.any():
+            raise FloatingPointError(f"{where}: non-finite probabilities for {int(bad.sum())} of {len(P)} validation "
+                                     f"questions ({name or 'final tick'} prediction)")
+        out[name] = P
+    return out, {"base": base_info, "train_loss": fitted.losses, "n_params": n_params(fitted.model)}
 
 
 def _frame(val_q, v, probas):
@@ -312,8 +392,10 @@ def run_rung_cv(rung, vectors_dir, folds=CV_FOLDS, seed=0, per_player=DEFAULT_PE
                 base_cache=None, players=None):
     """Leave-one-fold-out CV of one rung (seed: set models' initialisation and shuffling; static rungs
     are deterministic). Returns the validation questions of every fold with KEY_COLS, p0..p9, score
-    (and @X columns for EXTRAS). attrs: rung, kind, seed, per_player, counts, folds, n_train per split
-    and, by rung, clip_k (r1_clip) or base / train_loss (set rungs) per split.
+    (and @X columns for EXTRAS). attrs: rung, kind, seed, per_player, counts, folds; the provenance
+    of environment() -- git_head, git_dirty, code_sha256, code_files, torch_version, device_name
+    ("cpu" for a static rung) -- train_cfg (the TrainCfg used) and n_params (None for a static rung);
+    per split n_train and wall_seconds and, by rung, clip_k (r1_clip) or base / train_loss (set rungs).
 
     base_cache: directory for split_base's files (None: no caching). players: {fold: fold_players
     frame}, loaded with load_players when None.
@@ -322,22 +404,27 @@ def run_rung_cv(rung, vectors_dir, folds=CV_FOLDS, seed=0, per_player=DEFAULT_PE
     is_set = rung in SET_RUNGS
     if not is_set and rung not in STATIC_RUNGS:
         raise KeyError(f"unknown rung {rung!r}; known: {list(STATIC_RUNGS) + list(SET_RUNGS)}")
+    env = environment(device if is_set else "cpu")  # static rungs fit on the CPU whatever the device
     vec, fold_of = load_vectors(vectors_dir, folds)
     players = load_players(folds) if players is None else players
     _check_players(players, vec, fold_of, folds)
     frames, per_split = [], {}
     for v in folds:
+        t0 = time.perf_counter()
         train_q, val_q = training_questions(players, v, folds, per_player), validation_questions(players, v)
         if is_set:
             probas, info = _set_split(rung, v, vec, train_q, val_q, counts, per_player, seed, device, base_cache)
         else:
             probas, info = _static_split(rung, vec, train_q, val_q, counts)
         frames.append(_frame(val_q, v, probas))
-        per_split[str(v)] = {**info, "n_train": len(train_q)}
+        per_split[str(v)] = {**info, "n_train": len(train_q), "wall_seconds": time.perf_counter() - t0}
     df = pd.concat(frames, ignore_index=True)
     df.attrs = {"rung": rung, "kind": "set" if is_set else "static", "seed": int(seed), "per_player": int(per_player),
-                "counts": bool(counts), "folds": list(folds)}
-    for key in ("n_train", "clip_k", "base", "train_loss"):
+                "counts": bool(counts), "folds": list(folds), **env}
+    # set rungs: the same in every split; static rungs have neither
+    df.attrs["train_cfg"] = asdict(train_cfg(rung, seed, device)) if is_set else None
+    df.attrs["n_params"] = per_split[str(folds[0])]["n_params"] if is_set else None
+    for key in ("n_train", "wall_seconds", "clip_k", "base", "train_loss"):
         if key in per_split[str(folds[0])]:
             df.attrs[key] = {v: d[key] for v, d in per_split.items()}
     return df
@@ -381,11 +468,14 @@ def save_cv(df, path):
 
 
 def load_cv(path):
-    """(frame, meta) of a save_cv file; meta is also the frame's attrs."""
+    """(frame, meta) of a save_cv file; meta is also the frame's attrs. A file written before the
+    provenance was recorded loads with every PROVENANCE field None."""
     with np.load(path, allow_pickle=False) as z:
         meta = json.loads(str(z["__meta__"]))
         columns = meta.pop("columns")
         df = pd.DataFrame({c: z[c] for c in columns})
+    for key in PROVENANCE:
+        meta.setdefault(key, None)
     df.attrs = dict(meta)
     return df, meta
 
@@ -454,6 +544,11 @@ def _rung_summary(run):
            "per_class": {LEVELS[k]: float(s[y == k].mean()) if (y == k).any() else None for k in range(N_CLASSES)},
            "nll_balanced": balanced(nll, y), "brier": balanced(brier, y),
            "per_seed": per_seed, "seed_sd": float(np.std(list(per_seed.values()), ddof=1)) if len(per_seed) > 1 else None}
+    # the code versions its seeds were trained with (None: a file from before provenance was recorded);
+    # more than one is reported loudly (summarize, scripts/ladder_cv.py) but fails no gate
+    versions = {run["meta"][seed]["code_sha256"] for seed in run["seeds"]}
+    out["code_sha256"] = sorted(versions, key=lambda x: (x is None, x or ""))
+    out["mixed_versions"] = len(versions) > 1
     first = run["meta"][run["seeds"][0]]
     if "clip_k" in first:
         out["clip_k"] = first["clip_k"]
@@ -511,7 +606,9 @@ def comparison_pairs(labels):
 def summarize(cv_dir, n_boot=N_BOOT):
     """Pooled CV summary of every save_cv file in cv_dir (see the module docstring), with the
     split_base diagnostics of its base files. Returned in its JSON form (string keys, non-finite
-    values as None), so gates() reads it and cv_summary.json alike."""
+    values as None), so gates() reads it and cv_summary.json alike. mixed_versions lists the labels
+    whose seeds carry different code_sha256 (each label's rung entry has code_sha256 and
+    mixed_versions); it is a warning, and the gates do not read it."""
     cv_dir = Path(cv_dir)
     runs = _read_runs(cv_dir)
     rungs = {label: _rung_summary(run) for label, run in runs.items()}
@@ -526,6 +623,7 @@ def summarize(cv_dir, n_boot=N_BOOT):
             "protocol": {"folds": folds, "sizes": list(SIZES), "train_questions": f"RandomState({TRAIN_SEED} + v)",
                          "n_boot": n_boot, "nb_variance_factor": NB_VARIANCE, "min_diff": MIN_DIFF, "n_seeds": N_SEEDS,
                          "min_positive_folds": f"{MIN_POSITIVE_FOLDS} of {len(CV_FOLDS)}"},
+            "mixed_versions": [label for label, r in rungs.items() if r["mixed_versions"]],
             "rungs": rungs, "comparisons": comparisons, "diagnostics": {"base": base}})
 
 

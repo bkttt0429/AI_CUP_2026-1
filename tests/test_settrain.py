@@ -132,6 +132,24 @@ def test_constant_columns_standardise_finite():
         np.testing.assert_allclose(P.sum(axis=1), 1.0, rtol=0, atol=1e-12)
 
 
+def test_non_finite_standardisation_is_refused():
+    data, base = _packed()
+    make, cpu = partial(PooledDelta, hidden=4), TrainCfg(epochs=0, device="cpu")
+    for value in (np.nan, np.inf):
+        tokens = data["tokens"].copy()
+        tokens[0, 0, 1] = value  # a valid game: its statistics (mean, std) are not finite
+        with pytest.raises(ValueError, match=r"token standardisation statistics are not finite in columns \[1\]"):
+            fit_set_model(make, dict(data, tokens=tokens), base, cpu)
+        qglob = data["qglob"].copy()
+        qglob[3, 4] = value
+        with pytest.raises(ValueError, match=r"qglob standardisation statistics are not finite in columns \[4\]"):
+            fit_set_model(make, dict(data, qglob=qglob), base, cpu)
+    tokens = data["tokens"].copy()
+    tokens[~data["mask"]] = np.nan  # padding never enters the statistics
+    fitted = fit_set_model(make, dict(data, tokens=tokens), base, cpu)
+    assert np.all(np.isfinite(fitted.tok_mean)) and np.all(np.isfinite(fitted.tok_std))
+
+
 @pytest.mark.skipif(not (VECTORS / "fold1.npz").exists(), reason="results/ladder/vectors/fold1.npz not built")
 def test_real_vectors_train_finite():
     vec = dict(np.load(VECTORS / "fold1.npz"))

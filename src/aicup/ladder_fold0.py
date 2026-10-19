@@ -2,17 +2,20 @@
 
 Fold 0 is the held-out evaluation fold: its result is spent once, on the configuration chosen from
 the CV summary, and never feeds back into a choice. run() therefore raises Refused (the CLI's exit
-2) before reading any data when the output exists already, when the CV summary the rung was chosen
-from (chosen_from) is missing, or when that summary has no CV results for the requested
-configuration (ladder._label(rung, per_player, counts)). The output is written once, atomically,
-and never over an existing file (write_once).
+2) before reading any data when the output or the canonical results/ladder/fold0_eval.json
+(CANONICAL_OUT) exists already, when the CV summary the rung was chosen from (chosen_from) is
+missing, when that summary has no CV results for the requested configuration
+(ladder._label(rung, per_player, counts)), or, for a set rung, when the seeds differ from that CV
+label's seeds. The output is written once, atomically, and never over an existing file (write_once).
 
 Protocol (plan 2026-10-19-l3-aggregator-ladder-ctm, Task 8): the rung is retrained on folds 1-4 with
 the training questions of split v = 0 (ladder.training_questions: one RandomState(42), folds 1-4
 ascending -- fit_rank_model's final model) and scored on fold 0's pilot_questions. A static rung is
 fitted once (deterministic; seeds null). A set rung trains once per seed on the 4-fold cross-fitted
 base (ladder.split_base with v = 0, computed once and shared by the seeds), and the per-question
-score is the mean over seeds -- the statistic of the CV summary. Reported: the headline
+score is the mean over seeds -- the statistic of the CV summary. Only that final-tick configuration is
+scored: the report-only EXTRAS of the CV (more ticks, the certain tick) are not computed on fold 0, so
+that nothing can be picked on it after the fact. Reported: the headline
 balanced_mean_over_n with its player-bootstrap CI (evidence.bootstrap_ci_mean_over_sizes, n = 5000)
 and two paired differences (qeval.paired_diff), both through paired(), which refuses frames whose
 question ids differ in content or order:
@@ -25,7 +28,6 @@ question ids differ in content or order:
 import hashlib
 import json
 import os
-import subprocess
 import tempfile
 import time
 from datetime import datetime
@@ -36,8 +38,8 @@ import pandas as pd
 
 from aicup.evidence import bootstrap_ci_mean_over_sizes
 from aicup.ladder import (BASE_RUNG, CV_FOLDS, DEFAULT_PER_PLAYER, FOLDS_CSV, KEY_COLS, N_BOOT, ROOT, RUNGS, SET_RUNGS,
-                          _check_players, _frame, _label, _plain, _same_keys, _set_split, _static_split, load_vectors,
-                          split_base, to_json, training_questions, validation_questions)
+                          _check_players, _frame, _label, _plain, _same_keys, _set_split, _static_split, environment,
+                          load_vectors, split_base, to_json, training_questions, validation_questions)
 from aicup.qeval import SIZES, balanced, balanced_mean_over_n, nll_brier, paired_diff
 from aicup.qfeatures import FEATURE_NAMES, SUM_COLS, build_matrix
 from aicup.rankmodel import N_CLASSES, _softmax, from_state
@@ -45,7 +47,9 @@ from aicup.scoring import TRAIN_DIR, fold_players, player_games
 
 EVAL_FOLD = 0
 ALL_FOLDS = (EVAL_FOLD, *CV_FOLDS)
-OUT = ROOT / "results" / "ladder" / "fold0_eval.json"
+# the canonical result: check_request refuses whenever it exists, whatever `out` is (tests move it)
+CANONICAL_OUT = ROOT / "results" / "ladder" / "fold0_eval.json"
+OUT = CANONICAL_OUT  # the default output
 CHOSEN_FROM = ROOT / "results" / "ladder" / "cv_summary.json"
 VECTORS = ROOT / "results" / "ladder" / "vectors"
 RANK_MODEL = ROOT / "results" / "models" / "rank_model.json"
@@ -73,14 +77,19 @@ def _sha256(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
-def check_request(rung, out, chosen_from, per_player=DEFAULT_PER_PLAYER, counts=True):
-    """Refused unless fold 0 may be evaluated: `out` must not exist (checked first) and `chosen_from`
-    must be a CV summary with results for ladder._label(rung, per_player, counts). Returns the
-    provenance of the choice: chosen_from (repo-relative), its sha256, the CV label, the CV entry of
-    that label and the summary's r2_mlp24@pp8 vs r2_mlp24 comparison (None when absent)."""
+def check_request(rung, out, chosen_from, per_player=DEFAULT_PER_PLAYER, counts=True, seeds=(0, 1, 2)):
+    """Refused unless fold 0 may be evaluated: neither `out` nor CANONICAL_OUT may exist (checked
+    first), `chosen_from` must be a CV summary with results for ladder._label(rung, per_player,
+    counts) and, for a set rung, `seeds` must be that CV label's seeds (in any order; a static rung
+    is fitted once and ignores them). Returns the provenance of the choice: chosen_from
+    (repo-relative), its sha256, the CV label, the CV entry of that label and the summary's
+    r2_mlp24@pp8 vs r2_mlp24 comparison (None when absent)."""
     out, chosen_from = Path(out), Path(chosen_from)
     if out.exists():
         raise Refused(f"{out} exists: fold 0 has been evaluated already, and it is evaluated only once")
+    if CANONICAL_OUT.exists():
+        raise Refused(f"{CANONICAL_OUT} exists: fold 0 has been evaluated already, and it is evaluated only once "
+                      f"(this canonical result is checked whatever --out is)")
     if rung not in RUNGS:
         raise Refused(f"unknown rung {rung!r}; known: {list(RUNGS)}")
     if not chosen_from.is_file():
@@ -98,6 +107,11 @@ def check_request(rung, out, chosen_from, per_player=DEFAULT_PER_PLAYER, counts=
         raise Refused(f"{chosen_from} has no CV results for {label!r} (it has {have}): fold 0 is evaluated only for a "
                       f"configuration chosen from the CV; give --per-player / --no-counts as in that CV run")
     cv = rungs[label] if isinstance(rungs[label], dict) else {}
+    if rung in SET_RUNGS:  # the headline is the seed mean: the same seeds as the CV statistic it was chosen by
+        cv_seeds = cv.get("seeds")
+        if not isinstance(cv_seeds, list) or sorted(int(s) for s in seeds) != sorted(int(s) for s in cv_seeds):
+            raise Refused(f"--seeds {sorted(int(s) for s in seeds)} differ from the seeds {cv_seeds} of {label!r} in "
+                          f"{chosen_from}: a set rung is evaluated on fold 0 with the seeds of its CV results")
     pp8 = (summary.get("comparisons") or {}).get(f"{BASE_RUNG}@pp8 vs {BASE_RUNG}")
     return {"chosen_from": repo_path(chosen_from), "cv_summary_sha256": _sha256(raw), "cv_label": label,
             "cv": {k: cv.get(k) for k in ("balanced_mean_over_n", "per_fold", "seeds")},
@@ -193,8 +207,11 @@ def evaluate_fold0(rung, vec, players, production, seeds=(0, 1, 2), per_player=D
             _, base_val, diag["base"] = split_base(EVAL_FOLD, vec, train_q, val_q, counts, per_player, cache)
             for seed in seeds:
                 t0 = time.time()
-                probas, info = _set_split(rung, EVAL_FOLD, vec, train_q, val_q, counts, per_player, seed, device, cache)
-                runs[seed] = _frame(val_q, EVAL_FOLD, {"": probas[""]})
+                # fold 0 reports only the chosen configuration (the final tick); the EXTRAS live in the CV
+                # summary, so that nothing is picked on fold 0 after the fact
+                probas, info = _set_split(rung, EVAL_FOLD, vec, train_q, val_q, counts, per_player, seed, device, cache,
+                                          extras=False)
+                runs[seed] = _frame(val_q, EVAL_FOLD, probas)
                 diag["train_loss_last"][seed] = info["train_loss"][-1] if info["train_loss"] else None
                 print(f"{rung} seed {seed} trained ({time.time() - t0:.0f} s)", flush=True)
         frames, base = list(runs.values()), _frame(val_q, EVAL_FOLD, {"": _softmax(base_val)})
@@ -231,15 +248,6 @@ def evaluate_fold0(rung, vec, players, production, seeds=(0, 1, 2), per_player=D
 
 # ---------------------------------------------------------------- output
 
-def git_head():
-    """Short sha of the repository's HEAD, None when git cannot tell."""
-    try:
-        r = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True, timeout=30)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return (r.stdout.strip() or None) if r.returncode == 0 else None
-
-
 def write_once(path, obj):
     """Write strict JSON (ladder.to_json) to `path` atomically and never over an existing file: the text
     goes to a temporary file beside it, hard-linked to `path` (FileExistsError when `path` exists,
@@ -260,20 +268,21 @@ def write_once(path, obj):
 def run(rung, out=OUT, chosen_from=CHOSEN_FROM, vectors_dir=VECTORS, rank_model=RANK_MODEL, seeds=(0, 1, 2),
         per_player=DEFAULT_PER_PLAYER, counts=True, device="cuda", n_boot=N_BOOT, players=None):
     """The one fold-0 evaluation: check_request (Refused before anything is read), then the inputs (a
-    missing file fails before the players are loaded), evaluate_fold0, provenance (created, git_head at
-    the start, chosen_from with its sha256, the production model's path and sha256) and write_once to
-    `out`. players: {fold: fold_players frame} of folds 0-4, loaded when None. Returns the written result."""
-    chosen = check_request(rung, out, chosen_from, per_player, counts)
-    commit = git_head()  # the code that runs, read before the hours of training
+    missing file fails before the players are loaded), evaluate_fold0, provenance (created; the code
+    that runs -- ladder.environment: git_head, git_dirty, code_sha256, code_files, torch_version,
+    device_name; chosen_from with its sha256; the production model's path and sha256) and write_once
+    to `out`. players: {fold: fold_players frame} of folds 0-4, loaded when None. Returns the written result."""
+    chosen = check_request(rung, out, chosen_from, per_player, counts, seeds)
     missing = [str(p) for p in [*(Path(vectors_dir) / f"fold{f}.npz" for f in ALL_FOLDS), Path(rank_model)] if not p.exists()]
     if missing:
         raise FileNotFoundError(f"inputs not found: {', '.join(missing)} (vectors: scripts/ladder_build_vectors.py)")
+    env = environment(device if rung in SET_RUNGS else "cpu")  # the code that runs, read before the hours of training
     raw = Path(rank_model).read_bytes()
     production = json.loads(raw)
     check_production(production, str(rank_model))
     vec, _, players = load_inputs(vectors_dir, ALL_FOLDS, players)
     res = evaluate_fold0(rung, vec, players, production, seeds, per_player, counts, device, n_boot)
-    result = {"created": datetime.now().isoformat(timespec="seconds"), "git_head": commit, **res, **chosen,
+    result = {"created": datetime.now().isoformat(timespec="seconds"), **env, **res, **chosen,
               "production_model": {"path": repo_path(rank_model), "sha256": _sha256(raw)}}
     write_once(out, result)
     return result

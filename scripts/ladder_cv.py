@@ -12,6 +12,12 @@ results/ladder/cv_pp8 gives cv_pp8_summary.json and never overwrites the main su
 The iterative rungs (r4_*, r5_*) run only when the summary of <out> holds the r3 rungs and their
 controls and G_set passes; otherwise the reason is printed and the exit code is 2 (--force overrides).
 Folds containing 0 also exit with 2: fold 0 is evaluated once, by scripts/ladder_eval_fold0.py.
+
+Every file records its provenance (aicup.ladder.run_rung_cv attrs: git head and dirty flag, the
+sha256 of the training modules, TrainCfg, torch, device). Because existing files are skipped, a
+label can end up with seeds trained by different code: the summary lists such labels in
+mixed_versions and a WARNING line is printed, but the gates are computed as usual. A set-model run
+with a non-finite loss or probability stops the script without writing its file.
 """
 import argparse
 import sys
@@ -91,6 +97,10 @@ def main(argv=None):
         print(f"{name}: {'PASS' if g['pass'] else 'fail'}")
         for key, c in g["comparisons"].items():
             print(f"  {key}: {'pass' if c['pass'] else '; '.join(c['reasons'])}")
+    if summary["mixed_versions"]:  # reported, not gated: a summary-code fix must not invalidate finished runs
+        print(f"WARNING: mixed code versions: the seeds of {', '.join(summary['mixed_versions'])} were trained by "
+              f"different code (code_sha256 in {summary_path.name}); delete and rerun the stale seeds before reading "
+              f"their comparisons", file=sys.stderr, flush=True)
     print(f"wrote {summary_path}")
     return 0
 

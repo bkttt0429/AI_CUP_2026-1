@@ -183,6 +183,110 @@ def test_cv_base_cache_and_tick_extras(tmp_path, monkeypatch):
         ladder.run_rung_cv("r3_null", vec_dir, **kw)
 
 
+class _NaNDelta(torch.nn.Module):
+    """Δ = NaN where `where` says: "train" (every training step), "predict" (the final-tick prediction only)
+    or "extra" (only predictions with `ticks` given, i.e. an EXTRAS column); 0 everywhere else."""
+
+    def __init__(self, d_in, where="train"):
+        super().__init__()
+        self.w = torch.nn.Parameter(torch.zeros(1))
+        self.where = where
+
+    def forward(self, tokens, mask, qglob, ticks=None):
+        nan = {"train": self.training, "predict": not self.training and ticks is None,
+               "extra": not self.training and ticks is not None}[self.where]
+        return self.w.expand(len(tokens), 1, 10) + (float("nan") if nan else 0.0)
+
+
+def test_non_finite_set_model_is_refused(tmp_path, monkeypatch):
+    import ladder_cv  # scripts/ladder_cv.py, run in-process so that the rung can be patched
+
+    folds = (1, 2, 3)
+    vec_dir, players = _synthetic(tmp_path, folds, per_rank=1)
+    monkeypatch.setattr(ladder_cv, "load_players", lambda f: players)
+    monkeypatch.setitem(ladder.EXTRAS, "r3_deepsets", {"T16": {"ticks": 16}})
+    out = tmp_path / "cv"
+    argv = ["--rungs", "r3_deepsets", "--seeds", "1", "--folds", *map(str, folds), "--per-player", "2",
+            "--vectors", str(vec_dir), "--out", str(out), "--device", "cpu"]
+    for where, what in (("train", "training loss"), ("predict", "probabilities"), ("extra", "probabilities.*T16")):
+        monkeypatch.setitem(ladder.SET_RUNGS, "r3_deepsets", ("staged", partial(_NaNDelta, where=where), {"epochs": 1}))
+        with pytest.raises(FloatingPointError, match=f"r3_deepsets seed 1 split 1: non-finite {what}"):
+            ladder.run_rung_cv("r3_deepsets", vec_dir, folds=folds, seed=1, per_player=2, device="cpu", players=players)
+        with pytest.raises(FloatingPointError, match=f"r3_deepsets seed 1 split 1: non-finite {what}"):
+            ladder_cv.main(argv)
+        # no CV file and no summary: a diverged run is never scored, and a rerun does not skip it
+        assert [p.name for p in out.glob("*.npz") if not p.name.startswith("base_")] == []
+        assert not (tmp_path / "cv_summary.json").exists()
+
+
+def _code_sha(files):
+    return hashlib.sha256(b"".join((ROOT / f).read_bytes() for f in files)).hexdigest()
+
+
+CODE_FILES = [f"src/aicup/{m}.py" for m in ("gamevec", "ladder_data", "aggregators", "settrain", "rankmodel", "qfeatures",
+                                            "metric")]
+
+
+def test_cv_records_provenance(tmp_path):
+    from aicup.aggregators import QglobDelta, n_params
+    from aicup.settrain import TrainCfg
+
+    folds = (1, 2, 3)
+    vec_dir, players = _synthetic(tmp_path, folds, per_rank=1)
+    kw = dict(folds=folds, per_player=2, device="cpu", players=players)
+    runs = {r: ladder.run_rung_cv(r, vec_dir, seed=1, **kw) for r in ("r2_mlp24", "r3_null")}
+    git = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True)
+    for rung, df in runs.items():
+        a = df.attrs
+        assert a["code_files"] == CODE_FILES and a["code_sha256"] == _code_sha(CODE_FILES), rung
+        assert a["git_head"] == (git.stdout.strip() if git.returncode == 0 else None)
+        assert a["git_dirty"] in ((True, False) if a["git_head"] else (None,))
+        assert a["torch_version"] == torch.__version__ and a["device_name"] == "cpu" and a["folds"] == [1, 2, 3]
+        assert sorted(a["wall_seconds"]) == ["1", "2", "3"] and all(t > 0 for t in a["wall_seconds"].values())
+        path = tmp_path / "cv" / ladder.cv_filename(rung, 1, per_player=2)
+        ladder.save_cv(df, path)
+        _, meta = ladder.load_cv(path)
+        assert {k: meta[k] for k in a} == json.loads(ladder.to_json(a)), rung  # all of it reaches the npz
+    assert runs["r2_mlp24"].attrs["train_cfg"] is None and runs["r2_mlp24"].attrs["n_params"] is None  # static: no TrainCfg
+    assert set(ladder.PROVENANCE) <= set(runs["r2_mlp24"].attrs) and set(ladder.PROVENANCE) <= set(runs["r3_null"].attrs)
+    assert runs["r3_null"].attrs["train_cfg"] == dataclasses.asdict(TrainCfg(seed=1, device="cpu"))
+    assert runs["r3_null"].attrs["n_params"] == n_params(QglobDelta(len(STAGED) + 1))
+    # the summary and evaluation code is not hashed: fixing it must not mark finished training runs stale
+    assert not {"src/aicup/ladder.py", "src/aicup/qeval.py", "src/aicup/ladder_fold0.py"} & set(ladder.code_version()["code_files"])
+    assert ladder.code_version() == {k: runs["r3_null"].attrs[k] for k in ("git_head", "git_dirty", "code_sha256", "code_files")}
+
+
+def test_summary_flags_mixed_code_versions(tmp_path):
+    rng = np.random.RandomState(4)
+    keys = _keys_table(folds=(1, 2, 3, 4))
+    cv = tmp_path / "cv"
+    for s in (0, 1, 2):
+        df = _frame(keys, rng, "r3_settf", s)
+        df.attrs["code_sha256"] = ("a" if s < 2 else "b") * 64  # seed 2 trained by other code
+        ladder.save_cv(df, cv / ladder.cv_filename("r3_settf", s))
+    ladder.save_cv(_frame(keys, rng, "r2_mlp24", 0), cv / ladder.cv_filename("r2_mlp24", 0))  # old format: no provenance
+    _, meta = ladder.load_cv(cv / ladder.cv_filename("r2_mlp24", 0))
+    assert {k: meta[k] for k in ladder.PROVENANCE} == dict.fromkeys(ladder.PROVENANCE)  # loads, every field null
+    S = ladder.summarize(cv, n_boot=100)
+    assert S["rungs"]["r3_settf"]["code_sha256"] == ["a" * 64, "b" * 64] and S["rungs"]["r3_settf"]["mixed_versions"] is True
+    assert S["rungs"]["r2_mlp24"]["code_sha256"] == [None] and S["rungs"]["r2_mlp24"]["mixed_versions"] is False
+    assert S["mixed_versions"] == ["r3_settf"]
+    r = _run_cli("--summarize-only", "--out", cv)
+    assert r.returncode == 0, r.stderr  # reported loudly, but the gates are not failed by it
+    assert "WARNING" in r.stderr and "mixed code versions" in r.stderr and "r3_settf" in r.stderr
+    assert "r2_mlp24" not in r.stderr.split("WARNING", 1)[1]
+    assert _strict((tmp_path / "cv_summary.json").read_text())["mixed_versions"] == ["r3_settf"]
+
+    df, _ = ladder.load_cv(cv / ladder.cv_filename("r3_settf", 2))
+    df.attrs["code_sha256"] = "a" * 64
+    ladder.save_cv(df, cv / ladder.cv_filename("r3_settf", 2))
+    same = ladder.summarize(cv, n_boot=100)
+    assert same["mixed_versions"] == [] and same["rungs"]["r3_settf"]["code_sha256"] == ["a" * 64]
+    assert ladder.gates(same) == ladder.gates(S) and same["comparisons"] == S["comparisons"]
+    r = _run_cli("--summarize-only", "--out", cv)
+    assert r.returncode == 0 and "WARNING" not in r.stdout + r.stderr, r.stderr
+
+
 def test_cv_refuses_fold0(tmp_path):
     with pytest.raises(ValueError, match="fold 0"):
         ladder.run_rung_cv("r2_mlp24", tmp_path, folds=(0, 1, 2, 3))
@@ -478,16 +582,41 @@ def _fold0_case(tmp_path, labels, pp=4, per_rank=2):
     return vec_dir, players, vec, summary, model
 
 
-def _run_fold0_cli(*args):
-    return subprocess.run([sys.executable, "-I", str(FOLD0_SCRIPT), *map(str, args)], capture_output=True, text=True,
-                          timeout=600)
+_FOLD0_CLI = """\
+import runpy, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import aicup.ladder_fold0 as fold0
+fold0.CANONICAL_OUT = Path(sys.argv[2])
+sys.argv = sys.argv[3:]
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
+
+
+def _run_fold0_cli(*args, canonical):
+    """scripts/ladder_eval_fold0.py in a fresh `python -I`, with ladder_fold0.CANONICAL_OUT moved to `canonical`
+    so that no test depends on (or could write) the real results/ladder/fold0_eval.json."""
+    return subprocess.run([sys.executable, "-I", "-c", _FOLD0_CLI, str(ROOT / "src"), str(canonical), str(FOLD0_SCRIPT),
+                           *map(str, args)], capture_output=True, text=True, timeout=600)
+
+
+@pytest.fixture
+def canonical(tmp_path, monkeypatch):
+    """ladder_fold0.CANONICAL_OUT moved to a path under tmp_path (absent unless a test writes it)."""
+    path = tmp_path / "canonical" / "fold0_eval.json"
+    monkeypatch.setattr(ladder_fold0, "CANONICAL_OUT", path)
+    return path
+
+
+def _no_loading(*a, **k):
+    raise AssertionError("data loaded although fold 0 must not be evaluated for this request")
 
 
 def _strict(text):
     return json.loads(text, parse_constant=lambda c: pytest.fail(f"non-standard JSON constant {c}"))
 
 
-def test_refuses_second_fold0_eval(tmp_path, monkeypatch):
+def test_refuses_second_fold0_eval(tmp_path, monkeypatch, canonical):
     vec_dir, players, _, summary, model = _fold0_case(tmp_path, ["r2_mlp24@pp4"])
     out = tmp_path / "ladder" / "fold0_eval.json"
     kw = dict(out=out, chosen_from=summary, vectors_dir=vec_dir, rank_model=model, per_player=4, device="cpu", n_boot=50)
@@ -496,26 +625,27 @@ def test_refuses_second_fold0_eval(tmp_path, monkeypatch):
     saved = _strict(first)
     assert saved == _strict(ladder.to_json(res))
     assert [p.name for p in out.parent.iterdir()] == ["fold0_eval.json"]  # written atomically, no temp file left
-    # provenance: what was evaluated, chosen from which summary (path and sha256), at which commit
+    # provenance: what was evaluated, chosen from which summary (path and sha256), by which code
     assert (saved["rung"], saved["kind"], saved["seeds"], saved["per_player"], saved["counts"]) == ("r2_mlp24", "static", None,
                                                                                                     4, True)
     assert saved["chosen_from"] == str(summary.resolve()) and saved["cv_label"] == "r2_mlp24@pp4"
     assert saved["cv_summary_sha256"] == hashlib.sha256(summary.read_bytes()).hexdigest()
     assert saved["production_model"]["sha256"] == hashlib.sha256(model.read_bytes()).hexdigest()
     assert saved["eval_fold"] == 0 and saved["train_folds"] == [1, 2, 3, 4] and saved["n_questions"] == 20 * 7
-    assert "git_head" in saved and saved["headline"]["n_boot"] == 50 and len(saved["headline"]["ci95"]) == 2
+    assert {k: saved[k] for k in ("git_head", "git_dirty", "code_sha256", "code_files")} == ladder.code_version()
+    assert saved["code_sha256"] == _code_sha(CODE_FILES) and saved["code_files"] == CODE_FILES
+    assert saved["torch_version"] == torch.__version__ and saved["device_name"] == "cpu"
+    assert saved["headline"]["n_boot"] == 50 and len(saved["headline"]["ci95"]) == 2
     assert "r2_mlp24@pp8" in saved["note_production"] and saved["cv_pp8_vs_base"] is None
     assert ladder_fold0.repo_path(ROOT / "results" / "ladder" / "cv_summary.json") == "results/ladder/cv_summary.json"
+    assert not canonical.exists()  # only the given --out is written
 
-    def no_loading(*a, **k):
-        raise AssertionError("data loaded although fold 0 was evaluated already")
-
-    monkeypatch.setattr(ladder_fold0, "load_inputs", no_loading)
+    monkeypatch.setattr(ladder_fold0, "load_inputs", _no_loading)
     with pytest.raises(ladder_fold0.Refused, match="fold 0"):
         ladder_fold0.run("r2_mlp24", players=players, **kw)
     # the CLI exits with 2 before reading anything (its vectors directory does not even exist)
     r = _run_fold0_cli("--rung", "r2_mlp24", "--per-player", 4, "--out", out, "--chosen-from", summary,
-                       "--vectors", tmp_path / "none", "--rank-model", model)
+                       "--vectors", tmp_path / "none", "--rank-model", model, canonical=canonical)
     assert r.returncode == 2, r.stderr
     assert "fold 0" in r.stderr and str(out) in r.stderr
     # a run that reaches the end after another one wrote the file does not overwrite it either
@@ -578,12 +708,13 @@ def test_fold0_static_rung_is_fitted_once(tmp_path, monkeypatch):
 def test_fold0_set_rung_seed_mean(tmp_path, monkeypatch):
     _, players, vec, _, model = _fold0_case(tmp_path, [], pp=2)
     doc = _strict(model.read_text())
-    runs, crossfits = {}, []
-    orig_split, orig_crossfit = ladder_fold0._set_split, ladder.crossfit_base_logits
+    runs, crossfits, predicts = {}, [], []
+    orig_split, orig_crossfit, orig_predict = ladder_fold0._set_split, ladder.crossfit_base_logits, ladder.predict_set_model
 
-    def spy_split(rung, v, vec, train_q, val_q, counts, per_player, seed, device, cache):
-        out, info = orig_split(rung, v, vec, train_q, val_q, counts, per_player, seed, device, cache)
+    def spy_split(rung, v, vec, train_q, val_q, counts, per_player, seed, device, cache, **kw):
+        out, info = orig_split(rung, v, vec, train_q, val_q, counts, per_player, seed, device, cache, **kw)
         assert v == 0 and sorted(train_q["fold"].unique()) == [1, 2, 3, 4] and set(val_q["fold"]) == {0}
+        assert list(out) == [""]
         runs[seed] = (val_q, out[""])
         return out, info
 
@@ -591,11 +722,18 @@ def test_fold0_set_rung_seed_mean(tmp_path, monkeypatch):
         crossfits.append(1)
         return orig_crossfit(*a, **k)
 
+    def spy_predict(fitted, data, base, **kw):
+        predicts.append(kw)
+        return orig_predict(fitted, data, base, **kw)
+
     monkeypatch.setattr(ladder_fold0, "_set_split", spy_split)
     monkeypatch.setattr(ladder, "crossfit_base_logits", spy_crossfit)
+    monkeypatch.setattr(ladder, "predict_set_model", spy_predict)
+    monkeypatch.setitem(ladder.EXTRAS, "r3_null", {"T16": {"ticks": 16}, "certain": {"pick": "certain"}})
     res = ladder_fold0.evaluate_fold0("r3_null", vec, players, production=doc, seeds=(0, 1), per_player=2, device="cpu",
                                       n_boot=50)
     assert sorted(runs) == [0, 1] and len(crossfits) == 1  # one training per seed; one 4-fold base shared by the seeds
+    assert predicts == [{}, {}]  # the final tick once per seed: EXTRAS are never computed on fold 0
     assert (res["kind"], res["seeds"]) == ("set", [0, 1])
     val_q = runs[0][0]
     y, n = val_q["rank"].map(RANK_TO_IDX).to_numpy(), val_q["n_games"].to_numpy()
@@ -617,28 +755,76 @@ def test_fold0_set_rung_seed_mean(tmp_path, monkeypatch):
     json.loads(ladder.to_json(res))
 
 
-def test_fold0_cli_refusals_before_loading(tmp_path):
+def test_fold0_cli_refusals_before_loading(tmp_path, canonical):
     out, summary = tmp_path / "fold0_eval.json", tmp_path / "cv_summary.json"
     common = ["--out", out, "--chosen-from", summary, "--vectors", tmp_path / "none", "--rank-model", tmp_path / "none.json"]
-    r = _run_fold0_cli("--rung", "r3_null", *common)  # the summary the rung was chosen from is missing
+    cli = partial(_run_fold0_cli, canonical=canonical)
+    r = cli("--rung", "r3_null", *common)  # the summary the rung was chosen from is missing
     assert r.returncode == 2, r.stderr
     assert str(summary) in r.stderr
-    summary.write_text(json.dumps({"rungs": {"r3_null@nocounts": {}, "r2_mlp24@pp8": {}}}))
+    summary.write_text(json.dumps({"rungs": {"r3_null@nocounts": {"seeds": [0, 1, 2]}, "r2_mlp24@pp8": {}}}))
     for args, label in ((["--rung", "r3_null"], "r3_null"), (["--rung", "r2_mlp24"], "r2_mlp24"),
                         (["--rung", "r2_mlp24", "--per-player", 16], "r2_mlp24@pp16")):
-        r = _run_fold0_cli(*args, *common)  # no CV results for this configuration
+        r = cli(*args, *common)  # no CV results for this configuration
         assert r.returncode == 2, r.stderr
         assert f"'{label}'" in r.stderr
     for args in (["--rung", "r3_null", "--no-counts"], ["--rung", "r2_mlp24", "--per-player", 8]):
-        r = _run_fold0_cli(*args, *common)  # the label is in the summary: past the refusals, stops at the missing inputs
+        r = cli(*args, *common)  # the label is in the summary: past the refusals, stops at the missing inputs
         assert r.returncode not in (0, 2), r.stderr
         assert "fold0.npz" in r.stderr and "none.json" in r.stderr
     out.write_text("{}")
     summary.unlink()
-    r = _run_fold0_cli("--rung", "r3_null", *common)  # an existing output is refused first
+    r = cli("--rung", "r3_null", *common)  # an existing output is refused first
     assert r.returncode == 2, r.stderr
     assert "fold 0" in r.stderr and out.read_text() == "{}"
     assert sorted(p.name for p in tmp_path.iterdir()) == ["fold0_eval.json"]
+
+
+def test_fold0_seeds_must_match_the_cv_label(tmp_path, monkeypatch, canonical):
+    out, summary = tmp_path / "fold0_eval.json", tmp_path / "cv_summary.json"
+    summary.write_text(json.dumps({"rungs": {"r3_null": {"seeds": [0, 1, 2]}, "r3_deepsets": {"balanced_mean_over_n": 0.6},
+                                             "r2_mlp24": {"seeds": [0]}}}))
+    inputs = dict(vectors_dir=tmp_path / "none", rank_model=tmp_path / "none.json", device="cpu")
+    monkeypatch.setattr(ladder_fold0, "load_inputs", _no_loading)
+    with pytest.raises(ladder_fold0.Refused, match=r"--seeds \[0\].*\[0, 1, 2\]"):
+        ladder_fold0.run("r3_null", out=out, chosen_from=summary, seeds=(0,), **inputs)
+    common = ["--out", out, "--chosen-from", summary, "--vectors", tmp_path / "none", "--rank-model", tmp_path / "none.json"]
+    cli = partial(_run_fold0_cli, canonical=canonical)
+    for args in (["--rung", "r3_null", "--seeds", 0], ["--rung", "r3_null", "--seeds", 0, 1, 2, 3],
+                 ["--rung", "r3_deepsets"]):  # other seeds than the CV label's; a label without seeds cannot match
+        r = cli(*args, *common)
+        assert r.returncode == 2, r.stderr
+        assert "seeds" in r.stderr and "fold0.npz" not in r.stderr
+    # the same seeds in another order, and a static rung (fitted once; --seeds unused): past the refusals
+    for args in (["--rung", "r3_null", "--seeds", 2, 0, 1], ["--rung", "r2_mlp24", "--seeds", 5]):
+        r = cli(*args, *common)
+        assert r.returncode not in (0, 2), r.stderr
+        assert "fold0.npz" in r.stderr
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["cv_summary.json"]
+
+
+def test_fold0_refuses_when_the_canonical_result_exists(tmp_path, monkeypatch, canonical):
+    out, summary = tmp_path / "elsewhere" / "fold0_eval.json", tmp_path / "cv_summary.json"
+    summary.write_text(json.dumps({"rungs": {"r2_mlp24": {"seeds": [0]}}}))
+    inputs = dict(vectors_dir=tmp_path / "none", rank_model=tmp_path / "none.json", device="cpu")
+    common = ["--out", out, "--chosen-from", summary, "--vectors", tmp_path / "none", "--rank-model", tmp_path / "none.json"]
+    cli = partial(_run_fold0_cli, canonical=canonical)
+    r = cli("--rung", "r2_mlp24", *common)  # canonical absent: past the refusals, stops at the missing inputs
+    assert r.returncode not in (0, 2) and "fold0.npz" in r.stderr, r.stderr
+
+    canonical.parent.mkdir()
+    canonical.write_text("{}")  # fold 0 was evaluated already, into the canonical file
+    monkeypatch.setattr(ladder_fold0, "load_inputs", _no_loading)
+    with pytest.raises(ladder_fold0.Refused, match="fold 0"):
+        ladder_fold0.run("r2_mlp24", out=out, chosen_from=summary, **inputs)  # whatever --out is
+    with pytest.raises(ladder_fold0.Refused, match="whatever --out is"):
+        ladder_fold0.check_request("r2_mlp24", out, summary)
+    summary.unlink()
+    for rung in ("r2_mlp24", "r3_null"):  # checked first, before the rung, the summary and the inputs
+        r = cli("--rung", rung, *common)
+        assert r.returncode == 2, r.stderr
+        assert str(canonical) in r.stderr and "fold 0" in r.stderr
+    assert not out.parent.exists() and canonical.read_text() == "{}"
 
 
 def _fold0_skip_reason():

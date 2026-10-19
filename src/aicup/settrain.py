@@ -171,7 +171,8 @@ class _Inputs:
 
 def fit_set_model(make: Callable[[int], nn.Module], data: dict, base, cfg: TrainCfg) -> Fitted:
     """Train make(d_in) on the packed training questions `data` against base logits [Q, 10]
-    (cross-fitted, see crossfit_base_logits) with cfg; every question needs a rank (y >= 0)."""
+    (cross-fitted, see crossfit_base_logits) with cfg; every question needs a rank (y >= 0) and the
+    standardisation statistics must be finite (ValueError otherwise)."""
     if cfg.loss not in LOSSES:
         raise ValueError(f"unknown loss {cfg.loss!r}; known: {list(LOSSES)}")
     if cfg.epochs < 0 or cfg.batch < 1:
@@ -181,8 +182,17 @@ def fit_set_model(make: Callable[[int], nn.Module], data: dict, base, cfg: Train
     if len(y) != len(base) or y.min() < 0 or y.max() >= N_CLASSES:
         raise ValueError("every training question needs a rank (0 <= y < 10)")
     tokens, mask = data["tokens"], np.asarray(data["mask"], dtype=bool)
-    tok_mean, tok_std = _token_stats(tokens, mask)
-    glob_mean, glob_std = _standardise(np.asarray(data["qglob"], dtype=np.float64))
+    # a NaN / inf in the valid tokens or in qglob makes its column's statistics non-finite; checking the
+    # O(D) statistics instead of the inputs avoids another pass over several GB of tokens, and the
+    # warnings of inf - inf are moot because any of them ends in the error below
+    with np.errstate(invalid="ignore", over="ignore"):
+        tok_mean, tok_std = _token_stats(tokens, mask)
+        glob_mean, glob_std = _standardise(np.asarray(data["qglob"], dtype=np.float64))
+    for what, mean, std in (("token", tok_mean, tok_std), ("qglob", glob_mean, glob_std)):
+        bad = np.flatnonzero(~(np.isfinite(mean) & np.isfinite(std)))
+        if len(bad):
+            raise ValueError(f"{what} standardisation statistics are not finite in columns {bad.tolist()}: the training "
+                             f"{'tokens of valid games' if what == 'token' else 'qglob'} hold NaN or inf")
     with torch.random.fork_rng(devices=[]):  # seeded initialisation without touching the global RNG
         torch.manual_seed(cfg.seed)
         model = make(tokens.shape[2])
