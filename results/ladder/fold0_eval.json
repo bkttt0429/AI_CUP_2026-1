@@ -1,0 +1,159 @@
+{
+ "created": "2026-10-19T16:48:25",
+ "git_head": "7ab952f",
+ "git_dirty": false,
+ "code_sha256": "c138c070073d7597299c9d130b0b6834c20768958e0017a1f1b0e4fc3c31b0e0",
+ "code_files": [
+  "src/aicup/gamevec.py",
+  "src/aicup/ladder_data.py",
+  "src/aicup/aggregators.py",
+  "src/aicup/settrain.py",
+  "src/aicup/rankmodel.py",
+  "src/aicup/qfeatures.py",
+  "src/aicup/metric.py"
+ ],
+ "torch_version": "2.14.1+cu126",
+ "device_name": "NVIDIA H200",
+ "rung": "r3_pma",
+ "kind": "set",
+ "seeds": [
+  0,
+  1,
+  2
+ ],
+ "per_player": 32,
+ "counts": true,
+ "eval_fold": 0,
+ "train_folds": [
+  1,
+  2,
+  3,
+  4
+ ],
+ "n_train_questions": 203328,
+ "n_questions": 9872,
+ "n_players": 1594,
+ "headline": {
+  "balanced_mean_over_n": 0.6233302353132149,
+  "balanced_by_n": {
+   "5": 0.5831161463905122,
+   "10": 0.6307547505842713,
+   "20": 0.6561198089648611
+  },
+  "nll_balanced": 1.3294729073728369,
+  "brier": 0.6549987441162016,
+  "ci95": [
+   0.609275338001959,
+   0.6370506302723032
+  ],
+  "n_boot": 5000,
+  "per_seed": {
+   "0": 0.6234694261661214,
+   "1": 0.6195554319258453,
+   "2": 0.6269658478476782
+  },
+  "seed_sd": 0.003707168272925877
+ },
+ "base": {
+  "balanced_mean_over_n": 0.6112580395102082,
+  "balanced_by_n": {
+   "5": 0.5764924477655724,
+   "10": 0.6195394179671025,
+   "20": 0.6377422527979496
+  },
+  "nll_balanced": 1.3482407511845318,
+  "brier": 0.662343896162158,
+  "definition": "softmax of the 4-fold cross-fitted r2_mlp24 validation base of the same training questions (\u0394 \u2261 0)"
+ },
+ "production": {
+  "balanced_mean_over_n": 0.6130870708449819,
+  "balanced_by_n": {
+   "5": 0.5768800702167747,
+   "10": 0.6215765377303069,
+   "20": 0.6408046045878643
+  },
+  "nll_balanced": 1.3556459299143353,
+  "brier": 0.6636994296587947
+ },
+ "vs_base": {
+  "diff": 0.012072195803006669,
+  "ci95": [
+   0.005124742953473147,
+   0.01885384236230249
+  ],
+  "by_n": {
+   "5": 0.006623698624939833,
+   "10": 0.011215332617168783,
+   "20": 0.0183775561669115
+  },
+  "n_boot": 5000,
+  "per_seed": {
+   "0": 0.012211386655913259,
+   "1": 0.008297392415637095,
+   "2": 0.015707808337469986
+  }
+ },
+ "vs_production": {
+  "diff": 0.010243164468232924,
+  "ci95": [
+   0.0032185881979685227,
+   0.01713178766445895
+  ],
+  "by_n": {
+   "5": 0.006236076173737559,
+   "10": 0.009178212853964474,
+   "20": 0.01531520437699685
+  },
+  "n_boot": 5000,
+  "per_seed": {
+   "0": 0.010382355321139514,
+   "1": 0.00646836108086335,
+   "2": 0.013878777002696241
+  }
+ },
+ "note_production": "The production model (rank_model.json) was trained with 8 questions per player and this retrain with per_player of them, so vs_production mixes the rung with the training size; the training size alone is the CV comparison 'r2_mlp24@pp8 vs r2_mlp24' of chosen_from (cv_pp8_vs_base, when present).",
+ "diagnostics": {
+  "train_loss_last": {
+   "0": 0.8714110762984665,
+   "1": 0.8923801563404224,
+   "2": 0.8795589870876737
+  },
+  "base": {
+   "ce_train": 1.257995115890407,
+   "ce_val": 1.348240751184532,
+   "max_dev": 2.0540196007433012e-10,
+   "max_dev_unclipped": 2.220446049250313e-16,
+   "n_clipped_rows": 1,
+   "n_train": 203328,
+   "n_val": 9872
+  }
+ },
+ "chosen_from": "results/ladder/cv_summary_at_fold0_choice.json",
+ "cv_summary_sha256": "f61051dc83531466f13e3ef671c23464fb6238ccfa63548517949e37c34fb989",
+ "cv_label": "r3_pma",
+ "cv": {
+  "balanced_mean_over_n": 0.6274210584851341,
+  "per_fold": {
+   "1": 0.6215952949944583,
+   "2": 0.6186951867780152,
+   "3": 0.637725499671045,
+   "4": 0.6316850740804237
+  },
+  "seeds": [
+   0,
+   1,
+   2
+  ]
+ },
+ "cv_pp8_vs_base": {
+  "diff": 0.0007846616882104529,
+  "ci95": [
+   -0.0010518348020209169,
+   0.002611066250812873
+  ]
+ },
+ "production_model": {
+  "path": "results/models/rank_model.json",
+  "sha256": "b89c19c0afeb728707bd2de5688d24c12bfea0c77087626801ee135df08f5f6d"
+ }
+}
