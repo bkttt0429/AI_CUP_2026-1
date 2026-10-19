@@ -40,7 +40,7 @@
   - 把各 tick 輸出相乘，或對實際落子取 `max_τ` 當似然。
   - 在驗證集上挑 tick。主要分數一律取最後一個 tick。
   - 訓練 8 ticks、推論 16 ticks 的結果另列為「超出訓練長度的泛化」，不參與選擇。
-- **訓練長度**：固定 epoch，不做 early stopping。驗證 fold 只用來報分。
+- **訓練長度**（2026-10-19 使用者核定修改，見 Task 10）：集合 rung 用內層提早停止——從訓練題依玩家分組、按段位分層留出 10% 玩家當內層驗證，最多 10 個 epoch，每 1/4 epoch 算一次內層的類別平衡 CE（最後一個 tick，不含 γ 項），保留最好那次的權重（含第 0 次，即 Δ ≡ 0）。驗證 fold 仍然只用來報分。靜態 rung 不變。原本的「固定 20 epoch」在 CUDA 冒煙中讓集合模型背熟訓練玩家（訓練 CE 1.27→0.22，驗證掉到 0.55）。
 - **順序與門檻**：(0)(1)(2) → (3) 加對照 → 只有 `G_set` 成立時才跑 (4)(5)。不成立時要加 `--force`。
 - **門檻定義**：每個門檻的每組比較都要同時滿足以下四項；比較對象都事先指定，不取 max。
   1. seed 平均後的成對 CI 下界 > 0
@@ -324,6 +324,35 @@ for _ in range(T):
   - `docs/ARCHITECTURE.md` §3：只在聚合器支線那一列加註「以 folds 1–4 CV 成對檢定，fold 0 只評一次」，其他列的通則不動。
   - `docs/NANO4.md` §4：加 ladder 的 sbatch 指令（見 Task 9）。
 - [ ] **Step 6:** Commit `feat: one-shot fold-0 evaluation for the chosen ladder rung; docs: CV-based aggregator protocol`
+
+### Task 10: 集合 rung 的內層提早停止（2026-10-19 使用者核定）
+
+**為什麼**：CUDA 冒煙（job 569807）和診斷（job 569822，split 1）顯示，每位訓練玩家的 ≤20 局在他的 32 題裡反覆出現、標籤相同，集合模型會記住「這幾局 → 這個段位」。`r3_settf` 的驗證分數隨 epoch 1／2／3／5／20 是 0.6245／0.6185／0.6010／0.5979／0.5521（基準 0.6136），看過的訓練玩家則升到 0.89。γ = 1 會把 Δ 壓成 0，weight decay 0.1 沒有幫助。
+
+**Files:** Modify `src/aicup/settrain.py`、`src/aicup/ladder.py`（只動 attrs 和 CLI 輸出需要的部分）、`scripts/ladder_cv.py`（印出每個 split 的 best_epoch）、`METHOD_NOTES.md` §2.7、`docs/NANO4.md` §4；Test `tests/test_settrain.py`、`tests/test_ladder.py`
+
+**Interfaces — Produces:**
+- `TrainCfg` 改成 `epochs: int = 10`（上限），新增 `inner_frac: float = 0.1`、`evals_per_epoch: int = 4`、`patience: int = 8`。`inner_frac == 0` 時行為和原本相同：訓練滿 `epochs`、不選 checkpoint。
+- `INNER_SEED = 2026`；`inner_players(player_id, y, frac, seed=INNER_SEED) -> np.ndarray[bool]`（每題是否屬於內層驗證）：每個段位各自把不重複的玩家排序後用 `RandomState(seed)` 打亂，取 `ceil(frac × 該段位玩家數)` 人；段位只有 1 人時不取；不會取走某段位的全部玩家。只取決於題目的玩家和段位，和 `cfg.seed`、模型無關，所以同一個 split 的所有 rung、所有 seed 用同一批內層玩家。
+- `fit_set_model`：
+  - `inner_frac > 0` 時，先用 `inner_players` 切出內層。標準化統計量只用內層以外的訓練題算；模型只在內層以外的題目上訓練。
+  - cosine 排程照舊，長度是 `epochs × n_batches`（n_batches 以內層以外的題數計）。
+  - 內層 CE：base + Δ 在最後一個 tick 的 log-softmax，對真實段位取負對數，以 `class_weights(內層 y)` 加權平均；不含 γ 項。在訓練開始前算一次（第 0 次，Δ ≡ 0），之後每 `ceil(n_batches / evals_per_epoch)` 個 batch 和每個 epoch 結束時各算一次（同一步不重複算）。
+  - 保留內層 CE 最低那次的權重（平手取較早的）；連續 `patience` 次沒有改善就停止。結束時載入最好的權重。
+  - 內層 CE 不是有限值時拋錯（和 I1 一樣，訊息說明是內層）。
+  - 不重訓：最後的模型就是用 90% 訓練玩家訓練出的最好 checkpoint。
+- `Fitted` 新增：`inner_ce: list`（含第 0 次）、`best_eval: int`、`best_epoch: float`（= 該次評估時已完成的 epoch 數，可為小數）、`stopped_early: bool`、`n_inner_players: int`、`n_inner_questions: int`。`inner_frac == 0` 時這些是空串列／None。
+- `ladder` 的每個 split attrs 記 `best_epoch`、`inner_ce_init`、`inner_ce_best`、`stopped_early`、`n_inner_players`；`scripts/ladder_cv.py` 每個集合 rung 印出各 split 的 best_epoch。
+
+- [ ] **Step 1:** 測試
+  - `test_inner_players_grouped_stratified_seed_free`：沒有玩家同時出現在兩邊；每個至少 2 人的段位都有內層玩家且不是全部；每個段位的人數等於 `ceil(frac × n)`；同樣的輸入不論 `cfg.seed` 結果相同；題目順序打亂後選到同一批玩家。
+  - `test_early_stop_restores_best_checkpoint`：可背誦的合成資料（每位玩家一組固定的隨機 token、隨機段位，base 全 0）：內層 CE 先降後升或一路升；`best_eval < len(inner_ce) - 1`；用回傳的模型重新算內層 CE 等於 `inner_ce[best_eval]`（誤差 < 1e-6）；`patience` 小時 `stopped_early` 為 True。
+  - `test_eval0_fallback_returns_base`：訓練只會變差時（例如段位與 token 無關），`best_eval == 0`，預測等於 `softmax(base)`（誤差 < 1e-12）。
+  - `test_inner_frac_zero_is_fixed_epochs`：`inner_frac=0` 時 `len(losses) == epochs`，沒有選 checkpoint。
+  - 既有測試：依賴舊行為的明確傳 `inner_frac=0`，不要改它們的斷言。
+- [ ] **Step 2:** FAIL → **Step 3:** 實作 → **Step 4:** PASS；全套測試通過，兩個真實資料重現測試仍逐位元相同（靜態 rung 不受影響）。
+- [ ] **Step 5: 文件**：本計畫 Global Constraints 的「訓練長度」已改；`METHOD_NOTES.md` §2.7 加一行說明內層提早停止和原因；`docs/NANO4.md` §4 註明 CV 檔記錄每個 split 的 best_epoch，舊版（固定 20 epoch）的 CV 檔要刪掉重跑。
+- [ ] **Step 6:** Commit `feat: inner player-grouped early stopping for the set rungs`
 
 ### Task 9: 在 nano4 執行
 
