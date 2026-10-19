@@ -67,7 +67,10 @@ BASE_TOL = 1e-12
 KEY_COLS = ["question_id", "fold", "player_id", "y", "n_games"]
 
 # rung -> (vector rep, make(d_in), TrainCfg overrides); default sizes (Tasks 4-6): XAttnGRU d_hidden 256
-# has 458,250 parameters at d_in 301 and CTM 437,514 (ratio 1.047), so no size change was needed
+# has 458,250 parameters at d_in 301 and CTM 437,514 (ratio 1.047), so no size change was needed.
+# r3_pma and r4_xattn_t1 are report-only attribution controls (REPORT_ONLY, never gated): r3_settf
+# without its SABs (PMA pooling of the encoded games, no game-game interaction; 258,058 parameters)
+# and r4_xattn with one tick for training and prediction alike (458,250 parameters)
 SET_RUNGS = {
     "r2_pooled_delta": ("staged", lambda d: PooledDelta(d), {}),
     "r3_null": ("staged", lambda d: QglobDelta(d), {}),
@@ -77,6 +80,8 @@ SET_RUNGS = {
     "r4_xattn": ("staged", lambda d: XAttnGRU(d, d_hidden=256), {}),
     "r5_ctm": ("staged", lambda d: CTM(d), {}),
     "r5_ctm_minmax": ("staged", lambda d: CTM(d), {"loss": "ctm_minmax"}),
+    "r3_pma": ("staged", lambda d: SetTransformer(d, layers=0), {}),
+    "r4_xattn_t1": ("staged", lambda d: XAttnGRU(d, d_hidden=256, ticks=1), {}),
 }
 RUNGS = STATIC_RUNGS | SET_RUNGS
 # report-only predictions of the same trained model: name -> predict_set_model keywords
@@ -94,9 +99,11 @@ GATES = {
     "G_sync": [("r5_ctm", "r4_xattn")],
 }
 # reported, never gated: per-game nonlinear encoding, training framework, re-calibration, the
-# certain-tick pick, and 8 -> 32 training questions per player
+# certain-tick pick, 8 -> 32 training questions per player, and the attribution controls of G_set /
+# G_iter: SAB game-game interaction, attention pooling vs mean / max, iteration (8 ticks vs 1)
 REPORT_ONLY = [("r3_deepsets", "r2_pooled_delta"), ("r2_staged", "r2_pooled_delta"), ("r3_null", BASE_RUNG),
-               ("r5_ctm_minmax@certain", "r5_ctm"), (f"{BASE_RUNG}@pp8", BASE_RUNG)]
+               ("r5_ctm_minmax@certain", "r5_ctm"), (f"{BASE_RUNG}@pp8", BASE_RUNG),
+               ("r3_settf", "r3_pma"), ("r3_pma", "r3_deepsets"), ("r4_xattn", "r4_xattn_t1")]
 N_BOOT = 5000
 NB_VARIANCE = 2.33
 MIN_DIFF = 0.005

@@ -22,6 +22,7 @@ submission_rank*.csv
 submission_rank*.json
 results/replay/
 results/ladder/vectors/
-results/ladder/cv/*.npz
+results/ladder/**/*.npz
+results/ladder/cv_smoke*
 !results/scores/games_fold*.csv.gz
 !results/models/

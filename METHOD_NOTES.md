@@ -77,6 +77,7 @@
 - 自訓 policy 的特徵必須 out-of-fold（例：policy 用 fold 1–3 訓練、聚合器用 fold 4 的特徵、fold 0 評估）；凍結的 Human SL 少一層訓練內外差異，更適合先比聚合器。
 - 順序：pilot → (0)(1)(2) 幾乎免費 → (3) → 只在 (3) 顯示集合互動有益時做 (4)(5)。相對主模型（自訓條件落子模型、校準、提交管線），這整節是可選支線；11/24 前時間不夠就砍。
 - 2026-10-19 起：聚合器比較用 folds 1–4 CV 的合併成對差值與穩定性門檻；fold 0 只評一次（`scripts/ladder_eval_fold0.py`）
+- 歸因對照（只報告、不作門檻，門檻不變）：`r3_pma`（Set Transformer 拿掉 SAB、只留 PMA 池化，局與局之間沒有交互）和 `r4_xattn_t1`（cross-attention + GRU 只跑 1 tick）。`G_set` 成立只能說「注意力集合模型勝過 mean/max 和沒有編碼器的對照」；要說是 SAB（局與局的交互）的功勞，還要 `r3_settf` > `r3_pma`。`G_iter` 也一樣：要說是反覆讀取的功勞，還要 `r4_xattn` > `r4_xattn_t1`。
 
 ### 2.8 全 fold 評分、L3/L4 與第一份提交管線（2026-10-16 實測）
 - **資料**：5 個 fold 中每位 ≥ 5 局的玩家各取 ≤ 20 局（`scoring.fold_players`，每人以 player_id 衍生 seed 打亂），共 7,948 人、147,780 局、16,430,090 個目標落子，每手 18 個 profile。lab01 兩張 GPU 約 14 小時（04:06–20:32，其中暫停 04:16–06:18）。彙總表 `results/scores/games_fold{F}.csv.gz`；逐手陣列留在 lab01。

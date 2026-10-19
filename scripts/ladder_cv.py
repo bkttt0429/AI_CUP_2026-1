@@ -9,9 +9,10 @@ rungs' base logits are cached in <out>/base_v{v}[_pp{N}][_nocounts].npz. At the 
 default --out results/ladder/cv gives results/ladder/cv_summary.json, a sibling such as
 results/ladder/cv_pp8 gives cv_pp8_summary.json and never overwrites the main summary.
 
-The iterative rungs (r4_*, r5_*) run only when the summary of <out> holds the r3 rungs and their
-controls and G_set passes; otherwise the reason is printed and the exit code is 2 (--force overrides).
-Folds containing 0 also exit with 2: fold 0 is evaluated once, by scripts/ladder_eval_fold0.py.
+The iterative rungs (r4_*, r5_*, including the one-tick control r4_xattn_t1) run only when the
+summary of <out> holds the r3 rungs and their controls and G_set passes; otherwise the reason is
+printed and the exit code is 2 (--force overrides). Folds containing 0 also exit with 2: fold 0 is
+evaluated once, by scripts/ladder_eval_fold0.py.
 
 Every file records its provenance (aicup.ladder.run_rung_cv attrs: git head and dirty flag, the
 sha256 of the training modules, TrainCfg, torch, device). Because existing files are skipped, a

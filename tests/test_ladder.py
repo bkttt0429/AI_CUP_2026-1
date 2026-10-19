@@ -471,10 +471,14 @@ def test_set_rungs_registry():
     from aicup.aggregators import DeepSets, PooledDelta, QglobDelta, SetTransformer, n_params
     from aicup.settrain import LOSSES, TrainCfg
 
+    assert ladder.comparison_pairs(["r3_settf", "r3_pma", "r3_deepsets", "r4_xattn", "r4_xattn_t1"])[-3:] == [
+        ("r3_settf", "r3_pma"), ("r3_pma", "r3_deepsets"), ("r4_xattn", "r4_xattn_t1")]
+
     expect = {"r2_pooled_delta": (PooledDelta, "staged", "final"), "r3_null": (QglobDelta, "staged", "final"),
               "r3_deepsets": (DeepSets, "staged", "final"), "r3_settf": (SetTransformer, "staged", "final"),
               "r3_deepsets_whole": (DeepSets, "whole", "final"), "r4_xattn": (XAttnGRU, "staged", "final"),
-              "r5_ctm": (CTM, "staged", "final"), "r5_ctm_minmax": (CTM, "staged", "ctm_minmax")}
+              "r5_ctm": (CTM, "staged", "final"), "r5_ctm_minmax": (CTM, "staged", "ctm_minmax"),
+              "r3_pma": (SetTransformer, "staged", "final"), "r4_xattn_t1": (XAttnGRU, "staged", "final")}
     assert set(ladder.SET_RUNGS) == set(expect) and ladder.RUNGS == ladder.STATIC_RUNGS | ladder.SET_RUNGS
     assert set(ladder.EXTRAS) <= set(ladder.SET_RUNGS)
     d_in = {"staged": len(STAGED) + 1, "whole": len(WHOLE_NAMES) + 1}  # token width: the vector + log1p(n_moves)
@@ -488,6 +492,28 @@ def test_set_rungs_registry():
     ratio = n_params(models["r4_xattn"]) / n_params(models["r5_ctm"])
     assert abs(ratio - 1) <= 0.1, ratio
 
+    # the report-only attribution controls: r3_settf without its SABs (PMA pooling only, no game-game
+    # interaction) and r4_xattn with one tick; the rest of each model is the same
+    pma, settf, t1, xattn = (models[k] for k in ("r3_pma", "r3_settf", "r4_xattn_t1", "r4_xattn"))
+    assert len(pma.sabs) == 0 and len(settf.sabs) == 2
+    assert n_params(settf) - n_params(pma) == sum(n_params(m) for m in settf.sabs)
+    assert (t1.ticks, xattn.ticks) == (1, 8) and n_params(t1) == n_params(xattn)
+    assert ladder.SET_RUNGS["r3_pma"][2] == ladder.SET_RUNGS["r3_settf"][2] == {}
+    assert ladder.SET_RUNGS["r4_xattn_t1"][2] == ladder.SET_RUNGS["r4_xattn"][2] == {}
+    assert "r3_pma" not in ladder.EXTRAS and "r4_xattn_t1" not in ladder.EXTRAS
+    g = torch.Generator().manual_seed(0)
+    tokens, qglob = torch.randn(3, 5, d_in["staged"], generator=g), torch.randn(3, 6, generator=g)
+    mask = torch.tensor([[True] * 5, [True, True, False, False, False], [True] + [False] * 4])
+    with torch.no_grad():  # what fit_set_model and predict_set_model call (ticks=None): T = 1 for both controls
+        assert pma(tokens, mask, qglob).shape == (3, 1, 10) and t1(tokens, mask, qglob).shape == (3, 1, 10)
+    assert {("r3_settf", "r3_pma"), ("r3_pma", "r3_deepsets"), ("r4_xattn", "r4_xattn_t1")} <= set(ladder.REPORT_ONLY)
+    gated = {x for pairs in ladder.GATES.values() for pair in pairs for x in pair}
+    assert not {"r3_pma", "r4_xattn_t1"} & gated  # never gated
+    assert ladder.GATES == {"G_rep": [("r2_staged", "r2_whole"), ("r3_deepsets", "r3_deepsets_whole")],
+                            "G_set": [("r3_settf", "r3_deepsets"), ("r3_settf", "r2_pooled_delta")],
+                            "G_iter": [("r4_xattn", "r3_settf"), ("r5_ctm", "r3_settf")],
+                            "G_sync": [("r5_ctm", "r4_xattn")]}
+
 
 # ---------------------------------------------------------------- CLI gating
 
@@ -497,9 +523,12 @@ def _run_cli(*args):
 
 def test_force_required_for_r4_without_g_set(tmp_path):
     cv = tmp_path / "cv"
-    r = _run_cli("--rungs", "r4_xattn", "--out", cv, "--vectors", tmp_path / "none")
-    assert r.returncode == 2, r.stderr
-    assert "r3_settf" in r.stdout + r.stderr and "--force" in r.stdout + r.stderr
+    for rung in ("r4_xattn", "r4_xattn_t1"):  # the one-tick control is guarded like r4 / r5
+        r = _run_cli("--rungs", "r3_pma", rung, "--out", cv, "--vectors", tmp_path / "none")
+        assert r.returncode == 2, r.stderr
+        assert "r3_settf" in r.stdout + r.stderr and "--force" in r.stdout + r.stderr
+    r = _run_cli("--rungs", "r3_pma", "--out", cv, "--vectors", tmp_path / "none")
+    assert r.returncode not in (0, 2) and "fold1.npz" in r.stderr  # an r3 rung: no guard; stops at the missing vectors
 
     rng = np.random.RandomState(0)
     keys = _keys_table(folds=(1, 2, 3, 4))

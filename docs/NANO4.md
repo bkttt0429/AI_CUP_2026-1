@@ -97,20 +97,43 @@ L3 聚合器梯子（`docs/superpowers/plans/2026-10-19-l3-aggregator-ladder-ctm
 sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J ladvec scripts/nano4/run.sbatch python -I scripts/ladder_build_vectors.py --folds 0 1 2 3 4
 ```
 
-folds 1–4 的 CV：靜態梯子、(3) 和對照，再跑一次每人 8 題的 `r2_mlp24`（摘要裡的 `r2_mlp24@pp8`，正式模型的訓練量）。摘要寫到 `results/ladder/cv_summary.json`：
+跑 CV 之前，先在 dev 上做一次 CUDA 冒煙：`r3_settf` 和 `r5_ctm` 各用 GPU 跑一個 seed，確認 CUDA 路徑能跑完（損失或機率出現 NaN／inf 時腳本會停下、不寫檔）。輸出在 `results/ladder/cv_smoke/`，摘要是 `results/ladder/cv_smoke_summary.json`；兩者都只是冒煙，已列在 `.gitignore`，不要 commit：
 
 ```bash
-sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus -t 12:00:00 -J ladder3 scripts/nano4/run.sbatch python -I scripts/ladder_cv.py --rungs r0_sum r1_clip r1_trim r2_mlp24 r2_staged r2_whole r2_length_only r2_pooled_delta r3_null r3_deepsets r3_deepsets_whole r3_settf
-sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus -t 12:00:00 -J ladder3 scripts/nano4/run.sbatch python -I scripts/ladder_cv.py --rungs r2_mlp24 --per-player 8
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 02:00:00 -J ladsmoke scripts/nano4/run.sbatch python -I scripts/ladder_cv.py --rungs r3_settf r5_ctm --seeds 0 --force --out results/ladder/cv_smoke
 ```
 
-(4)(5) 只在摘要的 `G_set` 成立時跑；不成立時腳本 exit 2，要跑就得另加 `--force`：
+folds 1–4 的 CV：靜態梯子、(3) 和對照，另加只報告、不作門檻的 `r3_pma`（Set Transformer 拿掉 SAB，只留 PMA 池化）。摘要寫到 `results/ladder/cv_summary.json`：
 
 ```bash
-sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus -t 24:00:00 -J ladder45 scripts/nano4/run.sbatch python -I scripts/ladder_cv.py --rungs r4_xattn r5_ctm r5_ctm_minmax
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus -t 12:00:00 -J ladder3 scripts/nano4/run.sbatch python -I scripts/ladder_cv.py --rungs r0_sum r1_clip r1_trim r2_mlp24 r2_staged r2_whole r2_length_only r2_pooled_delta r3_null r3_deepsets r3_deepsets_whole r3_settf r3_pma
 ```
 
-fold 0 的評估**只跑一次**，而且只在使用者從 `cv_summary.json` 選定 rung 之後才跑。CV 若用了 `--per-player` 或 `--no-counts`，這裡要給一樣的參數，讓設定對得上摘要裡的標籤（對不上就 exit 2）。結果寫到 `results/ladder/fold0_eval.json`，這個檔已存在時腳本 exit 2，不會重評：
+再跑一次每人 8 題的 `r2_mlp24`（摘要裡的 `r2_mlp24@pp8`，正式模型的訓練量）。這是約 1 分鐘的靜態 CPU 工作，用預設的 dev 分區就好：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J ladpp8 scripts/nano4/run.sbatch python -I scripts/ladder_cv.py --rungs r2_mlp24 --per-player 8
+```
+
+(4)(5) 只在摘要的 `G_set` 成立時跑；不成立時腳本 exit 2，要跑就得另加 `--force`。只報告的 `r4_xattn_t1`（cross-attention + GRU 只跑 1 tick）也算 r4，受同樣的限制：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus -t 24:00:00 -J ladder45 scripts/nano4/run.sbatch python -I scripts/ladder_cv.py --rungs r4_xattn r5_ctm r5_ctm_minmax r4_xattn_t1
+```
+
+局長 ablation（Task 9 Step 5）：對 CV 最好的一階和 `r2_mlp24` 各加 `--no-counts` 跑一次。staged 和 whole 兩種表示都要跑（例如最好的是 `r3_deepsets`，就連 `r3_deepsets_whole` 一起列進 `--rungs`）。摘要裡是 `@nocounts` 標籤，和 `r2_length_only` 並列，成為「拿掉局長」和「只有局長」兩端：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus -t 12:00:00 -J ladnocnt scripts/nano4/run.sbatch python -I scripts/ladder_cv.py --rungs <CV 最好的一階> r2_mlp24 --no-counts
+```
+
+`counts=False` 只拿掉明確的局長欄位（token 的各段 n_eff、present 和 log1p 手數；qglob 除了 log m 以外的欄；log n；q24 的 log_moves）。缺段的全零區塊，以及總和特徵的 /√n、/n 縮放，仍然帶有局長訊號，解讀時要註明。
+
+每個 CV 檔都記下出處：git HEAD、是否有未 commit 的修改（`git_dirty`）、訓練相關模組的 `code_sha256`、TrainCfg、torch 版本、GPU 名稱、每個 split 的秒數和參數量。從 PC 同步過來的程式若沒有在國網上 commit，`git_dirty` 會是 true，版本以 `code_sha256` 為準。已存在的檔會被略過，所以同一個標籤的各 seed 可能出自不同版本的程式；摘要的 `mixed_versions` 會列出這些標籤，腳本也會印一行 `WARNING`（門檻照算，不會因此失敗）。看到時，把舊版本 seed 的檔刪掉重跑。
+
+GPU 上的集合模型結果不能逐位元重現：index 和 MHA 的 backward 用 atomic add，同一個 seed 重跑會有小差異。「可逐位元重現」只在 CPU 上成立。
+
+fold 0 的評估**只跑一次**，而且只在使用者從 `cv_summary.json` 選定 rung 之後才跑。CV 若用了 `--per-player` 或 `--no-counts`，這裡要給一樣的參數，讓設定對得上摘要裡的標籤；set rung 的 `--seeds` 也要和該標籤的 seeds 相同（預設 0 1 2）。對不上就 exit 2。結果寫到 `results/ladder/fold0_eval.json`，這個檔已存在時，不論 `--out` 指到哪裡，腳本都 exit 2，不會重評。fold 0 只評選定的設定（最後一個 tick），CV 裡只報告的 @T16、@certain 不在 fold 0 上算：
 
 ```bash
 sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus -t 12:00:00 -J ladf0 scripts/nano4/run.sbatch python -I scripts/ladder_eval_fold0.py --rung <選定>
@@ -123,6 +146,8 @@ sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus -t 12:00:00 -J ladf0 scr
 ```bash
 bash scripts/sync_to_nano4.sh
 ```
+
+腳本預設傳到 `~/AICUP_2026-1`。這個專案（含 L3 聚合器梯子）在國網上的位置是 `~/BK_AICUP_2026-1`，同步時要指定目標：`NANO4_DIR=BK_AICUP_2026-1 bash scripts/sync_to_nano4.sh`。
 
 從國網把結果拉回本機，例如：
 
