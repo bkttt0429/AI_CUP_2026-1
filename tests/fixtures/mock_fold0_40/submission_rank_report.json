@@ -1,0 +1,30 @@
+{
+ "inputs": [
+  "data/mock_tests/fold0_40/rank_prediction_test_public.csv",
+  "data/mock_tests/fold0_40/rank_prediction_test_private.csv"
+ ],
+ "model": "/home/lab01/AICUP_2026-1/results/models/rank_model.json",
+ "model_name": "mlp_h32",
+ "questions": 40,
+ "games_declared": 375,
+ "games_present": 375,
+ "games_used": 375,
+ "games_dropped": [],
+ "passes": 0,
+ "positions": 41620,
+ "scoring_wall_s": 251.36278820037842,
+ "total_wall_s": 336.9359698295593,
+ "fallback_questions": [],
+ "predicted_counts": {
+  "A": 6,
+  "3D": 3,
+  "4D": 6,
+  "2D": 1,
+  "5D": 3,
+  "6D": 2,
+  "C": 10,
+  "B": 4,
+  "D": 5
+ },
+ "problems": []
+}

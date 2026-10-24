@@ -26,3 +26,5 @@ results/ladder/**/*.npz
 results/ladder/cv_smoke*
 !results/scores/games_fold*.csv.gz
 !results/models/
+!tests/fixtures/**/submission_rank*.csv
+!tests/fixtures/**/submission_rank*.json
