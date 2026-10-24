@@ -15,8 +15,14 @@ Protocol (plan 2026-10-19-l3-aggregator-ladder-ctm, Global Constraints):
   Set rungs stop early on inner validation players held out of the training questions
   (settrain.inner_players: 10% of each rank's players, the same for every rung and seed of a split);
   the validation fold only scores.
-- Scores are always taken at the final tick; EXTRAS (more ticks at inference, each question's most
-  certain tick) are extra columns of the same trained model and never enter the gates.
+- Scores are taken at the tick of the rung's TrainCfg.pick: the final tick for every rung but
+  r5_ctm_minmax, which trains the original CTM's two-tick loss and, as the original evaluates, selects
+  (inner early stopping) and predicts at each question's most certain tick. EXTRAS (more ticks at
+  inference, another tick pick) are extra columns of the same trained model and never enter the gates.
+- The 2026-10-24 follow-up (issue #2, item 3): the probability-mean ensemble ens_top3 of the three best
+  set rungs (build_ensemble, scripts/ladder_ensemble.py), r5_ctm_minmax with its selection fixed and the
+  U-Net synapse r5_ctm_unet are each compared with r5_ctm and with r3_pma (FOLLOWUP_COMPARISONS),
+  pre-specified, reported and never gated.
 
 Files: run_rung_cv returns one frame per (rung, seed) -- question_id, fold, player_id, y, n_games,
 p0..p9, score, plus p0@X..p9@X, score@X for each extra X -- with its settings, provenance (code
@@ -75,7 +81,11 @@ INNER_KEYS = ("best_epoch", "inner_ce_init", "inner_ce_best", "stopped_early", "
 # has 458,250 parameters at d_in 301 and CTM 437,514 (ratio 1.047), so no size change was needed.
 # r3_pma and r4_xattn_t1 are report-only attribution controls (REPORT_ONLY, never gated): r3_settf
 # without its SABs (PMA pooling of the encoded games, no game-game interaction; 258,058 parameters)
-# and r4_xattn with one tick for training and prediction alike (458,250 parameters)
+# and r4_xattn with one tick for training and prediction alike (458,250 parameters).
+# r5_ctm_minmax trains the original CTM's min-loss / max-certainty loss and, since 2026-10-24, selects and
+# predicts at the most certain tick (pick "certain"), as the original evaluates; before, its inner CE read
+# the final tick, which the loss does not train, and every run kept evaluation 0 (Δ ≡ 0). r5_ctm_unet is
+# r5_ctm with the original's default synapse, the depth-4 U-Net (synapse_depth=4; 467,898 parameters).
 SET_RUNGS = {
     "r2_pooled_delta": ("staged", lambda d: PooledDelta(d), {}),
     "r3_null": ("staged", lambda d: QglobDelta(d), {}),
@@ -84,17 +94,26 @@ SET_RUNGS = {
     "r3_deepsets_whole": ("whole", lambda d: DeepSets(d), {}),
     "r4_xattn": ("staged", lambda d: XAttnGRU(d, d_hidden=256), {}),
     "r5_ctm": ("staged", lambda d: CTM(d), {}),
-    "r5_ctm_minmax": ("staged", lambda d: CTM(d), {"loss": "ctm_minmax"}),
+    "r5_ctm_minmax": ("staged", lambda d: CTM(d), {"loss": "ctm_minmax", "pick": "certain"}),
     "r3_pma": ("staged", lambda d: SetTransformer(d, layers=0), {}),
     "r4_xattn_t1": ("staged", lambda d: XAttnGRU(d, d_hidden=256, ticks=1), {}),
+    "r5_ctm_unet": ("staged", lambda d: CTM(d, synapse_depth=4), {}),
 }
 RUNGS = STATIC_RUNGS | SET_RUNGS
 # report-only predictions of the same trained model: name -> predict_set_model keywords
 EXTRAS = {
     "r4_xattn": {"T16": {"ticks": 16}},
     "r5_ctm": {"T16": {"ticks": 16}},
-    "r5_ctm_minmax": {"T16": {"ticks": 16}, "certain": {"pick": "certain"}},
+    "r5_ctm_minmax": {"T16": {"ticks": 16}, "final": {"pick": "final"}},
+    "r5_ctm_unet": {"T16": {"ticks": 16}},
 }
+# the 2026-10-24 follow-up (issue #2, item 3 of the to-do list): ens_top3, the probability-mean ensemble of
+# ENSEMBLE_MEMBERS built from their CV files by build_ensemble (scripts/ladder_ensemble.py; not a trainable
+# rung), r5_ctm_minmax with its selection fixed and r5_ctm_unet, each vs r5_ctm and vs r3_pma -- the
+# comparison pairs were fixed before the runs; reported in REPORT_ONLY, never gated
+ENSEMBLE_RUNG = "ens_top3"
+ENSEMBLE_MEMBERS = ("r3_pma", "r4_xattn_t1", "r5_ctm")
+FOLLOWUP_COMPARISONS = [(a, b) for a in (ENSEMBLE_RUNG, "r5_ctm_minmax", "r5_ctm_unet") for b in ("r5_ctm", "r3_pma")]
 
 # gates: pre-specified (a, b) comparisons "a better than b"; all must meet every condition
 GATES = {
@@ -107,8 +126,8 @@ GATES = {
 # certain-tick pick, 8 -> 32 training questions per player, and the attribution controls of G_set /
 # G_iter: SAB game-game interaction, attention pooling vs mean / max, iteration (8 ticks vs 1)
 REPORT_ONLY = [("r3_deepsets", "r2_pooled_delta"), ("r2_staged", "r2_pooled_delta"), ("r3_null", BASE_RUNG),
-               ("r5_ctm_minmax@certain", "r5_ctm"), (f"{BASE_RUNG}@pp8", BASE_RUNG),
-               ("r3_settf", "r3_pma"), ("r3_pma", "r3_deepsets"), ("r4_xattn", "r4_xattn_t1")]
+               (f"{BASE_RUNG}@pp8", BASE_RUNG),
+               ("r3_settf", "r3_pma"), ("r3_pma", "r3_deepsets"), ("r4_xattn", "r4_xattn_t1"), *FOLLOWUP_COMPARISONS]
 N_BOOT = 5000
 NB_VARIANCE = 2.33
 MIN_DIFF = 0.005
@@ -362,7 +381,8 @@ def train_cfg(rung, seed, device):
 
 
 def _set_split(rung, v, vec, train_q, val_q, counts, per_player, seed, device, cache, extras=True):
-    """({"": final-tick probabilities, X: each EXTRAS[rung] prediction X unless extras=False}, info).
+    """({"": the probabilities at the rung's TrainCfg.pick tick, X: each EXTRAS[rung] prediction X unless
+    extras=False}, info).
 
     A non-finite training loss or probability raises FloatingPointError naming rung, seed and split
     (evaluate would score an all-NaN row as a guess of D); nothing is returned, so nothing is written
@@ -385,7 +405,7 @@ def _set_split(rung, v, vec, train_q, val_q, counts, per_player, seed, device, c
         bad = ~np.isfinite(P).all(axis=1)
         if bad.any():
             raise FloatingPointError(f"{where}: non-finite probabilities for {int(bad.sum())} of {len(P)} validation "
-                                     f"questions ({name or 'final tick'} prediction)")
+                                     f"questions ({name or 'main'} prediction)")
         out[name] = P
     inner = fitted.inner_ce  # [] with inner_frac = 0: no checkpoint chosen, the inner fields are None
     return out, {"base": base_info, "train_loss": fitted.losses, "n_params": n_params(fitted.model),
@@ -500,6 +520,60 @@ def load_cv(path):
         meta.setdefault(key, None)
     df.attrs = dict(meta)
     return df, meta
+
+
+# ---------------------------------------------------------------- ensemble
+
+def build_ensemble(cv_dir, members=ENSEMBLE_MEMBERS, rung=ENSEMBLE_RUNG, seeds=(0, 1, 2), per_player=DEFAULT_PER_PLAYER,
+                   counts=True, overwrite=False):
+    """Write the probability-mean ensemble of the members' CV files: for each seed, the members' files
+    cv_filename(member, seed, per_player, counts) in cv_dir (their main prediction; extras are ignored),
+    checked for identical validation questions (_same_keys), their p0..p9 averaged and the score of every
+    question recomputed from the mean probabilities (qeval.evaluate: the expected-score decision), saved
+    with save_cv as cv_dir / cv_filename(rung, seed, ...). attrs: rung, kind "set" (a seed per member
+    seed), seed, per_player, counts, folds, members, member_code_sha256 and member_git_head (each member's
+    provenance), the environment("cpu") of the code that built it (its code_sha256 is that of the training
+    modules now, not the members'), train_cfg / n_params / wall_seconds None. Returns the paths written.
+
+    `rung` must not be a trainable rung (RUNGS); a member file missing raises FileNotFoundError, an
+    existing output FileExistsError unless overwrite."""
+    cv_dir, members = Path(cv_dir), list(members)
+    if rung in RUNGS:
+        raise ValueError(f"{rung!r} is a trainable rung; an ensemble needs its own label")
+    if len(set(members)) < 2 or len(set(members)) != len(members):
+        raise ValueError(f"an ensemble needs at least 2 distinct members, got {members}")
+    pcols = [f"p{k}" for k in range(N_CLASSES)]
+    written = []
+    for seed in seeds:
+        out = cv_dir / cv_filename(rung, seed, per_player, counts)
+        if out.exists() and not overwrite:
+            raise FileExistsError(f"{out} exists (pass overwrite=True / --overwrite to rebuild it)")
+        frames, metas = [], []
+        for m in members:
+            path = cv_dir / cv_filename(m, seed, per_player, counts)
+            if not path.exists():
+                raise FileNotFoundError(f"{path} is missing: member {m} seed {seed} of {rung} has no CV results yet")
+            df, meta = load_cv(path)
+            if meta["rung"] != m or int(meta["seed"]) != seed:
+                raise ValueError(f"{path}: holds {meta['rung']} seed {meta['seed']}, not {m} seed {seed}")
+            frames.append(df)
+            metas.append(meta)
+        for m, df in zip(members[1:], frames[1:]):
+            _same_keys(frames[0], df, f"{rung} seed {seed}: {members[0]} vs {m}")
+        P = np.mean([df[pcols].to_numpy(dtype=float) for df in frames], axis=0)
+        ens = frames[0][KEY_COLS].reset_index(drop=True).copy()
+        _, s = evaluate(P, ens["y"].to_numpy(dtype=np.int64), ens)
+        for k in range(N_CLASSES):
+            ens[f"p{k}"] = P[:, k]
+        ens["score"] = s
+        ens.attrs = {"rung": rung, "kind": "set", "seed": int(seed), "per_player": int(per_player), "counts": bool(counts),
+                     "folds": sorted(int(f) for f in ens["fold"].unique()), "members": members,
+                     "member_code_sha256": {m: meta["code_sha256"] for m, meta in zip(members, metas)},
+                     "member_git_head": {m: meta["git_head"] for m, meta in zip(members, metas)},
+                     **environment("cpu"), "train_cfg": None, "n_params": None, "wall_seconds": None}
+        save_cv(ens, out)
+        written.append(out)
+    return written
 
 
 # ---------------------------------------------------------------- summary

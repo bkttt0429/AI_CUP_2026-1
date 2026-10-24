@@ -12,6 +12,7 @@ D_IN, M, B = 9, 20, 6
 
 # every set model at test size, constructed as make(d_in)
 SMALL_CTM = partial(CTM, d_tok=16, d_latent=32, history=4, nlm_hidden=8, heads=4, ticks=3, n_sync_action=24, n_sync_out=24)
+SMALL_CTM_UNET = partial(SMALL_CTM, synapse_depth=3)  # the U-Net synapse: widths 32, 24, 16
 MODELS = [
     pytest.param(partial(PooledDelta, hidden=16), id="PooledDelta"),
     pytest.param(partial(QglobDelta, hidden=8), id="QglobDelta"),
@@ -19,6 +20,7 @@ MODELS = [
     pytest.param(partial(SetTransformer, d_tok=16, heads=4, layers=2, hidden=32), id="SetTransformer"),
     pytest.param(partial(XAttnGRU, d_tok=16, d_hidden=32, heads=4, ticks=3), id="XAttnGRU"),
     pytest.param(SMALL_CTM, id="CTM"),
+    pytest.param(SMALL_CTM_UNET, id="CTM_unet"),
 ]
 
 
@@ -293,3 +295,56 @@ def test_ctm_norms_bounded_at_16_ticks():
         for x in tap.z + tap.s_act + tap.s_out + [out]:
             assert torch.all(torch.isfinite(x))
             assert float(x.norm(dim=-1).max()) < 1e3
+
+
+def test_ctm_synapse_depth():
+    """synapse_depth 1 (the default) is the depth-1 synapse as before -- the same modules in the same order, so
+    the same seeded initialisation; synapse_depth > 1 is the original's U-Net synapse (SynapseUNET)."""
+    from aicup.aggregators import _SynapseUNet
+
+    tokens, mask, qglob = _inputs()
+    torch.manual_seed(0)
+    a = CTM(D_IN)
+    torch.manual_seed(0)
+    b = CTM(D_IN, synapse_depth=1)
+    assert [k for k in a.state_dict() if k.startswith("synapse.")] == ["synapse.0.weight", "synapse.0.bias",
+                                                                       "synapse.2.weight", "synapse.2.bias"]
+    assert list(a.state_dict()) == list(b.state_dict())
+    assert all(torch.equal(x, y) for x, y in zip(a.state_dict().values(), b.state_dict().values()))
+
+    torch.manual_seed(0)
+    u = CTM(D_IN, synapse_depth=4)  # r5_ctm_unet
+    syn, d_syn = u.synapse, 256 + 128 + 6
+    assert isinstance(syn, _SynapseUNet) and syn.widths == [256, 176, 96, 16]  # linspace(256, 16, 4)
+    assert len(syn.down) == len(syn.up) == len(syn.skip_ln) == 3
+    assert syn.first[0].weight.shape == (256, d_syn) and syn.down[2][0].weight.shape == (16, 96)
+    assert syn.up[2][0].weight.shape == (96, 16) and syn.up[0][0].weight.shape == (256, 176)
+    lin, ln = (lambda i, o: i * o + o), (lambda n: 2 * n)
+    w = syn.widths
+    unet = lin(d_syn, w[0]) + ln(w[0]) + sum(lin(w[i], w[i + 1]) + ln(w[i + 1]) + lin(w[i + 1], w[i]) + 2 * ln(w[i])
+                                             for i in range(3))
+    dense = d_syn * 512 + 512 + 2 * 256  # the depth-1 synapse: Linear(d_syn, 512) -> GLU -> LayerNorm(256)
+    assert n_params(syn) == unet == 231088 and n_params(u) - n_params(a) == unet - dense
+    # the modules after the synapse (NLM, output) and before it are the same as the depth-1 model's
+    rest = lambda m: [k for k in m.state_dict() if not k.startswith("synapse.")]
+    assert rest(u) == rest(a)
+    # the wiring of the original: first projection, down path, then up path with skip connections and LayerNorms
+    x = torch.randn(5, d_syn)
+    outs = [syn.first(x)]
+    for layer in syn.down:
+        outs.append(layer(outs[-1]))
+    h = outs[-1]
+    for i in (2, 1, 0):
+        h = syn.skip_ln[i](syn.up[i](h) + outs[i])
+    with torch.no_grad():
+        torch.testing.assert_close(syn(x), h, atol=0, rtol=0)
+        assert h.shape == (5, 256) and torch.all(torch.isfinite(h))
+        out = _randomised(partial(CTM, synapse_depth=4))(tokens, mask, qglob)
+        assert out.shape == (B, 8, 10) and torch.all(torch.isfinite(out))
+        assert _randomised(SMALL_CTM_UNET)(tokens, mask, qglob).shape == (B, 3, 10)
+    assert SMALL_CTM_UNET(D_IN).synapse.widths == [32, 24, 16]
+    for bad in (0, -1):
+        with pytest.raises(ValueError, match="synapse_depth"):
+            CTM(D_IN, synapse_depth=bad)
+    with pytest.raises(ValueError, match="depth"):
+        _SynapseUNet(10, 8, 1)

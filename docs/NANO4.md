@@ -143,11 +143,26 @@ sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus -t 12:00:00 -J ladnocnt 
 
 GPU 上的集合模型沒有開 deterministic 模式，不保證逐位元重現（index 和 MHA 的 backward 用 atomic add）；不過實測同一個 seed 在不同 H200 節點重跑（冒煙與正式 CV），分數與 train loss 都逐位元相同。
 
-fold 0 的評估**只跑一次**，而且只在使用者從 `cv_summary.json` 選定 rung 之後才跑。CV 若用了 `--per-player` 或 `--no-counts`，這裡要給一樣的參數，讓設定對得上摘要裡的標籤；set rung 的 `--seeds` 也要和該標籤的 seeds 相同（預設 0 1 2）。對不上就 exit 2。結果寫到 `results/ladder/fold0_eval.json`，這個檔已存在時，不論 `--out` 指到哪裡，腳本都 exit 2，不會重評。fold 0 只評選定的設定（最後一個 tick），CV 裡只報告的 @T16、@certain 不在 fold 0 上算：
+fold 0 的評估**只跑一次**，而且只在使用者從 `cv_summary.json` 選定 rung 之後才跑。CV 若用了 `--per-player` 或 `--no-counts`，這裡要給一樣的參數，讓設定對得上摘要裡的標籤；set rung 的 `--seeds` 也要和該標籤的 seeds 相同（預設 0 1 2）。對不上就 exit 2。結果寫到 `results/ladder/fold0_eval.json`，這個檔已存在時，不論 `--out` 指到哪裡，腳本都 exit 2，不會重評。fold 0 只評選定的設定（該 rung `TrainCfg.pick` 的 tick，除了 `r5_ctm_minmax` 都是最後一個 tick），CV 裡只報告的 @T16、@final 不在 fold 0 上算：
 
 ```bash
 sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus -t 12:00:00 -J ladf0 scripts/nano4/run.sbatch python -I scripts/ladder_eval_fold0.py --rung <選定>
 ```
+
+2026-10-24 追加（issue #2，待辦第 3 項）。`r5_ctm_minmax` 的選模準則改了（內層 CE 與預測都取最確定 tick，`TrainCfg.pick = "certain"`），舊的 `results/ladder/cv/r5_ctm_minmax_s{0,1,2}.npz` 作廢，**在登入節點先刪掉**再送工作，否則腳本會略過；`r5_ctm_unet` 是新 rung（`r5_ctm` 換成 depth-4 U-Net synapse）。兩者都是 r5，仍要 `--force`。單張 H200 兩個 rung 約 1 小時：
+
+```bash
+rm -f results/ladder/cv/r5_ctm_minmax_s*.npz
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus -t 06:00:00 -J ladder3b scripts/nano4/run.sbatch python -I scripts/ladder_cv.py --rungs r5_ctm_minmax r5_ctm_unet --force
+```
+
+前三名 ensemble（`ens_top3`）不訓練：讀 `r3_pma`、`r4_xattn_t1`、`r5_ctm` 各 seed 的 CV 檔，機率平均後重算每題分數，寫成 `results/ladder/cv/ens_top3_s{seed}.npz`，再重寫 `cv_summary.json`，並印出事先指定的六組比較（`ens_top3`／`r5_ctm_minmax`／`r5_ctm_unet` 各對 `r5_ctm` 與 `r3_pma`；只報告、不作門檻）。CPU 幾分鐘，但依國網規定仍送 Slurm：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J ladens scripts/nano4/run.sbatch python -I scripts/ladder_ensemble.py
+```
+
+`ens_top3` 的檔已存在時要加 `--overwrite`（成員重跑過就該重建）。要 commit 的是 `results/ladder/cv_summary.json`；`.npz` 一律不進 git。
 
 ## 5. 同步程式碼、取回結果
 

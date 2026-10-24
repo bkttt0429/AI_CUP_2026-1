@@ -302,14 +302,18 @@ def test_fit_applies_class_weights(loss):
 def test_ctm_minmax_training_and_certain_pick():
     data, base = _packed(Q=24)
     make = partial(CTM, d_tok=8, d_latent=16, history=4, nlm_hidden=4, heads=2, ticks=3, n_sync_action=12, n_sync_out=12)
-    cfg = TrainCfg(epochs=2, batch=8, lr=1e-2, loss="ctm_minmax", device="cpu", inner_frac=0)
+    cfg = TrainCfg(epochs=2, batch=8, lr=1e-2, loss="ctm_minmax", pick="certain", device="cpu", inner_frac=0)
     fitted = fit_set_model(make, data, base, cfg)
     assert len(fitted.losses) == 2 and np.all(np.isfinite(fitted.losses))
+    P_by_pick = {}
     for pick in ("final", "certain"):
-        P = predict_set_model(fitted, data, base, pick=pick)
+        P = P_by_pick[pick] = predict_set_model(fitted, data, base, pick=pick)
         assert P.shape == (24, 10) and np.all(np.isfinite(P))
         np.testing.assert_allclose(P.sum(axis=1), 1.0, rtol=0, atol=1e-12)
         assert not np.allclose(P, _softmax(base))
+    # the default pick is the TrainCfg's: the tick the model is selected at is the tick it is scored at
+    np.testing.assert_array_equal(predict_set_model(fitted, data, base), P_by_pick["certain"])
+    assert not np.allclose(P_by_pick["certain"], P_by_pick["final"])
     r = fitted.model.r_act.detach()
     assert float(r.min()) >= 0.0 and 0.0 < float(r.max()) <= 15.0  # trained off 0, projected again by predict's forward
 
@@ -370,7 +374,7 @@ def test_crossfit_eval_base_matches_static_fit():
 
 
 def test_cfg_and_input_checks():
-    assert dataclasses.astuple(TrainCfg()) == (10, 512, 1e-3, 1e-4, 1e-2, 0, "final", "cuda", 0.1, 4, 8)
+    assert dataclasses.astuple(TrainCfg()) == (10, 512, 1e-3, 1e-4, 1e-2, 0, "final", "final", "cuda", 0.1, 4, 8)
     assert settrain.INNER_SEED == 2026
     data, base = _packed()
     make, cpu = partial(PooledDelta, hidden=4), TrainCfg(epochs=0, device="cpu", inner_frac=0)
@@ -593,3 +597,63 @@ def test_non_finite_inner_ce_is_refused():
     data = _player_sets(np.arange(20) % 2)
     with pytest.raises(FloatingPointError, match="non-finite inner validation CE"):
         fit_set_model(NaNEval, data, np.zeros((len(data["y"]), 10)), TrainCfg(epochs=1, batch=32, device="cpu"))
+
+
+class _TableDelta(torch.nn.Module):
+    """Returns the Δ [T, 10] of question qglob[:, 0] from a table (qglob passes standardisation unchanged
+    with mean 0 and std 1), so base + Δ is known per question and tick."""
+
+    def __init__(self, table):
+        super().__init__()
+        self.table = torch.nn.Parameter(table.float(), requires_grad=False)
+
+    def forward(self, tokens, mask, qglob, ticks=None):
+        return self.table[qglob[:, 0].round().long()]
+
+
+def test_early_stop_ce_follows_cfg_pick():
+    """The inner CE is read at the tick of cfg.pick -- the last tick, or each question's most certain tick
+    (label-free) -- the tick predict_set_model then uses by default."""
+    rng = np.random.RandomState(5)
+    Q, T = 6, 3
+    data, base = _packed(Q=Q)
+    data["qglob"][:, 0] = np.arange(Q)
+    y = data["y"] = np.array([0, 1, 2, 0, 1, 2])
+    table = torch.tensor(rng.randn(Q, T, 10) * 3.0).float()
+    logits = base[:, None, :] + table.double().numpy()  # [Q, T, 10], what the model and the base give
+    w = class_weights(y)
+    want = {}
+    for pick in ("final", "certain"):
+        cfg = TrainCfg(batch=4, device="cpu", pick=pick)
+        fitted = settrain.Fitted(_TableDelta(table), np.zeros(6), np.ones(6), np.zeros(6), np.ones(6), cfg)
+        early = settrain._EarlyStop(fitted.model, settrain._Inputs(data, fitted, "cpu"), base, y, np.arange(Q), cfg, fitted)
+        picked = settrain.PICKS[pick](logits)
+        shifted = picked - picked.max(axis=1, keepdims=True)
+        logp = shifted - np.log(np.exp(shifted).sum(axis=1, keepdims=True))
+        want[pick] = float((w * -logp[np.arange(Q), y]).sum() / w.sum())
+        assert early.ce() == pytest.approx(want[pick], abs=1e-9), pick
+        np.testing.assert_allclose(predict_set_model(fitted, data, base), _softmax(picked), rtol=0, atol=1e-6)
+    assert abs(want["final"] - want["certain"]) > 1e-3  # the table makes the two ticks differ
+    assert settrain._pick_torch(torch.from_numpy(logits), "final").numpy().tolist() == logits[:, -1].tolist()
+    with pytest.raises(ValueError, match="pick"):
+        settrain._pick_torch(torch.from_numpy(logits), "middle")
+
+
+def test_cfg_pick_defaults_and_validation():
+    """Evaluation 0 (Δ ≡ 0: every tick equal) gives the base's CE whatever the pick; the fitted model predicts
+    at its cfg.pick by default; an unknown pick is refused by fit_set_model and predict_set_model."""
+    rng = np.random.RandomState(2)
+    data = _player_sets(np.arange(40) % 4)
+    base = rng.randn(len(data["y"]), 10)
+    held = settrain.inner_players(data["player_id"], data["y"], 0.1)
+    make = partial(XAttnGRU, d_tok=8, d_hidden=8, heads=2, ticks=3)
+    for pick in ("final", "certain"):
+        f = fit_set_model(make, data, base, TrainCfg(epochs=1, batch=32, lr=1e-2, device="cpu", pick=pick))
+        assert f.cfg.pick == pick and dataclasses.asdict(f.cfg)["pick"] == pick  # recorded in the provenance
+        assert f.inner_ce[0] == pytest.approx(_weighted_ce(base[held], data["y"][held]), abs=1e-12)
+        np.testing.assert_array_equal(predict_set_model(f, data, base), predict_set_model(f, data, base, pick=pick))
+    assert TrainCfg().pick == "final"
+    with pytest.raises(ValueError, match="pick"):
+        fit_set_model(make, data, base, TrainCfg(epochs=1, device="cpu", pick="middle"))
+    with pytest.raises(ValueError, match="pick"):
+        predict_set_model(f, data, base, pick="middle")

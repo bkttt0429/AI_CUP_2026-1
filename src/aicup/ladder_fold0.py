@@ -13,8 +13,8 @@ the training questions of split v = 0 (ladder.training_questions: one RandomStat
 ascending -- fit_rank_model's final model) and scored on fold 0's pilot_questions. A static rung is
 fitted once (deterministic; seeds null). A set rung trains once per seed on the 4-fold cross-fitted
 base (ladder.split_base with v = 0, computed once and shared by the seeds), and the per-question
-score is the mean over seeds -- the statistic of the CV summary. Only that final-tick configuration is
-scored: the report-only EXTRAS of the CV (more ticks, the certain tick) are not computed on fold 0, so
+score is the mean over seeds -- the statistic of the CV summary. Only the rung's own configuration (its
+TrainCfg.pick tick) is scored: the report-only EXTRAS of the CV (more ticks, another tick) are not computed on fold 0, so
 that nothing can be picked on it after the fact. Reported: the headline
 balanced_mean_over_n with its player-bootstrap CI (evidence.bootstrap_ci_mean_over_sizes, n = 5000)
 and two paired differences (qeval.paired_diff), both through paired(), which refuses frames whose
@@ -207,8 +207,8 @@ def evaluate_fold0(rung, vec, players, production, seeds=(0, 1, 2), per_player=D
             _, base_val, diag["base"] = split_base(EVAL_FOLD, vec, train_q, val_q, counts, per_player, cache)
             for seed in seeds:
                 t0 = time.time()
-                # fold 0 reports only the chosen configuration (the final tick); the EXTRAS live in the CV
-                # summary, so that nothing is picked on fold 0 after the fact
+                # fold 0 reports only the chosen configuration (the rung's TrainCfg.pick tick); the EXTRAS live
+                # in the CV summary, so that nothing is picked on fold 0 after the fact
                 probas, info = _set_split(rung, EVAL_FOLD, vec, train_q, val_q, counts, per_player, seed, device, cache,
                                           extras=False)
                 runs[seed] = _frame(val_q, EVAL_FOLD, probas)
