@@ -155,8 +155,9 @@ def test_cv_base_cache_and_tick_extras(tmp_path, monkeypatch):
     tiny_ctm = partial(CTM, d_tok=8, d_latent=8, nlm_hidden=4, n_sync_action=6, n_sync_out=6, ticks=3)
     monkeypatch.setitem(ladder.SET_RUNGS, "r4_xattn", ("staged", partial(XAttnGRU, d_tok=8, d_hidden=8, ticks=3),
                                                        {"epochs": 1}))
-    monkeypatch.setitem(ladder.SET_RUNGS, "r5_ctm_minmax", ("staged", tiny_ctm, {"loss": "ctm_minmax", "pick": "certain",
-                                                                              "epochs": 1}))
+    monkeypatch.setitem(ladder.SET_RUNGS, "r5_ctm_minmax", ("staged", tiny_ctm, {"loss": "ctm_minmax", "epochs": 1}))
+    monkeypatch.setitem(ladder.SET_RUNGS, "r5_ctm_minmax_pc", ("staged", tiny_ctm, {"loss": "ctm_minmax", "pick": "certain",
+                                                                                 "epochs": 1}))
     cache = tmp_path / "cv"
     kw = dict(folds=folds, per_player=2, device="cpu", players=players, base_cache=cache)
     a = ladder.run_rung_cv("r3_null", vec_dir, **kw)
@@ -168,10 +169,13 @@ def test_cv_base_cache_and_tick_extras(tmp_path, monkeypatch):
 
     x = ladder.run_rung_cv("r4_xattn", vec_dir, **kw)
     c = ladder.run_rung_cv("r5_ctm_minmax", vec_dir, **kw)
-    assert {"score@T16", "p0@T16"} <= set(x.columns) and "score@final" not in x.columns
-    assert {"score@T16", "score@final", "p9@final"} <= set(c.columns) and "score@certain" not in c.columns
-    assert c.attrs["train_cfg"]["pick"] == "certain"  # the main columns are the certain-tick prediction, @final the last tick
-    for df, extra in ((x, "T16"), (c, "T16"), (c, "final")):
+    pc = ladder.run_rung_cv("r5_ctm_minmax_pc", vec_dir, **kw)
+    assert {"score@T16", "p0@T16"} <= set(x.columns) and "score@certain" not in x.columns
+    assert {"score@T16", "score@certain", "p9@certain"} <= set(c.columns) and "score@final" not in c.columns
+    # r5_ctm_minmax_pc: the main columns are the certain-tick prediction (the tick it is selected at), @final the last tick
+    assert {"score@T16", "score@final", "p9@final"} <= set(pc.columns) and "score@certain" not in pc.columns
+    assert c.attrs["train_cfg"]["pick"] == "final" and pc.attrs["train_cfg"]["pick"] == "certain"
+    for df, extra in ((x, "T16"), (c, "T16"), (c, "certain"), (pc, "T16"), (pc, "final")):
         P = df[[f"p{k}@{extra}" for k in range(10)]].to_numpy()
         np.testing.assert_allclose(P.sum(axis=1), 1.0, rtol=0, atol=1e-12)
         assert df[f"score@{extra}"].notna().all()
@@ -527,7 +531,7 @@ def test_set_rungs_registry():
               "r3_deepsets_whole": (DeepSets, "whole", "final"), "r4_xattn": (XAttnGRU, "staged", "final"),
               "r5_ctm": (CTM, "staged", "final"), "r5_ctm_minmax": (CTM, "staged", "ctm_minmax"),
               "r3_pma": (SetTransformer, "staged", "final"), "r4_xattn_t1": (XAttnGRU, "staged", "final"),
-              "r5_ctm_unet": (CTM, "staged", "final")}
+              "r5_ctm_unet": (CTM, "staged", "final"), "r5_ctm_minmax_pc": (CTM, "staged", "ctm_minmax")}
     assert set(ladder.SET_RUNGS) == set(expect) and ladder.RUNGS == ladder.STATIC_RUNGS | ladder.SET_RUNGS
     assert set(ladder.EXTRAS) <= set(ladder.SET_RUNGS)
     d_in = {"staged": len(STAGED) + 1, "whole": len(WHOLE_NAMES) + 1}  # token width: the vector + log1p(n_moves)
@@ -538,8 +542,9 @@ def test_set_rungs_registry():
         assert type(models[name]) is cls and rep == want_rep, name
         cfg = dataclasses.replace(TrainCfg(), **overrides)
         assert cfg.loss == want_loss and cfg.loss in LOSSES, name
-        # r5_ctm_minmax is selected and scored at the most certain tick, the tick the original CTM evaluates
-        assert cfg.pick == ("certain" if name == "r5_ctm_minmax" else "final") and cfg.pick in PICKS, name
+        # r5_ctm_minmax_pc is selected and scored at the most certain tick, the tick the original CTM evaluates;
+        # the recorded r5_ctm_minmax stays at the final tick
+        assert cfg.pick == ("certain" if name == "r5_ctm_minmax_pc" else "final") and cfg.pick in PICKS, name
     ratio = n_params(models["r4_xattn"]) / n_params(models["r5_ctm"])
     assert abs(ratio - 1) <= 0.1, ratio
     # the 2026-10-24 follow-up: r5_ctm_unet is r5_ctm with the original's default depth-4 U-Net synapse
@@ -547,15 +552,18 @@ def test_set_rungs_registry():
     assert unet.synapse.widths == [256, 176, 96, 16] and not hasattr(ctm.synapse, "widths")
     assert (n_params(ctm), n_params(unet)) == (437514, 467898) and abs(n_params(unet) / n_params(ctm) - 1) <= 0.1
     assert ladder.SET_RUNGS["r5_ctm_unet"][2] == {} and ladder.EXTRAS["r5_ctm_unet"] == {"T16": {"ticks": 16}}
-    assert ladder.EXTRAS["r5_ctm_minmax"] == {"T16": {"ticks": 16}, "final": {"pick": "final"}}
+    assert ladder.EXTRAS["r5_ctm_minmax"] == {"T16": {"ticks": 16}, "certain": {"pick": "certain"}}  # as recorded
+    assert ladder.EXTRAS["r5_ctm_minmax_pc"] == {"T16": {"ticks": 16}, "final": {"pick": "final"}}
+    assert ladder.SET_RUNGS["r5_ctm_minmax"][2] == {"loss": "ctm_minmax"}
+    assert ladder.SET_RUNGS["r5_ctm_minmax_pc"][2] == {"loss": "ctm_minmax", "pick": "certain"}
     assert ladder.ENSEMBLE_RUNG == "ens_top3" and ladder.ENSEMBLE_MEMBERS == ("r3_pma", "r4_xattn_t1", "r5_ctm")
     assert ladder.ENSEMBLE_RUNG not in ladder.RUNGS  # built from CV files, never trained
-    assert ladder.FOLLOWUP_COMPARISONS == [("ens_top3", "r5_ctm"), ("ens_top3", "r3_pma"), ("r5_ctm_minmax", "r5_ctm"),
-                                           ("r5_ctm_minmax", "r3_pma"), ("r5_ctm_unet", "r5_ctm"), ("r5_ctm_unet", "r3_pma")]
+    assert ladder.FOLLOWUP_COMPARISONS == [("ens_top3", "r5_ctm"), ("ens_top3", "r3_pma"), ("r5_ctm_minmax_pc", "r5_ctm"),
+                                           ("r5_ctm_minmax_pc", "r3_pma"), ("r5_ctm_unet", "r5_ctm"), ("r5_ctm_unet", "r3_pma")]
     assert set(ladder.FOLLOWUP_COMPARISONS) <= set(ladder.REPORT_ONLY)
-    assert ("r5_ctm_minmax@certain", "r5_ctm") not in ladder.REPORT_ONLY  # the certain tick is the main prediction now
+    assert ("r5_ctm_minmax@certain", "r5_ctm") in ladder.REPORT_ONLY  # the recorded control keeps its comparison
     gated_now = {x for pairs in ladder.GATES.values() for pair in pairs for x in pair}
-    assert not {"ens_top3", "r5_ctm_unet", "r5_ctm_minmax"} & gated_now
+    assert not {"ens_top3", "r5_ctm_unet", "r5_ctm_minmax", "r5_ctm_minmax_pc"} & gated_now
 
     # the report-only attribution controls: r3_settf without its SABs (PMA pooling only, no game-game
     # interaction) and r4_xattn with one tick; the rest of each model is the same
@@ -983,7 +991,8 @@ def test_build_ensemble(tmp_path):
         _, want = evaluate(P, y, keys)
         np.testing.assert_array_equal(ens["score"].to_numpy(), want)  # decided on the mean probabilities ...
         assert not np.allclose(ens["score"], np.mean([frames[m, s]["score"] for m in members], axis=0))  # ... not the mean score
-        assert (meta["rung"], meta["kind"], meta["seed"], meta["per_player"], meta["counts"]) == ("ens_top3", "set", s, 32, True)
+        assert (meta["rung"], meta["kind"], meta["seed"], meta["per_player"], meta["counts"]) == ("ens_top3", "ensemble", s, 32,
+                                                                                                    True)
         assert meta["members"] == list(members) and meta["folds"] == [1, 2, 3, 4]
         assert meta["member_code_sha256"] == {m: hashlib.sha256(m.encode()).hexdigest() for m in members}
         assert meta["member_git_head"] == {m: f"{m[:3]}0000" for m in members}
@@ -991,12 +1000,15 @@ def test_build_ensemble(tmp_path):
         assert meta["device_name"] == "cpu" and meta["train_cfg"] is None and meta["n_params"] is None
     S = ladder.summarize(cv, n_boot=100)
     r = S["rungs"]["ens_top3"]
-    assert r["seeds"] == [0, 1, 2] and r["kind"] == "set" and r["mixed_versions"] is False
+    assert r["seeds"] == [0, 1, 2] and r["kind"] == "ensemble" and r["mixed_versions"] is False
     assert {"ens_top3 vs r5_ctm", "ens_top3 vs r3_pma"} <= set(S["comparisons"])
     assert "ens_top3 vs r2_mlp24" not in S["comparisons"]  # no base file in this directory
     c = S["comparisons"]["ens_top3 vs r5_ctm"]
-    assert (c["kind_a"], c["kind_b"], c["seeds_a"], c["seeds_b"]) == ("set", "set", [0, 1, 2], [0, 1, 2])
-    assert set(ladder.check_comparison({**c, "n_boot": 5000})["conditions"]) == set(ladder.CONDITIONS)
+    assert (c["kind_a"], c["kind_b"], c["seeds_a"], c["seeds_b"]) == ("ensemble", "set", [0, 1, 2], [0, 1, 2])
+    chk = ladder.check_comparison({**c, "n_boot": 5000})  # an ensemble side needs N_SEEDS seeds like a set rung
+    assert set(chk["conditions"]) == set(ladder.CONDITIONS) and chk["conditions"]["every_seed_gt_0"] in (True, False)
+    short = ladder.check_comparison({**c, "n_boot": 5000, "seeds_a": [0, 1], "per_seed": {"0": 0.01, "1": 0.01}})
+    assert short["conditions"]["every_seed_gt_0"] is False and any("a is a set rung with 2 seeds" in r for r in short["reasons"])
     # refusals: an existing file (unless overwrite), a missing member, a trainable rung as label, duplicate members,
     # members whose validation questions differ
     with pytest.raises(FileExistsError, match="overwrite"):

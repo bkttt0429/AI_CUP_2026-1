@@ -8,7 +8,7 @@ the mean probabilities) and writes <out>/{label}_s{seed}.npz (default label ens_
 aicup.ladder.build_ensemble for the attrs). Then the summary of <out> is rewritten exactly as
 ladder_cv.py --summarize-only writes it (<out.parent>/<out.name>_summary.json, default
 results/ladder/cv_summary.json) and the pre-specified follow-up comparisons are printed with their four
-conditions: aicup.ladder.FOLLOWUP_COMPARISONS -- ens_top3, r5_ctm_minmax and r5_ctm_unet, each vs
+conditions: aicup.ladder.FOLLOWUP_COMPARISONS -- ens_top3, r5_ctm_minmax_pc and r5_ctm_unet, each vs
 r5_ctm and vs r3_pma; reported, never gated. Nothing is trained: this runs on the CPU in minutes.
 
 An existing ensemble file is refused unless --overwrite, a missing member file always; both exit 2.
