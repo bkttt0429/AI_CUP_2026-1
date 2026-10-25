@@ -16,10 +16,12 @@ therefore holds out inner validation players (inner_players: 10% of each rank's 
 INNER_SEED, the same for every rung and seed), trains on the others for at most `epochs` epochs and
 returns the weights of the lowest inner CE, evaluation 0 (Δ ≡ 0) included, without refitting on all
 players; inner_frac = 0 trains exactly `epochs` epochs on every question. LOSSES and PICKS map
-TrainCfg.loss and predict_set_model's pick to their functions: loss "final" (the last tick; the
-primary loss) or "ctm_minmax" (the original CTM's min-loss / max-certainty pair of ticks, the
-r5_ctm_minmax control); pick "final" (the last tick; every primary score) or "certain" (each
-question's most certain tick, label-free; report-only).
+TrainCfg.loss and TrainCfg.pick to their functions: loss "final" (the last tick; the primary loss)
+or "ctm_minmax" (the original CTM's min-loss / max-certainty pair of ticks, the r5_ctm_minmax
+control); pick "final" (the last tick) or "certain" (each question's most certain tick, label-free,
+the tick the original CTM evaluates). cfg.pick chooses the tick of the inner validation CE and the
+default tick of predict_set_model, so a model is selected and scored at the same tick; the `pick`
+argument of predict_set_model overrides it for a report-only extra.
 
 crossfit_base_logits gives the base logits: for each training fold from a static model fitted on
 the other training folds, for the evaluation questions from one fitted on all of them (the static
@@ -47,7 +49,8 @@ class TrainCfg:
     """epochs: the maximum with inner_frac > 0, the exact number with inner_frac = 0. inner_frac: share of
     each rank's training players held out for early stopping (0: none, data then needs no player_id);
     evals_per_epoch: inner evaluations per epoch (besides evaluation 0); patience: evaluations in a row
-    without a lower inner CE before training stops."""
+    without a lower inner CE before training stops. loss, pick: keys of LOSSES and PICKS; pick is the tick
+    of the inner validation CE and the default tick of predict_set_model."""
     epochs: int = 10
     batch: int = 512
     lr: float = 1e-3
@@ -55,6 +58,7 @@ class TrainCfg:
     gamma: float = 1e-2
     seed: int = 0
     loss: str = "final"
+    pick: str = "final"
     device: str = "cuda"
     inner_frac: float = 0.1
     evals_per_epoch: int = 4
@@ -128,18 +132,28 @@ def ctm_minmax_loss(logits_ticks, deltas, y, w, gamma):
     return (w * ce).sum() / w.sum() + gamma * pen.mean()
 
 
+def _pick_torch(logits_ticks, pick):
+    """logits_ticks [B, T, C] (torch) -> the logits [B, C] at the tick of `pick`: "final", the last tick, or
+    "certain", each question's most certain tick (1 − H / log C; ties -> the later tick), label-free."""
+    if pick == "final":
+        return logits_ticks[:, -1]
+    if pick == "certain":
+        t = _last_argmax(certainty(logits_ticks))
+        return logits_ticks[torch.arange(len(t), device=t.device), t]
+    raise ValueError(f"unknown pick {pick!r}; known: {list(PICKS)}")
+
+
 def _pick_final(logits_ticks):
     return logits_ticks[:, -1]
 
 
 def _pick_certain(logits_ticks):
-    """Each question's most certain tick (1 − H / log 10; ties -> the later tick), label-free."""
-    t = _last_argmax(certainty(torch.from_numpy(np.asarray(logits_ticks, dtype=np.float64)))).numpy()
-    return logits_ticks[np.arange(len(t)), t]
+    """Each question's most certain tick (1 − H / log 10; ties -> the later tick), label-free (numpy)."""
+    return _pick_torch(torch.from_numpy(np.asarray(logits_ticks, dtype=np.float64)), "certain").numpy()
 
 
 LOSSES = {"final": final_loss, "ctm_minmax": ctm_minmax_loss}
-# logits [Q, T, 10] (float64) -> the logits used per question [Q, 10]; "certain" is report-only
+# logits [Q, T, 10] (float64) -> the logits used per question [Q, 10]
 PICKS = {"final": _pick_final, "certain": _pick_certain}
 
 
@@ -237,14 +251,15 @@ def inner_players(player_id, y, frac, seed=INNER_SEED):
 
 class _EarlyStop:
     """Inner validation of fit_set_model on the questions ix: the CE of log_softmax(base + Δ at the
-    last tick) for the true rank, weighted by class_weights of their ranks, in float64 and without the
-    γ term, computed in eval mode without gradients. Records each CE in fitted.inner_ce, keeps a CPU
+    tick of cfg.pick) for the true rank, weighted by class_weights of their ranks, in float64 and without
+    the γ term, computed in eval mode without gradients. Records each CE in fitted.inner_ce, keeps a CPU
     copy of the weights of the lowest one (ties: the earlier) and says stop after cfg.patience
     evaluations in a row without a lower CE."""
 
     def __init__(self, model, inputs, base, y, ix, cfg, fitted):
         dev = cfg.device
         self.model, self.inputs, self.batch, self.patience, self.fitted = model, inputs, cfg.batch, cfg.patience, fitted
+        self.pick = cfg.pick
         self.ix = torch.from_numpy(ix).to(dev)
         self.base = torch.tensor(base[ix], dtype=torch.float64, device=dev)
         self.y = torch.tensor(y[ix], device=dev)
@@ -257,7 +272,8 @@ class _EarlyStop:
         with torch.no_grad():
             for q in range(0, len(self.ix), self.batch):
                 sl = slice(q, q + self.batch)
-                logp = (self.base[sl] + self.model(*self.inputs(self.ix[sl]))[:, -1].double()).log_softmax(dim=-1)
+                logits = self.base[sl][:, None, :] + self.model(*self.inputs(self.ix[sl])).double()  # [B, T, 10]
+                logp = _pick_torch(logits, self.pick).log_softmax(dim=-1)
                 total += (self.w[sl] * -logp.gather(1, self.y[sl, None])[:, 0]).sum()
         self.model.train()
         return float(total / self.w.sum())
@@ -288,13 +304,15 @@ def fit_set_model(make: Callable[[int], nn.Module], data: dict, base, cfg: Train
     cfg.inner_frac > 0 needs data["player_id"]: inner_players holds those players' questions out, and
     the standardisation statistics, class weights and training steps use the other (training) questions
     only. The cosine schedule spans epochs × n_batches steps (n_batches of the training questions). The
-    inner CE (_EarlyStop) is evaluated before the first step (evaluation 0, Δ ≡ 0), then after every
+    inner CE (_EarlyStop, at the tick of cfg.pick) is evaluated before the first step (evaluation 0, Δ ≡ 0), then after every
     ceil(n_batches / evals_per_epoch) batches of an epoch and at its end (once per step); training stops
     after `patience` evaluations in a row without a lower CE, and the model returned holds the weights
     of the lowest one -- no refit on all players. A non-finite inner CE raises FloatingPointError.
     cfg.inner_frac = 0: `epochs` epochs over every question, the last weights; player_id is not needed."""
     if cfg.loss not in LOSSES:
         raise ValueError(f"unknown loss {cfg.loss!r}; known: {list(LOSSES)}")
+    if cfg.pick not in PICKS:
+        raise ValueError(f"unknown pick {cfg.pick!r}; known: {list(PICKS)}")
     if cfg.epochs < 0 or cfg.batch < 1:
         raise ValueError(f"need epochs >= 0 and batch >= 1, got {cfg.epochs}, {cfg.batch}")
     if not 0.0 <= cfg.inner_frac < 1.0 or cfg.evals_per_epoch < 1 or cfg.patience < 1:
@@ -382,9 +400,11 @@ def fit_set_model(make: Callable[[int], nn.Module], data: dict, base, cfg: Train
     return fitted
 
 
-def predict_set_model(fitted: Fitted, data: dict, base, ticks=None, pick="final"):
+def predict_set_model(fitted: Fitted, data: dict, base, ticks=None, pick=None):
     """softmax(base + Δ) [Q, 10] (float64), Δ taken at the tick chosen by `pick` ("final": the last;
-    "certain": each question's most certain tick, report-only); ticks overrides the model's number of ticks."""
+    "certain": each question's most certain tick; None: fitted.cfg.pick, the tick the model was selected
+    at); ticks overrides the model's number of ticks."""
+    pick = fitted.cfg.pick if pick is None else pick
     if pick not in PICKS:
         raise ValueError(f"unknown pick {pick!r}; known: {list(PICKS)}")
     base = _check(data, base)

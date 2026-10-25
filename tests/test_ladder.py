@@ -156,6 +156,8 @@ def test_cv_base_cache_and_tick_extras(tmp_path, monkeypatch):
     monkeypatch.setitem(ladder.SET_RUNGS, "r4_xattn", ("staged", partial(XAttnGRU, d_tok=8, d_hidden=8, ticks=3),
                                                        {"epochs": 1}))
     monkeypatch.setitem(ladder.SET_RUNGS, "r5_ctm_minmax", ("staged", tiny_ctm, {"loss": "ctm_minmax", "epochs": 1}))
+    monkeypatch.setitem(ladder.SET_RUNGS, "r5_ctm_minmax_pc", ("staged", tiny_ctm, {"loss": "ctm_minmax", "pick": "certain",
+                                                                                 "epochs": 1}))
     cache = tmp_path / "cv"
     kw = dict(folds=folds, per_player=2, device="cpu", players=players, base_cache=cache)
     a = ladder.run_rung_cv("r3_null", vec_dir, **kw)
@@ -167,9 +169,13 @@ def test_cv_base_cache_and_tick_extras(tmp_path, monkeypatch):
 
     x = ladder.run_rung_cv("r4_xattn", vec_dir, **kw)
     c = ladder.run_rung_cv("r5_ctm_minmax", vec_dir, **kw)
+    pc = ladder.run_rung_cv("r5_ctm_minmax_pc", vec_dir, **kw)
     assert {"score@T16", "p0@T16"} <= set(x.columns) and "score@certain" not in x.columns
-    assert {"score@T16", "score@certain", "p9@certain"} <= set(c.columns)
-    for df, extra in ((x, "T16"), (c, "T16"), (c, "certain")):
+    assert {"score@T16", "score@certain", "p9@certain"} <= set(c.columns) and "score@final" not in c.columns
+    # r5_ctm_minmax_pc: the main columns are the certain-tick prediction (the tick it is selected at), @final the last tick
+    assert {"score@T16", "score@final", "p9@final"} <= set(pc.columns) and "score@certain" not in pc.columns
+    assert c.attrs["train_cfg"]["pick"] == "final" and pc.attrs["train_cfg"]["pick"] == "certain"
+    for df, extra in ((x, "T16"), (c, "T16"), (c, "certain"), (pc, "T16"), (pc, "final")):
         P = df[[f"p{k}@{extra}" for k in range(10)]].to_numpy()
         np.testing.assert_allclose(P.sum(axis=1), 1.0, rtol=0, atol=1e-12)
         assert df[f"score@{extra}"].notna().all()
@@ -515,7 +521,7 @@ def test_gates_logic():
 
 def test_set_rungs_registry():
     from aicup.aggregators import DeepSets, PooledDelta, QglobDelta, SetTransformer, n_params
-    from aicup.settrain import LOSSES, TrainCfg
+    from aicup.settrain import LOSSES, PICKS, TrainCfg
 
     assert ladder.comparison_pairs(["r3_settf", "r3_pma", "r3_deepsets", "r4_xattn", "r4_xattn_t1"])[-3:] == [
         ("r3_settf", "r3_pma"), ("r3_pma", "r3_deepsets"), ("r4_xattn", "r4_xattn_t1")]
@@ -524,7 +530,8 @@ def test_set_rungs_registry():
               "r3_deepsets": (DeepSets, "staged", "final"), "r3_settf": (SetTransformer, "staged", "final"),
               "r3_deepsets_whole": (DeepSets, "whole", "final"), "r4_xattn": (XAttnGRU, "staged", "final"),
               "r5_ctm": (CTM, "staged", "final"), "r5_ctm_minmax": (CTM, "staged", "ctm_minmax"),
-              "r3_pma": (SetTransformer, "staged", "final"), "r4_xattn_t1": (XAttnGRU, "staged", "final")}
+              "r3_pma": (SetTransformer, "staged", "final"), "r4_xattn_t1": (XAttnGRU, "staged", "final"),
+              "r5_ctm_unet": (CTM, "staged", "final"), "r5_ctm_minmax_pc": (CTM, "staged", "ctm_minmax")}
     assert set(ladder.SET_RUNGS) == set(expect) and ladder.RUNGS == ladder.STATIC_RUNGS | ladder.SET_RUNGS
     assert set(ladder.EXTRAS) <= set(ladder.SET_RUNGS)
     d_in = {"staged": len(STAGED) + 1, "whole": len(WHOLE_NAMES) + 1}  # token width: the vector + log1p(n_moves)
@@ -533,10 +540,30 @@ def test_set_rungs_registry():
         cls, want_rep, want_loss = expect[name]
         models[name] = make(d_in[rep])
         assert type(models[name]) is cls and rep == want_rep, name
-        loss = dataclasses.replace(TrainCfg(), **overrides).loss
-        assert loss == want_loss and loss in LOSSES, name
+        cfg = dataclasses.replace(TrainCfg(), **overrides)
+        assert cfg.loss == want_loss and cfg.loss in LOSSES, name
+        # r5_ctm_minmax_pc is selected and scored at the most certain tick, the tick the original CTM evaluates;
+        # the recorded r5_ctm_minmax stays at the final tick
+        assert cfg.pick == ("certain" if name == "r5_ctm_minmax_pc" else "final") and cfg.pick in PICKS, name
     ratio = n_params(models["r4_xattn"]) / n_params(models["r5_ctm"])
     assert abs(ratio - 1) <= 0.1, ratio
+    # the 2026-10-24 follow-up: r5_ctm_unet is r5_ctm with the original's default depth-4 U-Net synapse
+    unet, ctm = models["r5_ctm_unet"], models["r5_ctm"]
+    assert unet.synapse.widths == [256, 176, 96, 16] and not hasattr(ctm.synapse, "widths")
+    assert (n_params(ctm), n_params(unet)) == (437514, 467898) and abs(n_params(unet) / n_params(ctm) - 1) <= 0.1
+    assert ladder.SET_RUNGS["r5_ctm_unet"][2] == {} and ladder.EXTRAS["r5_ctm_unet"] == {"T16": {"ticks": 16}}
+    assert ladder.EXTRAS["r5_ctm_minmax"] == {"T16": {"ticks": 16}, "certain": {"pick": "certain"}}  # as recorded
+    assert ladder.EXTRAS["r5_ctm_minmax_pc"] == {"T16": {"ticks": 16}, "final": {"pick": "final"}}
+    assert ladder.SET_RUNGS["r5_ctm_minmax"][2] == {"loss": "ctm_minmax"}
+    assert ladder.SET_RUNGS["r5_ctm_minmax_pc"][2] == {"loss": "ctm_minmax", "pick": "certain"}
+    assert ladder.ENSEMBLE_RUNG == "ens_top3" and ladder.ENSEMBLE_MEMBERS == ("r3_pma", "r4_xattn_t1", "r5_ctm")
+    assert ladder.ENSEMBLE_RUNG not in ladder.RUNGS  # built from CV files, never trained
+    assert ladder.FOLLOWUP_COMPARISONS == [("ens_top3", "r5_ctm"), ("ens_top3", "r3_pma"), ("r5_ctm_minmax_pc", "r5_ctm"),
+                                           ("r5_ctm_minmax_pc", "r3_pma"), ("r5_ctm_unet", "r5_ctm"), ("r5_ctm_unet", "r3_pma")]
+    assert set(ladder.FOLLOWUP_COMPARISONS) <= set(ladder.REPORT_ONLY)
+    assert ("r5_ctm_minmax@certain", "r5_ctm") in ladder.REPORT_ONLY  # the recorded control keeps its comparison
+    gated_now = {x for pairs in ladder.GATES.values() for pair in pairs for x in pair}
+    assert not {"ens_top3", "r5_ctm_unet", "r5_ctm_minmax", "r5_ctm_minmax_pc"} & gated_now
 
     # the report-only attribution controls: r3_settf without its SABs (PMA pooling only, no game-game
     # interaction) and r4_xattn with one tick; the rest of each model is the same
@@ -927,3 +954,105 @@ def test_fold0_production_reproduces_rank_model_eval():
     got = balanced_mean_over_n(df["score"], df["y"], df["n_games"])
     assert abs(got - want) <= 1e-12, got - want
     assert len(df) == np.sum(ref["eval"]["mlp_h32"]["confusion_rows_truth_cols_pred"]) and set(df["fold"]) == {0}
+
+
+# ---------------------------------------------------------------- the ensemble (2026-10-24 follow-up)
+
+ENSEMBLE_SCRIPT = ROOT / "scripts" / "ladder_ensemble.py"
+
+
+def _member_files(cv, keys, rng, shifts=None):
+    """CV files of the three ensemble members for seeds 0 1 2, with provenance; returns {(member, seed): frame}."""
+    frames = {}
+    for m in ladder.ENSEMBLE_MEMBERS:
+        for s in (0, 1, 2):
+            df = _frame(keys, rng, m, s, shift=(shifts or {}).get(m, 0.0))
+            df.attrs.update({"code_sha256": hashlib.sha256(m.encode()).hexdigest(), "git_head": f"{m[:3]}0000"})
+            frames[m, s] = df
+            ladder.save_cv(df, cv / ladder.cv_filename(m, s))
+    return frames
+
+
+def test_build_ensemble(tmp_path):
+    rng = np.random.RandomState(6)
+    keys = _keys_table(folds=(1, 2, 3, 4), classes=tuple(range(10)))  # every class present: evaluate's per-class means stay finite
+    cv = tmp_path / "cv"
+    members = ladder.ENSEMBLE_MEMBERS
+    frames = _member_files(cv, keys, rng)
+    written = ladder.build_ensemble(cv)
+    assert written == [cv / f"ens_top3_s{s}.npz" for s in (0, 1, 2)]
+    y = keys["y"].to_numpy()
+    for s in (0, 1, 2):
+        ens, meta = ladder.load_cv(cv / ladder.cv_filename("ens_top3", s))
+        assert list(ens.columns) == KEYS + PCOLS + ["score"]
+        pd.testing.assert_frame_equal(ens[KEYS], keys, check_dtype=False)
+        P = np.mean([frames[m, s][PCOLS].to_numpy() for m in members], axis=0)
+        np.testing.assert_allclose(ens[PCOLS].to_numpy(), P, rtol=0, atol=1e-15)
+        _, want = evaluate(P, y, keys)
+        np.testing.assert_array_equal(ens["score"].to_numpy(), want)  # decided on the mean probabilities ...
+        assert not np.allclose(ens["score"], np.mean([frames[m, s]["score"] for m in members], axis=0))  # ... not the mean score
+        assert (meta["rung"], meta["kind"], meta["seed"], meta["per_player"], meta["counts"]) == ("ens_top3", "ensemble", s, 32,
+                                                                                                    True)
+        assert meta["members"] == list(members) and meta["folds"] == [1, 2, 3, 4]
+        assert meta["member_code_sha256"] == {m: hashlib.sha256(m.encode()).hexdigest() for m in members}
+        assert meta["member_git_head"] == {m: f"{m[:3]}0000" for m in members}
+        assert set(ladder.PROVENANCE) <= set(meta) and meta["code_sha256"] == ladder.code_version()["code_sha256"]
+        assert meta["device_name"] == "cpu" and meta["train_cfg"] is None and meta["n_params"] is None
+    S = ladder.summarize(cv, n_boot=100)
+    r = S["rungs"]["ens_top3"]
+    assert r["seeds"] == [0, 1, 2] and r["kind"] == "ensemble" and r["mixed_versions"] is False
+    assert {"ens_top3 vs r5_ctm", "ens_top3 vs r3_pma"} <= set(S["comparisons"])
+    assert "ens_top3 vs r2_mlp24" not in S["comparisons"]  # no base file in this directory
+    c = S["comparisons"]["ens_top3 vs r5_ctm"]
+    assert (c["kind_a"], c["kind_b"], c["seeds_a"], c["seeds_b"]) == ("ensemble", "set", [0, 1, 2], [0, 1, 2])
+    chk = ladder.check_comparison({**c, "n_boot": 5000})  # an ensemble side needs N_SEEDS seeds like a set rung
+    assert set(chk["conditions"]) == set(ladder.CONDITIONS) and chk["conditions"]["every_seed_gt_0"] in (True, False)
+    short = ladder.check_comparison({**c, "n_boot": 5000, "seeds_a": [0, 1], "per_seed": {"0": 0.01, "1": 0.01}})
+    assert short["conditions"]["every_seed_gt_0"] is False and any("a is a set rung with 2 seeds" in r for r in short["reasons"])
+    # refusals: an existing file (unless overwrite), a missing member, a trainable rung as label, duplicate members,
+    # members whose validation questions differ
+    with pytest.raises(FileExistsError, match="overwrite"):
+        ladder.build_ensemble(cv)
+    assert ladder.build_ensemble(cv, overwrite=True) == written
+    with pytest.raises(FileNotFoundError, match="r3_settf"):
+        ladder.build_ensemble(cv, members=("r3_pma", "r3_settf"), rung="ens_two")
+    with pytest.raises(ValueError, match="trainable"):
+        ladder.build_ensemble(cv, rung="r5_ctm")
+    with pytest.raises(ValueError, match="distinct"):
+        ladder.build_ensemble(cv, members=("r3_pma", "r3_pma"), rung="ens_dup")
+    bad = frames["r5_ctm", 1].iloc[::-1].reset_index(drop=True)
+    bad.attrs = frames["r5_ctm", 1].attrs
+    ladder.save_cv(bad, cv / ladder.cv_filename("r5_ctm", 1))
+    with pytest.raises(ValueError, match="r5_ctm"):
+        ladder.build_ensemble(cv, overwrite=True)
+    assert not list(cv.glob("ens_two*")) and not list(cv.glob("ens_dup*"))
+
+
+def test_ladder_ensemble_cli(tmp_path):
+    rng = np.random.RandomState(7)
+    keys = _keys_table(folds=(1, 2, 3, 4), classes=tuple(range(10)))
+    cv = tmp_path / "cv"
+    _member_files(cv, keys, rng, shifts={"r5_ctm": 0.2})
+
+    def run(*args):
+        return subprocess.run([sys.executable, "-I", str(ENSEMBLE_SCRIPT), "--out", str(cv), *args], capture_output=True,
+                              text=True, timeout=600)
+
+    r = run()
+    assert r.returncode == 0, r.stderr
+    assert sorted(p.name for p in cv.glob("ens_top3_s*.npz")) == [f"ens_top3_s{s}.npz" for s in (0, 1, 2)]
+    summary = _strict((tmp_path / "cv_summary.json").read_text())
+    assert "ens_top3" in summary["rungs"] and {"ens_top3 vs r5_ctm", "ens_top3 vs r3_pma"} <= set(summary["comparisons"])
+    assert summary["comparisons"]["ens_top3 vs r5_ctm"]["n_boot"] == ladder.N_BOOT
+    tail = r.stdout.split("follow-up comparisons", 1)[1]
+    for a, b in ladder.FOLLOWUP_COMPARISONS:  # every pre-specified pair is listed, with or without results
+        assert f"{a} vs {b}:" in tail
+    num = r"[+-]\d\.\d{4}"
+    assert re.search(rf"ens_top3 vs r5_ctm: diff {num} \[{num}, {num}\]  seeds( {num}){{3}}  folds( {num}){{4}}  ", tail), tail
+    assert "r5_ctm_unet vs r5_ctm: no CV results yet" in tail
+    r2 = run()
+    assert r2.returncode == 2 and "overwrite" in r2.stderr and not r2.stdout.strip()
+    r3 = run("--overwrite")
+    assert r3.returncode == 0, r3.stderr
+    r4 = run("--members", "r3_pma", "r3_settf", "--label", "ens_two")
+    assert r4.returncode == 2 and "r3_settf" in r4.stderr and not list(cv.glob("ens_two*"))

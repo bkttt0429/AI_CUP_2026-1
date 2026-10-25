@@ -189,6 +189,36 @@ class _NLM(nn.Module):
         return torch.einsum("bnh,nh->bn", h, self.w2) + self.b2
 
 
+class _SynapseUNet(nn.Module):
+    """The synapse of the original CTM at synapse_depth > 1 (SynapseUNET of SakanaAI/continuous-thought-machines,
+    its default depth 4): Linear(d_in, w_0) -> LayerNorm -> SiLU, then the depth − 1 down blocks w_i -> w_{i+1}
+    (Linear -> LayerNorm -> SiLU) over the widths w = linspace(d, min_width, depth) truncated to int, and the
+    matching up blocks w_{i+1} -> w_i in reverse, each output added to the down path's output of width w_i and
+    passed through that width's LayerNorm. x [B, d_in] -> [B, w_0 = d]."""
+
+    def __init__(self, d_in, d, depth, min_width=16):
+        super().__init__()
+        if depth < 2:
+            raise ValueError(f"the U-Net synapse needs depth >= 2, got {depth}")
+        w = [int(d + (min_width - d) * i / (depth - 1)) for i in range(depth)]  # np.linspace(d, min_width, depth) as int
+        self.widths = w
+        self.first = nn.Sequential(nn.Linear(d_in, w[0]), nn.LayerNorm(w[0]), nn.SiLU())
+        self.down = nn.ModuleList(nn.Sequential(nn.Linear(w[i], w[i + 1]), nn.LayerNorm(w[i + 1]), nn.SiLU())
+                                  for i in range(depth - 1))
+        self.up = nn.ModuleList(nn.Sequential(nn.Linear(w[i + 1], w[i]), nn.LayerNorm(w[i]), nn.SiLU())
+                                for i in range(depth - 1))
+        self.skip_ln = nn.ModuleList(nn.LayerNorm(w[i]) for i in range(depth - 1))
+
+    def forward(self, x):
+        outs = [self.first(x)]
+        for layer in self.down:
+            outs.append(layer(outs[-1]))
+        h = outs[-1]  # the bottleneck
+        for i in reversed(range(len(self.up))):
+            h = self.skip_ln[i](self.up[i](h) + outs[i])
+        return h
+
+
 def _sync(Z, idx, r):
     """Synchronisation of the neuron pairs idx [P, 2] over the history Z (a list of [B, n], oldest
     first): S_p = Σ_τ w_τ z_i^τ z_j^τ / sqrt(Σ_τ w_τ), w_τ = exp(−r_p (τ_now − τ)) -> [B, P].
@@ -210,15 +240,19 @@ class CTM(nn.Module):
     r_p (starts at 0 = no decay; projected to [0, 15] on every forward, as in the original).
 
     Each tick t: s_act = sync over [z0, ..., z_{t-1}]; o = MultiheadAttention(W_q s_act; keys,
-    values = the tokens, key_padding_mask = ~mask); a = synapse([z, o, qglob]) (Linear -> GLU ->
-    LayerNorm(d_latent)); A keeps the last `history` a's (starting from the learned A0); z_t = NLM(A);
-    Δ_t = W_out(sync over [z0, ..., z_t]) (W_out zero-initialised). Both histories start with the
-    learned z0, as in the original, which seeds the action and the output accumulators with the start
-    state. Returns the Δ of all ticks, [B, T, 10], T = `ticks` (constructor default 8, overridable in forward)."""
+    values = the tokens, key_padding_mask = ~mask); a = synapse([z, o, qglob]) (synapse_depth 1, the
+    default: Linear -> GLU -> LayerNorm(d_latent), the original's depth-1 synapse; synapse_depth > 1: the
+    original's U-Net synapse, _SynapseUNet, its default depth 4); A keeps the last `history` a's (starting
+    from the learned A0); z_t = NLM(A); Δ_t = W_out(sync over [z0, ..., z_t]) (W_out zero-initialised).
+    Both histories start with the learned z0, as in the original, which seeds the action and the output
+    accumulators with the start state. Returns the Δ of all ticks, [B, T, 10], T = `ticks` (constructor
+    default 8, overridable in forward)."""
 
     def __init__(self, d_in, d_glob=6, d_tok=128, d_latent=256, history=8, nlm_hidden=16, heads=4, ticks=8,
-                 n_sync_action=512, n_sync_out=512, pair_seed=0):
+                 n_sync_action=512, n_sync_out=512, pair_seed=0, synapse_depth=1):
         super().__init__()
+        if synapse_depth < 1:
+            raise ValueError(f"synapse_depth must be >= 1, got {synapse_depth}")
         self.ticks = ticks
         pairs = torch.triu_indices(d_latent, d_latent).T  # [d_latent (d_latent + 1) / 2, 2], i <= j
         if n_sync_action + n_sync_out > len(pairs):
@@ -234,7 +268,11 @@ class CTM(nn.Module):
         self.z0 = nn.Parameter(torch.empty(d_latent).uniform_(-b_z, b_z))
         self.w_q = nn.Linear(n_sync_action, d_tok)
         self.attn = nn.MultiheadAttention(d_tok, heads, batch_first=True)
-        self.synapse = nn.Sequential(nn.Linear(d_latent + d_tok + d_glob, 2 * d_latent), nn.GLU(), nn.LayerNorm(d_latent))
+        d_syn = d_latent + d_tok + d_glob
+        if synapse_depth == 1:  # the modules of the depth-1 synapse, built in this order, so seeded initialisation is unchanged
+            self.synapse = nn.Sequential(nn.Linear(d_syn, 2 * d_latent), nn.GLU(), nn.LayerNorm(d_latent))
+        else:
+            self.synapse = _SynapseUNet(d_syn, d_latent, synapse_depth)
         self.nlm = _NLM(d_latent, history, nlm_hidden)
         self.w_out = zero_linear(n_sync_out)
 
