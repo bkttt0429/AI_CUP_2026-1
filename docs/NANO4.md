@@ -214,6 +214,14 @@ mock test 來自 fold 0（現在是訓練資料），所以只驗**一致性**�
 sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J vecset scripts/nano4/run.sbatch python -I scripts/check_game_vectors.py --inputs tests/fixtures/mock_fold0_40/rank_prediction_test_public.csv tests/fixtures/mock_fold0_40/rank_prediction_test_private.csv --out results/mock_fold0_40_set/submission_rank.csv --nshards 1 --vectors results/ladder/vectors/fold0.npz --set-models results/models/set/r3_pma_s0.pt results/models/set/r3_pma_s1.pt results/models/set/r3_pma_s2.pt --set-base results/models/rank_model_f01234.json --report results/mock_fold0_40_set/game_vectors_check.json
 ```
 
+九個模型都在之後（`r3_pma`、`r4_xattn_t1`、`r5_ctm` 各三個 seed；2026-10-25 已訓練、檢查通過、進 git），`ens_top3` 的提交路徑就是第 1 項的 merge 指令加上：
+
+```bash
+--set-models results/models/set/{r3_pma,r4_xattn_t1,r5_ctm}_s{0,1,2}.pt --set-base results/models/rank_model_f01234.json
+```
+
+（大括號由你送 `sbatch` 的 shell 展開成九個路徑，`run.sbatch` 原樣轉交；分片評分的指令不用加這兩個旗標，只有 merge 要。）
+
 **4. seed 平均的量化**（`ladder_ensemble.py --across-seeds`，CPU，只報告）：CV 統計量是每個 seed 各自決策再平均分數，提交只能出一個答案、是機率平均後決策；用現有 CV 檔算這個差（`r3_pma` 三個 seed 機率平均後的分數 − CV 分數，附玩家 bootstrap CI），順便重寫摘要：
 
 ```bash
