@@ -90,7 +90,15 @@ def test_train_cli_and_check_init(tmp_path, capsys):
     assert meta["train_cfg"]["epochs"] == 1 and meta["model_source"] == "config:b2c16" and meta["humanv0_sha256"] is None
     assert lt.main([*base, "--epochs", "1"]) == 2
     assert "overwrite" in capsys.readouterr().err
+    # --extend keeps the checkpoint and continues the finished run with more epochs
+    assert lt.main([*base, "--epochs", "2", "--batch", "8", "--lr", "1e-3", "--extend"]) == 0
+    meta2 = json.loads(out.with_suffix(".json").read_text())
+    assert meta2["resumed_from_step"] == meta["steps_per_epoch"] and meta2["train_cfg"]["epochs"] == 2
     assert lt.main([*base, "--epochs", "1", "--batch", "8", "--lr", "1e-3", "--overwrite"]) == 0
+    assert json.loads(out.with_suffix(".json").read_text())["resumed_from_step"] == 0
+    # no inner split: the CLI still reports the run
+    assert lt.main([*base, "--epochs", "1", "--batch", "8", "--inner-frac", "0", "--out", str(tmp_path / "noinner.pt")]) == 0
+    assert "inner NLL -" in capsys.readouterr().out or (tmp_path / "noinner.pt").exists()
 
 
 def test_score_cli_matches_score_folds_layout(tmp_path, monkeypatch, capsys):
@@ -151,6 +159,54 @@ def test_score_cli_matches_score_folds_layout(tmp_path, monkeypatch, capsys):
     assert ls.main([*base, "--out", str(tmp_path / "s2")]) == 2 and "train_folds" in capsys.readouterr().err
     assert ls.main([*base, "--out", str(tmp_path / "s2"), "--allow-seen"]) == 2 and "_seen" in capsys.readouterr().err
     assert ls.main([*base, "--out", str(tmp_path / "s2_seen"), "--allow-seen"]) == 0
+    # a sidecar without train_folds (a cache built without meta.json) cannot prove it is out-of-fold
+    import pytest
+    with pytest.raises(ValueError, match="train_folds"):
+        ls.check_unseen({"train_folds": None}, [1], False, str(tmp_path / "s3"))
+
+
+def test_score_cli_builds_the_pool_before_the_model_touches_the_device(tmp_path, monkeypatch):
+    """Forking the CPU pool after CUDA is initialised is unsupported: the trunk is loaded on the CPU, the pool
+    is created, and only then is the model moved to --device."""
+    import torch
+    from katago.train import modelconfigs
+    from katago.train.model_pytorch import Model
+
+    import l1b_score as ls
+    from aicup import l1b
+
+    games_df, sgfs, folds_csv = _fake_data(tmp_path)
+    monkeypatch.setattr(ls, "player_games", lambda: games_df)
+    monkeypatch.setattr(ls, "load_games", lambda keys: {k: sgfs[k] for k in keys})
+    events = []
+    real_load, real_pool = ls.load_trunk, ls.make_pool
+
+    def load_trunk(ckpt, model_config, device):
+        events.append(f"load:{device}")
+        model = real_load(ckpt, model_config, device)
+        original_to = model.to
+
+        def to(*a, **k):
+            events.append("to")
+            return original_to(*a, **k)
+
+        model.to = to
+        return model
+
+    def make_pool(workers, config):
+        events.append("pool")
+        return real_pool(workers, config)
+
+    monkeypatch.setattr(ls, "load_trunk", load_trunk)
+    monkeypatch.setattr(ls, "make_pool", make_pool)
+    torch.manual_seed(0)
+    model = Model(modelconfigs.config_of_name["b2c16"], 19)
+    model.initialize()
+    pt = tmp_path / "heads.pt"
+    l1b.save_heads(l1b.RankHeads(model.policy_head), pt, {"train_folds": [3, 4]})
+    assert ls.main(["--heads", str(pt), "--folds", "1", "--out", str(tmp_path / "s"), "--model-config", "b2c16", "--device", "cpu",
+                    "--workers", "1", "--min-games", "1", "--folds-csv", str(folds_csv)]) == 0
+    assert events[:3] == ["load:cpu", "pool", "to"]
 
 
 def _write_scored(fold_dir, shard, k, games, logp_by_game, t_by_game, levels):

@@ -60,7 +60,8 @@ def main(argv=None):
     ap.add_argument("--seed", type=int, default=HeadsCfg.seed)
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--check-init", action="store_true")
-    ap.add_argument("--overwrite", action="store_true")
+    ap.add_argument("--overwrite", action="store_true", help="replace an existing output and its checkpoint")
+    ap.add_argument("--extend", action="store_true", help="continue a finished run from its kept checkpoint (e.g. more --epochs)")
     a = ap.parse_args(argv)
     out = Path(a.out)
     cfg = HeadsCfg(epochs=a.epochs, batch=a.batch, lr=a.lr, eval_every=a.eval_every, patience=a.patience, inner_frac=a.inner_frac,
@@ -73,15 +74,16 @@ def main(argv=None):
         print(f"max |Δ log p| between the copied heads and the model's rank-unknown policy on 256 positions: {worst:.3e} "
               f"({'ok' if worst <= INIT_TOL else 'FAIL'}, tolerance {INIT_TOL:g})")
         return 0 if worst <= INIT_TOL else 1
-    if out.exists() and not a.overwrite:
-        print(f"{out} exists; pass --overwrite to retrain (this also discards {out.name}.ckpt)", file=sys.stderr)
+    if out.exists() and not (a.overwrite or a.extend):
+        print(f"{out} exists; pass --overwrite to retrain (this also discards {out.name}.ckpt) or --extend to continue it", file=sys.stderr)
         return 2
     ckpt_path = out.with_name(out.name + ".ckpt")
-    if a.overwrite and ckpt_path.exists():
+    if a.overwrite and not a.extend and ckpt_path.exists():
         ckpt_path.unlink()
     heads, meta = train_heads(model, a.cache, cfg, out, extra_meta={"model_source": source, "humanv0_sha256": sha})
-    print(f"wrote {out}: inner NLL {meta['inner_nll_init']:.4f} -> {meta['inner_nll_best']:.4f} at epoch {meta['best_epoch']:.2f}, "
-          f"{'stopped early' if meta['stopped_early'] else 'ran to the end'}, {meta['wall_seconds']:.0f} s")
+    fmt = lambda v: "-" if v is None else f"{v:.4f}"  # noqa: E731
+    print(f"wrote {out}: inner NLL {fmt(meta['inner_nll_init'])} -> {fmt(meta['inner_nll_best'])} at epoch {meta['best_epoch']:.2f}, "
+          f"{'stopped early' if meta['stopped_early'] else 'ran to the end'}, {meta['steps_run']} steps, {meta['wall_seconds']:.0f} s")
     return 0
 
 

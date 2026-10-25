@@ -119,3 +119,44 @@ def test_check_init_is_zero_at_step_zero(tiny_model, tiny_cache):
     with torch.no_grad():
         heads.heads[2].conv1p.weight.add_(0.5)
     assert l1btrain.check_init(tiny_model, heads, arrays, np.arange(len(arrays["target"])), n=16) > 1e-3
+
+
+def test_inner_frac_zero_trains_to_the_end_and_keeps_the_last_weights(tmp_path, tiny_model, tiny_cache):
+    cfg = l1btrain.HeadsCfg(epochs=1, batch=8, lr=1e-3, eval_every=0.5, patience=2, inner_frac=0.0, seed=0, device="cpu")
+    out = tmp_path / "heads_noinner.pt"
+    heads, meta = l1btrain.train_heads(tiny_model, tiny_cache, cfg, out, log=lambda *a, **k: None)
+    assert meta["n_inner_positions"] == 0 and meta["inner_nll_init"] is None and meta["inner_nll_best"] is None
+    assert meta["stopped_early"] is False and meta["best_epoch"] == 1.0 and meta["steps_run"] == meta["steps_per_epoch"]
+    assert meta["history"] == [] and meta["inner_ranks_present"] == []
+    init = l1b.RankHeads(tiny_model.policy_head)
+    assert any(not torch.equal(a, b) for a, b in zip(heads.state_dict().values(), init.state_dict().values()))  # trained, not reset
+
+
+def test_checkpoint_write_is_atomic(tmp_path, tiny_model, tiny_cache, monkeypatch):
+    """A crash while the checkpoint is being written leaves the previous checkpoint intact."""
+    real_save, calls = torch.save, []
+
+    def crashing_save(obj, path, *a, **k):
+        calls.append(str(path))
+        if len(calls) == 2:  # the second checkpoint of the run dies half-way through
+            with open(path, "wb") as fh:
+                fh.write(b"garbage")
+            raise RuntimeError("disk full")
+        return real_save(obj, path, *a, **k)
+
+    monkeypatch.setattr(l1btrain.torch, "save", crashing_save)
+    cfg = l1btrain.HeadsCfg(epochs=1, batch=8, lr=1e-3, eval_every=0.5, patience=10, inner_frac=0.34, seed=0, device="cpu")
+    out = tmp_path / "heads_A.pt"
+    with pytest.raises(RuntimeError, match="disk full"):
+        l1btrain.train_heads(tiny_model, tiny_cache, cfg, out, log=lambda *a, **k: None)
+    ckpt = tmp_path / "heads_A.pt.ckpt"
+    assert ckpt.exists() and not list(tmp_path.glob("*.tmp"))
+    state = torch.load(ckpt, map_location="cpu", weights_only=False)  # the step-0 checkpoint, still readable
+    assert state["state"]["step"] == 0
+
+
+def test_cache_without_meta_is_refused(tmp_path, tiny_model, tiny_cache):
+    (tiny_cache / "meta.json").unlink()
+    cfg = l1btrain.HeadsCfg(epochs=1, batch=8, device="cpu")
+    with pytest.raises(ValueError, match="meta.json"):
+        l1btrain.train_heads(tiny_model, tiny_cache, cfg, tmp_path / "x.pt", log=lambda *a, **k: None)

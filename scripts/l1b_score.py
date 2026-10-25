@@ -52,9 +52,17 @@ def load_trunk(ckpt, model_config, device):
     return load_humansl(str(ckpt), device)[0]
 
 
+def make_pool(workers, config):
+    """The CPU feature pool; fork it before anything touches CUDA (PyTorch does not support forking a CUDA process)."""
+    return mp.get_context("fork").Pool(workers, initializer=init_worker, initargs=(config,))
+
+
 def check_unseen(meta, folds, allow_seen, out):
-    """ValueError when the heads were trained on one of `folds` (unless allow_seen into a *_seen directory)."""
-    seen = sorted(set(meta.get("train_folds") or []) & set(folds))
+    """ValueError when the heads were trained on one of `folds` (unless allow_seen into a *_seen directory), or when the
+    sidecar does not record train_folds at all (a cache without meta.json): out-of-fold cannot be shown."""
+    if meta.get("train_folds") is None:
+        raise ValueError("the heads' sidecar has no train_folds (the cache had no meta.json?); cannot show the features are out-of-fold")
+    seen = sorted(set(meta.get("train_folds")) & set(folds))
     if seen and not allow_seen:
         raise ValueError(f"the heads' train_folds {meta.get('train_folds')} include {seen}; their features would not be out-of-fold "
                          "(--allow-seen for diagnostics only)")
@@ -114,9 +122,9 @@ def main(argv=None):
     ap.add_argument("--folds-csv", default=str(FOLDS_CSV))
     ap.add_argument("--allow-seen", action="store_true")
     a = ap.parse_args(argv)
-    model = load_trunk(a.ckpt, a.model_config, a.device)
+    model = load_trunk(a.ckpt, a.model_config, "cpu")  # on the CPU until the pool is forked
     try:
-        heads, meta, warnings = load_heads(a.heads, model, a.device)
+        heads, meta, warnings = load_heads(a.heads, model, "cpu")
         check_unseen(meta, a.folds, a.allow_seen, a.out)
     except ValueError as e:
         print(e, file=sys.stderr)
@@ -124,12 +132,14 @@ def main(argv=None):
     for w in warnings:
         print(f"WARNING: {w}", file=sys.stderr, flush=True)
     meta_heads = {"path": str(a.heads), **{k: meta.get(k) for k in HEADS_SUMMARY}}
+    all_games, folds_df = player_games(), pd.read_csv(a.folds_csv)
+    pool = make_pool(a.workers, model.config)
+    model = model.to(a.device)
+    heads = heads.to(a.device)
 
     def scorer(bins, globs, legal, target, colors, rows):
         return score_positions(model, heads, bins, globs, legal, target, colors)
 
-    all_games, folds_df = player_games(), pd.read_csv(a.folds_csv)
-    pool = mp.get_context("fork").Pool(a.workers, initializer=init_worker, initargs=(model.config,))
     try:
         for fold in a.folds:
             players = fold_players(all_games, folds_df, fold, max_games=a.max_games, min_games=a.min_games)

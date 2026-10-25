@@ -14,6 +14,7 @@ whose sha256 or n_ranks do not match.
 """
 import copy
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -112,11 +113,23 @@ def score_positions(model, heads, bins, globs, legal, target, colors, batch=64):
     return out
 
 
+def atomic_save(obj, path):
+    """torch.save to <path>.tmp, then rename over path: a crash mid-write never leaves a truncated file."""
+    path = Path(path)
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        torch.save(obj, tmp)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    os.replace(tmp, path)
+
+
 def save_heads(heads, path, meta):
     """state_dict -> path (.pt) and the sidecar path.with_suffix('.json'); returns the sidecar dict."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(heads.state_dict(), path)
+    atomic_save(heads.state_dict(), path)
     device = next(heads.parameters()).device
     side = {"format": FORMAT, "n_ranks": heads.n_ranks, "levels": list(LEVELS[:heads.n_ranks]),
             "n_params": int(sum(p.numel() for p in heads.parameters())), "state_sha256": file_sha256(path),

@@ -21,7 +21,7 @@ import pandas as pd
 import torch
 
 from aicup.featcache import read_cache, unpack_bins, unpack_legal
-from aicup.l1b import RankHeads, masked_logp, neutral_rows, save_heads, trunk_features
+from aicup.l1b import RankHeads, atomic_save, masked_logp, neutral_rows, save_heads, trunk_features
 from aicup.metric import LEVELS, RANK_TO_IDX
 from aicup.settrain import INNER_SEED, inner_players
 
@@ -176,6 +176,7 @@ def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_met
     out_pt = Path(out_pt)
     ckpt_path = out_pt.with_name(out_pt.name + ".ckpt")
 
+    use_inner = len(inner_idx) > 0  # inner_frac = 0: no early stopping, the last weights are kept (settrain's rule)
     state = {"step": 0, "history": [], "best": None, "since_improvement": 0, "stopped_early": False}
     resumed_from = 0
     if resume and ckpt_path.exists():
@@ -189,8 +190,13 @@ def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_met
         resumed_from = state["step"]
         log(f"resumed from {ckpt_path} at step {resumed_from} (epoch {resumed_from / steps_per_epoch:.2f})", flush=True)
 
+    def save_ckpt():
+        atomic_save({"cfg_key": _cfg_key(cfg), "steps_per_epoch": steps_per_epoch, "heads": heads.state_dict(),
+                     "opt": opt.state_dict(), "state": state}, ckpt_path)
+
     def evaluate(step):
-        res = evaluate_nll(model, heads, arrays, inner_idx, cfg) if len(inner_idx) else {"nll": float("nan"), "nll_by_rank": [None] * N_RANKS, "ranks_present": [], "n": 0}
+        """Inner evaluation at `step`; keeps the best weights; True when patience is exhausted."""
+        res = evaluate_nll(model, heads, arrays, inner_idx, cfg)
         epoch = step / steps_per_epoch
         state["history"].append((epoch, res["nll"]))
         improved = state["best"] is None or (np.isfinite(res["nll"]) and res["nll"] < state["best"]["nll"])
@@ -201,14 +207,14 @@ def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_met
         else:
             state["since_improvement"] += 1
         log(f"epoch {epoch:.2f} inner NLL {res['nll']:.4f} (best {state['best']['nll']:.4f} @ {state['best']['step'] / steps_per_epoch:.2f})", flush=True)
-        torch.save({"cfg_key": _cfg_key(cfg), "steps_per_epoch": steps_per_epoch, "heads": heads.state_dict(), "opt": opt.state_dict(),
-                    "state": state}, ckpt_path)
         return state["since_improvement"] >= cfg.patience
 
-    if state["step"] == 0 and not state["history"]:
+    if use_inner and state["step"] == 0 and not state["history"]:
         evaluate(0)
+        save_ckpt()
     step = state["step"]
     stop = state["stopped_early"]
+    t_loop, n_loop = time.time(), 0
     while step < total_steps and not stop:
         epoch_i, pos_in_epoch = divmod(step, steps_per_epoch)
         order = train_idx[np.random.RandomState(cfg.seed + epoch_i).permutation(len(train_idx))]
@@ -218,30 +224,42 @@ def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_met
             w = torch.from_numpy(weight_of[sel]).to(device)
             logp = _true_head_logp(model, heads, bins, globs, legal, target, rank, color, rows, autocast)
             loss = (-logp * w).sum() / w.sum()
+            if not torch.isfinite(loss):
+                raise FloatingPointError(f"non-finite training loss at step {step}")
             opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()
             step += 1
+            n_loop += len(sel)
             state["step"] = step
             if step % eval_steps == 0 or step == total_steps:
-                if evaluate(step):
+                if use_inner and evaluate(step):
                     stop = True
                     state["stopped_early"] = True
+                save_ckpt()
+                log(f"  {n_loop / max(time.time() - t_loop, 1e-9):.0f} positions/s since the last report", flush=True)
+                t_loop, n_loop = time.time(), 0
+                if stop:
                     break
         else:
             continue
         break
 
-    best = state["best"]
-    heads.load_state_dict(best["heads"])
+    if use_inner:
+        best = state["best"]
+        heads.load_state_dict(best["heads"])
+        best_epoch, nll_init, nll_best = best["step"] / steps_per_epoch, state["history"][0][1], best["nll"]
+        by_rank, present = best["by_rank"], best["ranks_present"]
+    else:
+        best_epoch, nll_init, nll_best, by_rank, present = state["step"] / steps_per_epoch, None, None, [None] * N_RANKS, []
     heads.eval()
     per_rank = np.bincount(arrays["rank_idx"][train_idx], minlength=N_RANKS)
-    meta = {"train_cfg": asdict(cfg), "train_folds": cache_meta.get("folds"), "max_games": cache_meta.get("max_games"),
+    meta = {"train_cfg": asdict(cfg), "train_folds": cache_meta["folds"], "max_games": cache_meta.get("max_games"),
             "n_train_positions": int(len(train_idx)), "n_inner_positions": int(len(inner_idx)),
             "per_rank_positions": {lv: int(per_rank[k]) for k, lv in enumerate(LEVELS)},
-            "inner_nll_init": state["history"][0][1], "inner_nll_best": best["nll"], "inner_nll_best_by_rank": best["by_rank"],
-            "best_epoch": best["step"] / steps_per_epoch, "stopped_early": bool(state["stopped_early"]),
-            "inner_ranks_present": best["ranks_present"], "history": [(float(e), float(v)) for e, v in state["history"]],
+            "inner_nll_init": nll_init, "inner_nll_best": nll_best, "inner_nll_best_by_rank": by_rank,
+            "best_epoch": best_epoch, "stopped_early": bool(state["stopped_early"]),
+            "inner_ranks_present": present, "history": [(float(e), float(v)) for e, v in state["history"]],
             "steps_per_epoch": steps_per_epoch, "steps_run": int(state["step"]), "resumed_from_step": int(resumed_from),
             "wall_seconds": time.time() - t_start, "cache_dir": str(cache_dir), "cache_meta": cache_meta,
             "head_init": "humanv0_policy_head", **(extra_meta or {})}
@@ -250,8 +268,15 @@ def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_met
 
 
 def _cache_meta(cache_dir):
+    """The cache's meta.json; ValueError when it is missing or has no folds (the sidecar's train_folds, and so the
+    out-of-fold check of l1b_score.py, depend on it -- run l1b_build_cache.py --merge-meta after a sharded build)."""
     p = Path(cache_dir) / "meta.json"
-    return json.loads(p.read_text()) if p.exists() else {}
+    if not p.exists():
+        raise ValueError(f"{p} is missing: a sharded cache needs `l1b_build_cache.py --out {cache_dir} --merge-meta` first")
+    meta = json.loads(p.read_text())
+    if not meta.get("folds"):
+        raise ValueError(f"{p} has no folds; the heads' train_folds would be unknown")
+    return meta
 
 
 def cache_summary(games):

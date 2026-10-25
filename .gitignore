@@ -29,3 +29,9 @@ results/ladder/cv_smoke*
 !results/models/
 !tests/fixtures/**/submission_rank*.csv
 !tests/fixtures/**/submission_rank*.json
+# L1b (plan 2026-10-25): caches, heads, checkpoints and per-move scores stay on nano4; JSON sidecars and reports go to git
+results/l1b/cache_*/games_*.csv
+results/l1b/**/*.npz
+results/l1b/**/*.pt
+results/l1b/**/*.ckpt
+results/l1b/**/*.tmp

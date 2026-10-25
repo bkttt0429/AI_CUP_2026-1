@@ -267,6 +267,8 @@ sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus --gres=gpu:8 -c 96 -t 02
 
 fold 0 兩邊都出、分開存（之後給 L3 當訓練資料用）。每個 fold 寫 `meta_s{shard}.json`。
 
+對照組（審查建議，便宜）：第 0 步的 head 就是 humanv0 在等級未知 metadata 下的 policy，用它評一次 folds 3、4，和訓練後的結果擺在一起看，可以把「訓練學到的」和「bf16 trunk + 等級未知 metadata」的效應分開。`l1b_train.py --epochs 0 --out results/l1b/heads_init.pt` 會寫出這組初始化 head（側檔 `train_folds` 來自快取，所以也受同樣的 OOF 檢查），再用同樣的 `l1b_score.py` 指令、`--out results/l1b/scores_init` 評分，`l1b_early_signal.py --l1b results/l1b/scores_init` 得到對照表。
+
 **5. 早期訊號**（CPU 幾分鐘；**決策點 1**）：每級每手 NLL（L1b 自己的 head 對 Human SL 該級最好的 profile 與 pilot 峰值 profile）和相鄰等級 AUC（每人一題 20 局，posterior-mean index，與 §2.4.1(d) 同法；另報每局），印兩張表、寫 JSON：
 
 ```bash
