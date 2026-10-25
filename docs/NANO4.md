@@ -230,6 +230,62 @@ sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J ladseed scripts/na
 
 把印出的四行貼回 issue。
 
+### 4.2 L1b 第一階段（2026-10-25，issue #6；計畫 `docs/superpowers/plans/2026-10-25-l1b-rank-heads.md`）
+
+凍結 humanv0 trunk、「等級未知」metadata、10 個從 humanv0 policy head 複製出來的等級 head，只訓 head。模型 A 用 folds 1、2 的所有玩家（每人 ≤ 40 局）、給 folds 3、4（與 0）出每手 10 維 log p；模型 B 用 folds 3、4、給 folds 1、2（與 0）。輸出全部在 `results/l1b/`；快取、`.pt`、逐手 `.npz` 不進 git，`.json`（側檔、meta、報告）進 git。六步順序固定，11/04 當天 `ens_top3` 正式提交優先。
+
+**1. 快取**（CPU，每半約 1.1×10⁷ 局面、12–13 GB，48 核 15–30 分；只要 KataGo 的 Python 套件，不讀權重）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -c 48 -t 02:00:00 -J cacheA scripts/nano4/run.sbatch python -I scripts/l1b_build_cache.py --folds 1 2 --out results/l1b/cache_A --workers 48
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -c 48 -t 02:00:00 -J cacheB scripts/nano4/run.sbatch python -I scripts/l1b_build_cache.py --folds 3 4 --out results/l1b/cache_B --workers 48
+```
+
+每個 part 寫完才改名，中斷重跑會略過已完成的 part；跑完寫 `meta.json`（玩家、局、局面、各級局面數、`games_sha256`）。預期 `games` ≈ 102,019（A）／101,711（B）。
+
+**2. 初始化檢查**（單卡幾分鐘）：10 個 head 在第 0 步必須等於 humanv0 在等級未知 metadata 下的 policy，fp32 下 max |Δ log p| ≤ 1e-4：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J initA scripts/nano4/run.sbatch python -I scripts/l1b_train.py --cache results/l1b/cache_A --out results/l1b/heads_A.pt --check-init
+```
+
+**3. 訓練**（單卡，每半 ≤ 3 小時：trunk 只做 bf16 前向、約 4,000–6,000 局面/秒，1.1×10⁷ 局面一個 epoch 30–45 分，最多 3 epoch）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 08:00:00 -J trainA scripts/nano4/run.sbatch python -I scripts/l1b_train.py --cache results/l1b/cache_A --out results/l1b/heads_A.pt
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 08:00:00 -J trainB scripts/nano4/run.sbatch python -I scripts/l1b_train.py --cache results/l1b/cache_B --out results/l1b/heads_B.pt
+```
+
+類別平衡 CE、Adam lr 1e-4、batch 256、內層依玩家分層留出 10%、每 1/4 epoch 評一次內層 NLL、連續 4 次沒改善就停、保留最好（含第 0 步）。每次評估印一行 `epoch x.xx inner NLL …`，並寫 `heads_A.pt.ckpt`；工作被殺就重送同一指令，會從 ckpt 接著跑。輸出已存在要加 `--overwrite`。側檔 `heads_A.json` 進 git（`inner_nll_init`、`inner_nll_best`、`best_epoch`、`per_rank_positions`、provenance）。
+
+**4. OOF 評分**（與 `results/scores` 同一批評估局：每人 ≤ 20 局、≥ 5 局；佈局相同，`sum_D … sum_6D`）。heads 的訓練 fold 與 `--folds` 有交集會被拒（exit 2）。8 卡分片 10–30 分：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus --gres=gpu:8 -c 96 -t 02:00:00 -J scoreA scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 8 python -I scripts/l1b_score.py --heads results/l1b/heads_A.pt --folds 3 4 0 --out results/l1b/scores --workers 10
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus --gres=gpu:8 -c 96 -t 02:00:00 -J scoreB scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 8 python -I scripts/l1b_score.py --heads results/l1b/heads_B.pt --folds 1 2 0 --out results/l1b/scores_B --workers 10
+```
+
+fold 0 兩邊都出、分開存（之後給 L3 當訓練資料用）。每個 fold 寫 `meta_s{shard}.json`。
+
+對照組（審查建議，便宜）：第 0 步的 head 就是 humanv0 在等級未知 metadata 下的 policy，用它評一次 folds 3、4，和訓練後的結果擺在一起看，可以把「訓練學到的」和「bf16 trunk + 等級未知 metadata」的效應分開。`l1b_train.py --epochs 0 --out results/l1b/heads_init.pt` 會寫出這組初始化 head（側檔 `train_folds` 來自快取，所以也受同樣的 OOF 檢查），再用同樣的 `l1b_score.py` 指令、`--out results/l1b/scores_init` 評分，`l1b_early_signal.py --l1b results/l1b/scores_init` 得到對照表。
+
+**5. 早期訊號**（CPU 幾分鐘；**決策點 1**）：每級每手 NLL（L1b 自己的 head 對 Human SL 該級最好的 profile 與 pilot 峰值 profile）和相鄰等級 AUC（每人一題 20 局，posterior-mean index，與 §2.4.1(d) 同法；另報每局），印兩張表、寫 JSON：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J earlyA scripts/nano4/run.sbatch python -I scripts/l1b_early_signal.py --l1b results/l1b/scores --hsl results/scores --folds 3 4 --out results/l1b/early_signal_A.json
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J earlyB scripts/nano4/run.sbatch python -I scripts/l1b_early_signal.py --l1b results/l1b/scores_B --hsl results/scores --folds 1 2 --out results/l1b/early_signal_B.json
+```
+
+兩張表貼回 issue #6。pilot 的 n=20 參考：1D|2D 0.62、2D|3D 0.73、3D|4D 0.65。建議的讀法在計畫裡：L1b 在 ≥ 7 級的 NLL 較低、或兩個弱邊界的 AUC 都升 → 進第 6 步；都沒有 → 直接規劃第二階段。由使用者決定。
+
+**6. CV**（CPU 20–40 分；**決策點 2**）：folds 1–4 留一 fold，驗證題與訓練題和梯子完全相同（從評分表還原 `fold_players` 的順序，不讀訓練資料），`MLPModel(hidden=32)` 各擬合一次；三組特徵 `hsl`（24 維）／`l1b`（16 維）／`fused`（40 維），兩組事先指定的比較 `l1b` vs `hsl`、`fused` vs `hsl`，條件 ①③④（② 不適用）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 02:00:00 -J l1bcv scripts/nano4/run.sbatch python -I scripts/l1b_cv.py --l1b results/l1b/scores results/l1b/scores_B --hsl results/scores --folds 1 2 3 4 --out results/l1b/cv_summary.json
+```
+
+把印出的五行（三組分數、兩組比較）貼回 issue #6；`cv_summary.json` 進 git。
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：

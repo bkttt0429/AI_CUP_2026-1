@@ -51,3 +51,14 @@ def test_sample_questions_respects_player_game_counts_and_seed():
     six = a[a["player_id"] == "bbbb1111bbbb1111"]
     assert (six["n_games"] <= 7).all()
     assert all(len(set(k)) == len(k) for k in a["game_keys"])
+
+
+def test_profiles_parameter():
+    from aicup.qfeatures import SUM_COLS, feature_names, sum_cols
+
+    assert feature_names(["a", "b"]) == ["rel_a", "rel_b", "best_logp", "pmi_sum", "peak_interp", "log_moves", "log_games", "game_argmax_std"]
+    assert sum_cols(["a", "b"]) == ["sum_a", "sum_b"] and FEATURE_NAMES == feature_names(PROFILES) and SUM_COLS == sum_cols(PROFILES)
+    games = pd.DataFrame({"game_key": ["g1", "g2", "g3"], "n_moves": [50, 60, 70], "sum_a": [-100.0, -120.0, -140.0], "sum_b": [-90.0, -125.0, -130.0]})
+    questions = pd.DataFrame({"question_id": ["q1", "q2"], "rank": ["1D", "6D"], "game_keys": [["g1", "g2"], ["g3"]]})
+    X, y, n = build_matrix(games, questions, profiles=["a", "b"])
+    assert X.shape == (2, 8) and y.tolist() == [4, 9] and n.tolist() == [2, 1] and np.isfinite(X).all()

@@ -10,9 +10,18 @@ from aicup.evidence import posterior_mean_index
 from aicup.humansl import PROFILES
 from aicup.metric import RANK_TO_IDX
 
-SUM_COLS = [f"sum_{p}" for p in PROFILES]
-FEATURE_NAMES = [f"rel_{p}" for p in PROFILES] + ["best_logp", "pmi_sum", "peak_interp", "log_moves", "log_games",
-                                                  "game_argmax_std"]
+def sum_cols(profiles):
+    """The per-game sum columns of a scored games table: sum_<profile> for each profile (or L1b head)."""
+    return [f"sum_{p}" for p in profiles]
+
+
+def feature_names(profiles):
+    """question_features' layout for `profiles`: rel_<p> per profile, then the six curve and evidence features."""
+    return [f"rel_{p}" for p in profiles] + ["best_logp", "pmi_sum", "peak_interp", "log_moves", "log_games", "game_argmax_std"]
+
+
+SUM_COLS = sum_cols(PROFILES)
+FEATURE_NAMES = feature_names(PROFILES)
 
 
 def _peak_interp(curve):
@@ -45,10 +54,11 @@ def question_features(sums, n_moves):
                                          np.log(len(sums)), per_game.argmax(axis=1).std()]])
 
 
-def build_matrix(games, questions):
-    """Feature matrix X [Q, F], labels y [Q] (-1 when the rank is unknown) and games per question."""
+def build_matrix(games, questions, profiles=PROFILES):
+    """Feature matrix X [Q, F], labels y [Q] (-1 when the rank is unknown) and games per question; the games table
+    holds sum_cols(profiles) (the 18 Human SL profiles by default, the 10 L1b heads with profiles=LEVELS)."""
     g = games.set_index("game_key")
-    sums = g[SUM_COLS].to_numpy(dtype=float)
+    sums = g[sum_cols(profiles)].to_numpy(dtype=float)
     n = g["n_moves"].to_numpy(dtype=float)
     row = {k: i for i, k in enumerate(g.index)}
     X = np.stack([question_features(sums[idx], n[idx]) for idx in ([row[k] for k in keys] for keys in questions["game_keys"])])
