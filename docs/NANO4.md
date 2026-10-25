@@ -184,7 +184,7 @@ sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J ladens scripts/nan
 
 四個步驟，順序固定：訓練 → 向量一致性 → mock test → seed 平均報告。前三步都讀 `results/ladder/vectors/fold{F}.npz`（`ladder_build_vectors.py` 的輸出，folds 0–4 都要在）。
 
-**1. 訓練**（`scripts/train_set_model.py`）：一個 rung、三個 seed、folds 0–4 的全部訓練題（每人 32 題，和 CV 同一套抽樣），base logits 用 5 折交叉擬合。輸出 `results/models/set/{rung}_s{seed}.pt`（`state_dict`）加同名 `.json` 側檔（rung、seed、TrainCfg、標準化統計、內層提早停止診斷、provenance、訓練折與題目雜湊、base 檔名與 sha256），以及**配對的推論用 base** `results/models/rank_model_f01234.json`（`r2_mlp24` 在同一組訓練題上的全折擬合，`rank_model.json` 格式）。先跑 `r3_pma`；單張 H200 三個 seed 約 40 分鐘：
+**1. 訓練**（`scripts/train_set_model.py`）：一個 rung、三個 seed、folds 0–4 的全部訓練題（每人 32 題，和 CV 同一套抽樣），base logits 用 5 折交叉擬合。輸出 `results/models/set/{rung}_s{seed}.pt`（`state_dict`）加同名 `.json` 側檔（rung、seed、TrainCfg、標準化統計、內層提早停止診斷、provenance、訓練折與題目雜湊、base 檔名與 sha256），以及**配對的推論用 base** `results/models/rank_model_f01234.json`（`r2_mlp24` 在同一組訓練題上的全折擬合，`rank_model.json` 格式）。先跑 `r3_pma`；單張 H200 三個 seed 實測 5 分鐘（254,336 題，交叉擬合 base 71 秒，每個 seed 31–67 秒就被內層提早停止）：
 
 ```bash
 sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus -t 04:00:00 -J setpma scripts/nano4/run.sbatch python -I scripts/train_set_model.py --rung r3_pma
