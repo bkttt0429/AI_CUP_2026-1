@@ -76,6 +76,23 @@ sbatch --exclude=25a-hgpn[001,003,004,007,062] -J tests scripts/nano4/run.sbatch
 sbatch scripts/nano4/run.sbatch python -I scripts/predict_submission.py --workers 10
 ```
 
+提交管線（2026-10-25 加固，待辦第 1 項）：單卡照上面跑，它會順便寫 `submission_rank_shard0of1.npz`。8 張卡：`shards.sh` 給每張卡加 `--shard i --nshards 8`，各寫一個分片檔，之後用 `--merge` 合併預測（不需要 GPU）：
+
+```bash
+sbatch -p 8gpus --gres=gpu:8 -c 96 -t 04:00:00 -J sub8 scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 8 python -I scripts/predict_submission.py --workers 10
+sbatch -t 01:00:00 -J submerge scripts/nano4/run.sbatch python -I scripts/predict_submission.py --merge --nshards 8
+```
+
+正式測試集預設期望 800 列＝400 `pub_` + 400 `priv_`（`--expect-rows`／`--expect-public`／`--expect-private`，0 表示不檢查）；跑 mock test 要給它自己的數字：
+
+```bash
+sbatch -t 02:00:00 -J submock scripts/nano4/run.sbatch python -I scripts/predict_submission.py --inputs tests/fixtures/mock_fold0_40/rank_prediction_test_public.csv tests/fixtures/mock_fold0_40/rank_prediction_test_private.csv --expect-rows 40 --expect-public 20 --expect-private 20 --out results/mock_fold0_40/submission_rank.csv
+```
+
+exit code：0 正常；1 提交檔驗證失敗（檔案仍會寫出，問題列在報告的 `problems`）；2 輸入格式錯（`num_games` 與非空 `sgf_*` 欄不一致）、模型特徵不符、分片檔缺漏或不一致；3 有題目沒有可用棋局、被填 `1D`（加 `--allow-fallback` 才算正常）；4 輸入是用 `--lenient-inputs` 讀進來、帶有警告（加 `--allow-input-warnings` 才算正常）。報告 JSON 多了 `mode`、`shards`（每個分片的題目雜湊、局數、局面數、秒數）、`expectations`、`input_warnings`、`exit_code`。
+
+截止日的退路：官方檔若真有題目 `num_games` 與非空 `sgf_*` 欄不一致，預設 exit 2、什麼都不產出；加 `--lenient-inputs` 會把那些題目改用實際非空的欄讀進來、照常預測，每題一條警告寫進報告的 `input_warnings`，exit 4。**分片與 merge 都要加同一個旗標**（題目雜湊算的是讀進來的局數），分片程序寫完檔就 exit 0，由 merge 決定最後的 exit code。
+
 ```bash
 sbatch -p ngs1gpu -t 2-00:00:00 -J score scripts/nano4/run.sbatch python -I scripts/score_folds.py --folds 0 --workers 10
 ```
