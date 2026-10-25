@@ -63,7 +63,8 @@ def _args(inputs, out, n_rows, n_pub, n_priv, *extra):
 
 def test_fixture_reads_and_replays_like_the_recorded_run():
     """The 40-question mock test: 375 games declared, all usable, no passes -- as the recorded report says."""
-    questions = ps.load_questions([PUBLIC, PRIVATE])
+    questions, warnings = ps.load_questions([PUBLIC, PRIVATE])
+    assert warnings == [] and ps.load_questions([PUBLIC, PRIVATE], lenient=True) == (questions, [])
     assert len(questions) == 40 and [q["question_id"][:4] for q in questions] == ["pub_"] * 20 + ["priv"] * 20
     assert all(len(q["games"]) == q["declared_games"] for q in questions)
     tasks, owner, dropped, passes = ps.build_tasks(questions)
@@ -78,7 +79,7 @@ def test_single_process_run_writes_submission_report_and_shard_file(tmp_path, fa
     inputs = _small_inputs(tmp_path)
     out = tmp_path / "run" / "submission_rank.csv"
     assert ps.main(_args(inputs, out, 5, 3, 2)) == ps.EXIT_OK
-    questions = ps.load_questions(inputs)
+    questions, _ = ps.load_questions(inputs)
     ids = [q["question_id"] for q in questions]
     sub = pd.read_csv(out, dtype=str, keep_default_na=False)
     assert list(sub.columns) == ["question_id", "pred_rank"] and sub["question_id"].tolist() == ids
@@ -91,6 +92,7 @@ def test_single_process_run_writes_submission_report_and_shard_file(tmp_path, fa
     assert (report["mode"], report["nshards"], len(report["shards"]), report["exit_code"], report["problems"]) == ("single", 1, 1, 0, [])
     assert (report["questions"], report["games_declared"], report["games_present"], report["games_used"]) == (5, n_games, n_games, n_games)
     assert report["fallback_questions"] == [] and report["model_name"] == "mlp_h32" and report["positions"] > 0
+    assert (report["lenient_inputs"], report["input_warnings"], report["allow_input_warnings"]) == (False, [], False)
     assert report["expectations"] == {"rows": 5, "pub_": 3, "priv_": 2} and sum(report["predicted_counts"].values()) == 5
     shard = ps.shard_path(out, 0, 1)
     assert shard == out.with_name("submission_rank_shard0of1.npz") and shard.exists()
@@ -146,7 +148,7 @@ def test_merge_refuses_missing_inconsistent_or_duplicated_shards(tmp_path, fake_
     assert ps.main(_args(inputs, out, 5, 3, 2, "--merge", "--nshards", "2")) == ps.EXIT_INPUTS
     assert "other inputs" in capsys.readouterr().err
     # a shard that scored the wrong slice: tasks missing from the union
-    questions = ps.load_questions(inputs)
+    questions, _ = ps.load_questions(inputs)
     tasks, *_ = ps.build_tasks(questions)
     sha = ps.questions_sha(inputs, questions)
     per_task, moves, n_pos, wall = _fake_score(tasks[0::2], 1)
@@ -203,8 +205,29 @@ def test_expectations_malformed_inputs_and_argument_errors(tmp_path, fake_scorer
     df = pd.read_csv(inputs[0], dtype=str, keep_default_na=False)
     df.loc[1, "num_games"] = str(int(df.loc[1, "num_games"]) + 1)
     df.to_csv(inputs[0], index=False)
+    qid = df.loc[1, "question_id"]
     assert ps.main(_args(inputs, out, 5, 3, 2)) == ps.EXIT_INPUTS
-    assert df.loc[1, "question_id"] in capsys.readouterr().err
+    assert qid in capsys.readouterr().err
+    # ... unless --lenient-inputs: the question is read from its filled columns, predicted, and reported (exit 4)
+    out = tmp_path / "lenient" / "submission_rank.csv"
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--lenient-inputs")) == ps.EXIT_INPUT_WARNINGS
+    err = capsys.readouterr().err
+    assert "read leniently" in err and qid in err and "--allow-input-warnings" in err
+    report = json.loads(out.with_name("submission_rank_report.json").read_text())
+    assert report["exit_code"] == 4 and report["problems"] == [] and report["lenient_inputs"] is True
+    assert len(report["input_warnings"]) == 1 and qid in report["input_warnings"][0] and "num_games" in report["input_warnings"][0]
+    sub = pd.read_csv(out, dtype=str, keep_default_na=False)
+    assert len(sub) == 5 and set(sub["pred_rank"]) <= set(LEVELS) and report["games_declared"] == report["games_present"] + 1
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--lenient-inputs", "--allow-input-warnings")) == ps.EXIT_OK
+    assert json.loads(out.with_name("submission_rank_report.json").read_text())["exit_code"] == 0
+    # shards and the merge must agree on the flag: the questions hash counts the games read
+    out = tmp_path / "lenient_shards" / "submission_rank.csv"
+    for i in range(2):
+        assert ps.main(_args(inputs, out, 5, 3, 2, "--lenient-inputs", "--shard", str(i), "--nshards", "2")) == ps.EXIT_OK
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--merge", "--nshards", "2")) == ps.EXIT_INPUTS  # the strict read refuses
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--merge", "--nshards", "2", "--lenient-inputs")) == ps.EXIT_INPUT_WARNINGS
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--merge", "--nshards", "2", "--lenient-inputs", "--allow-input-warnings")) == ps.EXIT_OK
+    assert out.read_text() == (tmp_path / "lenient" / "submission_rank.csv").read_text()
     # argument errors
     for bad in (["--nshards", "3"], ["--shard", "3", "--nshards", "3"], ["--shard", "0", "--merge"], ["--nshards", "0"]):
         with pytest.raises(SystemExit) as e:

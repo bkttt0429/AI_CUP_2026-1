@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from aicup.submission import check_game, read_test, validate_submission, write_submission
+from aicup.submission import check_game, read_test, read_test_lenient, validate_submission, write_submission
 
 GOOD = "(;SZ[19];B[pd];W[dp];B[pq];W[dd])"
 
@@ -51,6 +51,26 @@ def test_read_test_refuses_num_games_that_disagree_with_the_filled_columns(tmp_p
     ok = {"question_id": "pub_q_0002", "num_games": "2.0", "sgf_1": GOOD, "color_1": "w", "sgf_2": GOOD, "color_2": "B"}
     q = read_test(_test_csv(tmp_path, [ok]))[0]
     assert q["declared_games"] == 2 and q["games"] == [(GOOD, "W"), (GOOD, "B")]
+
+
+def test_read_test_lenient_reads_the_filled_columns_and_warns(tmp_path):
+    """The deadline-day escape hatch: the same questions as read_test on a good file, and on a malformed one
+    the non-empty columns with one warning per question, instead of the refusal."""
+    good = {"question_id": "pub_q_0001", "num_games": 2, "sgf_1": GOOD, "color_1": "B", "sgf_2": GOOD, "color_2": "W"}
+    blank_inside = {"question_id": "priv_q_0001", "num_games": 3, "sgf_1": GOOD, "color_1": "B", "sgf_3": GOOD, "color_3": "W"}
+    not_a_number = {"question_id": "priv_q_0002", "num_games": "x", "sgf_1": GOOD, "color_1": "B"}
+    path = _test_csv(tmp_path, [good])
+    assert read_test_lenient(path) == (read_test(path), [])
+    path = _test_csv(tmp_path, [good, blank_inside, not_a_number])
+    with pytest.raises(ValueError):
+        read_test(path)
+    qs, warnings = read_test_lenient(path)
+    assert [q["question_id"] for q in qs] == ["pub_q_0001", "priv_q_0001", "priv_q_0002"]
+    assert qs[0] == read_test(_test_csv(tmp_path, [good]))[0]
+    assert qs[1]["games"] == [(GOOD, "B"), (GOOD, "W")] and qs[1]["declared_games"] == 3  # columns 1 and 3, as filled
+    assert qs[2]["games"] == [(GOOD, "B")] and qs[2]["declared_games"] == 0  # "x" is not a number
+    assert warnings == ["test.csv: priv_q_0001: num_games 3 but the non-empty sgf columns are [1, 3]",
+                        "test.csv: priv_q_0002: num_games 'x' is not in 1..20"]
 
 
 def test_check_game_accepts_passes_and_rejects_bad_games():

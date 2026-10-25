@@ -6,12 +6,15 @@ question_id, pred_rank, public questions then private, every question exactly on
 
 read_test refuses a file whose num_games disagrees with the filled sgf columns (2026-10-25, item 1 of
 the to-do list): a question is only read when exactly its first num_games sgf columns are non-empty,
-1 <= num_games <= MAX_GAMES. validate_submission checks the submission against the questions read:
+1 <= num_games <= MAX_GAMES. read_test_lenient reads such a question from its non-empty columns and
+returns the problems as warnings instead -- the deadline-day escape hatch of predict_submission
+--lenient-inputs. validate_submission checks the submission against the questions read:
 header, every id once, the ids in the inputs' order (public file first), no private id before a public
 one, the ranks in LEVELS and, when given, the expected total and per-prefix counts of the official
 test (800 = 400 pub_ + 400 priv_), so a truncated or wrongly ordered input is caught before upload.
 """
 from collections import Counter
+from pathlib import Path
 
 import pandas as pd
 from katago.game.board import Board
@@ -25,13 +28,10 @@ MAX_GAMES = 20
 PREFIXES = ("pub_", "priv_")  # the official question_id prefixes, public before private in the submission
 
 
-def read_test(path, max_bad=5):
-    """[{question_id, declared_games, games: [(sgf, colour), ...]}] of an official-format test CSV.
-
-    Every question must declare 1 <= num_games <= MAX_GAMES and have exactly its first num_games sgf
-    columns non-empty (the official format fills only those); otherwise ValueError names the file and
-    up to max_bad offending questions, so a malformed file stops the pipeline before any scoring.
-    Colours are read as given (upper-cased); check_game judges them."""
+def _read_test(path):
+    """([{question_id, declared_games, games: [(sgf, colour), ...]}], problems) of an official-format test
+    CSV: every question read from its non-empty sgf columns, and one problem per question whose num_games
+    is not in 1..MAX_GAMES or whose non-empty columns are not exactly the first num_games."""
     df = pd.read_csv(path, dtype=str, keep_default_na=False)
     out, bad = [], []
     for r in df.to_dict("records"):
@@ -47,11 +47,31 @@ def read_test(path, max_bad=5):
         elif filled != list(range(1, declared + 1)):
             bad.append(f"{qid}: num_games {declared} but the non-empty sgf columns are {filled}")
         games = [(str(r[f"sgf_{i}"]).strip(), str(r.get(f"color_{i}", "")).strip().upper()) for i in filled]
-        out.append({"question_id": qid, "declared_games": declared, "games": games})
+        out.append({"question_id": qid, "declared_games": max(declared, 0), "games": games})
+    return out, bad
+
+
+def read_test(path, max_bad=5):
+    """[{question_id, declared_games, games: [(sgf, colour), ...]}] of an official-format test CSV.
+
+    Every question must declare 1 <= num_games <= MAX_GAMES and have exactly its first num_games sgf
+    columns non-empty (the official format fills only those); otherwise ValueError names the file and
+    up to max_bad offending questions, so a malformed file stops the pipeline before any scoring.
+    Colours are read as given (upper-cased); check_game judges them."""
+    out, bad = _read_test(path)
     if bad:
         more = f" (and {len(bad) - max_bad} more)" if len(bad) > max_bad else ""
         raise ValueError(f"{path}: {len(bad)} malformed questions, e.g. " + "; ".join(bad[:max_bad]) + more)
     return out
+
+
+def read_test_lenient(path):
+    """(questions, warnings): read_test without the refusal. A malformed question is read from whatever sgf
+    columns are non-empty (declared_games keeps the declared value, 0 when it is not a number) and described
+    in `warnings`, one string per question prefixed with the file name; [] for a well-formed file, whose
+    questions equal read_test's."""
+    out, bad = _read_test(path)
+    return out, [f"{Path(path).name}: {b}" for b in bad]
 
 
 def check_game(sgf, color):

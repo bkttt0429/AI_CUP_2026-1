@@ -89,7 +89,9 @@ sbatch -t 01:00:00 -J submerge scripts/nano4/run.sbatch python -I scripts/predic
 sbatch -t 02:00:00 -J submock scripts/nano4/run.sbatch python -I scripts/predict_submission.py --inputs tests/fixtures/mock_fold0_40/rank_prediction_test_public.csv tests/fixtures/mock_fold0_40/rank_prediction_test_private.csv --expect-rows 40 --expect-public 20 --expect-private 20 --out results/mock_fold0_40/submission_rank.csv
 ```
 
-exit code：0 正常；1 提交檔驗證失敗（檔案仍會寫出，問題列在報告的 `problems`）；2 輸入格式錯（`num_games` 與非空 `sgf_*` 欄不一致）、模型特徵不符、分片檔缺漏或不一致；3 有題目沒有可用棋局、被填 `1D`（加 `--allow-fallback` 才算正常）。報告 JSON 多了 `mode`、`shards`（每個分片的題目雜湊、局數、局面數、秒數）、`expectations`、`exit_code`。
+exit code：0 正常；1 提交檔驗證失敗（檔案仍會寫出，問題列在報告的 `problems`）；2 輸入格式錯（`num_games` 與非空 `sgf_*` 欄不一致）、模型特徵不符、分片檔缺漏或不一致；3 有題目沒有可用棋局、被填 `1D`（加 `--allow-fallback` 才算正常）；4 輸入是用 `--lenient-inputs` 讀進來、帶有警告（加 `--allow-input-warnings` 才算正常）。報告 JSON 多了 `mode`、`shards`（每個分片的題目雜湊、局數、局面數、秒數）、`expectations`、`input_warnings`、`exit_code`。
+
+截止日的退路：官方檔若真有題目 `num_games` 與非空 `sgf_*` 欄不一致，預設 exit 2、什麼都不產出；加 `--lenient-inputs` 會把那些題目改用實際非空的欄讀進來、照常預測，每題一條警告寫進報告的 `input_warnings`，exit 4。**分片與 merge 都要加同一個旗標**（題目雜湊算的是讀進來的局數），分片程序寫完檔就 exit 0，由 merge 決定最後的 exit code。
 
 ```bash
 sbatch -p ngs1gpu -t 2-00:00:00 -J score scripts/nano4/run.sbatch python -I scripts/score_folds.py --folds 0 --workers 10

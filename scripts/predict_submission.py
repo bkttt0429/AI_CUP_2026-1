@@ -23,10 +23,15 @@ merge in the same process, so it writes the same files.
 
 --expect-rows / --expect-public / --expect-private (defaults: the official 800 = 400 + 400; 0 disables
 one) are checked against the questions read, so a truncated input fails validation; a mock test passes
-its own counts. Exit codes: 0 ok; 1 the submission failed validation; 2 malformed inputs, a model
-trained on other features, or missing / inconsistent shard files; 3 a question with no usable game was
-filled with FALLBACK (--allow-fallback accepts that with a warning and exit 0). The submission, the
-probabilities and the report are written in every case the merge reaches.
+its own counts. A malformed input (a question whose num_games disagrees with its filled sgf columns)
+stops the run before scoring; --lenient-inputs, the deadline-day escape hatch, reads such a question
+from its non-empty columns instead and lists it in the report's input_warnings (every shard and the
+merge must pass the flag alike). Exit codes: 0 ok; 1 the submission failed validation; 2 malformed
+inputs, a model trained on other features, or missing / inconsistent shard files; 3 a question with no
+usable game was filled with FALLBACK (--allow-fallback accepts that with a warning and exit 0); 4 the
+inputs were read leniently with warnings (--allow-input-warnings accepts). The submission, the
+probabilities and the report are written in every case the merge reaches; a shard run exits 0 once its
+file is written, the merge decides the final code.
 """
 import argparse
 import hashlib
@@ -49,18 +54,28 @@ from aicup.humansl import PROFILES  # noqa: E402
 from aicup.metric import LEVELS, expected_score_decision  # noqa: E402
 from aicup.qfeatures import FEATURE_NAMES, question_features  # noqa: E402
 from aicup.rankmodel import from_state  # noqa: E402
-from aicup.submission import check_game, read_test, validate_submission, write_submission  # noqa: E402
+from aicup.submission import check_game, read_test, read_test_lenient, validate_submission, write_submission  # noqa: E402
 
 CKPT = ROOT / "models" / "katago" / "b18c384nbt-humanv0.ckpt"
 FALLBACK = "1D"  # used only for a question with no usable game: an interior class keeps both neighbours
-EXIT_OK, EXIT_INVALID, EXIT_INPUTS, EXIT_FALLBACK = 0, 1, 2, 3
+EXIT_OK, EXIT_INVALID, EXIT_INPUTS, EXIT_FALLBACK, EXIT_INPUT_WARNINGS = 0, 1, 2, 3, 4
 DEFAULT_INPUTS = [str(ROOT / "data" / "tests" / "rank_prediction_test_public.csv"),
                   str(ROOT / "data" / "tests" / "rank_prediction_test_private.csv")]
 
 
-def load_questions(inputs):
-    """The questions of the input files, in order (aicup.submission.read_test; ValueError on a malformed file)."""
-    return [q for path in inputs for q in read_test(path)]
+def load_questions(inputs, lenient=False):
+    """(questions of the input files in order, input warnings). Strict (the default): aicup.submission.read_test,
+    ValueError on a malformed file and no warnings. lenient: read_test_lenient, a malformed question read
+    from its non-empty sgf columns and one warning per such question."""
+    questions, warnings = [], []
+    for path in inputs:
+        if lenient:
+            qs, ws = read_test_lenient(path)
+            warnings += ws
+        else:
+            qs = read_test(path)
+        questions += qs
+    return questions, warnings
 
 
 def build_tasks(questions):
@@ -204,6 +219,10 @@ def main(argv=None):
     ap.add_argument("--expect-private", type=int, default=400, help="priv_ questions expected (0: no check)")
     ap.add_argument("--allow-fallback", action="store_true",
                     help=f"exit 0 even when a question had no usable game and was set to {FALLBACK}")
+    ap.add_argument("--lenient-inputs", action="store_true",
+                    help="read a question whose num_games disagrees with its filled sgf columns from the non-empty columns, "
+                         "with a warning in the report, instead of stopping (exit 4 unless --allow-input-warnings)")
+    ap.add_argument("--allow-input-warnings", action="store_true", help="exit 0 despite --lenient-inputs warnings")
     a = ap.parse_args(argv)
     if a.nshards < 1:
         ap.error("--nshards must be >= 1")
@@ -216,10 +235,13 @@ def main(argv=None):
     t0 = time.time()
 
     try:
-        questions = load_questions(a.inputs)
+        questions, input_warnings = load_questions(a.inputs, a.lenient_inputs)
     except ValueError as e:
         print(e, file=sys.stderr)
         return EXIT_INPUTS
+    if input_warnings:
+        print(f"WARNING: {len(input_warnings)} questions read leniently: " + "; ".join(input_warnings[:5])
+              + (f" (and {len(input_warnings) - 5} more)" if len(input_warnings) > 5 else ""), file=sys.stderr, flush=True)
     tasks, owner, dropped, passes = build_tasks(questions)
     sha = questions_sha(a.inputs, questions)
     print(f"{len(questions)} questions, {sum(len(q['games']) for q in questions)} games, {len(tasks)} usable, "
@@ -249,7 +271,8 @@ def main(argv=None):
     problems = validate_submission(out, [q["question_id"] for q in questions], a.expect_rows or None, expect_prefix or None)
     pd.DataFrame(probs, columns=[f"p_{lv}" for lv in LEVELS]).assign(question_id=[q["question_id"] for q in questions]) \
         .to_csv(out.with_name(out.stem + "_proba.csv"), index=False)
-    code = EXIT_INVALID if problems else EXIT_FALLBACK if fallback and not a.allow_fallback else EXIT_OK
+    code = (EXIT_INVALID if problems else EXIT_FALLBACK if fallback and not a.allow_fallback
+            else EXIT_INPUT_WARNINGS if input_warnings and not a.allow_input_warnings else EXIT_OK)
     report = {"inputs": a.inputs, "model": a.model, "model_name": saved["name"], "mode": "merge" if a.merge else "single",
               "nshards": a.nshards, "shards": shard_metas, "questions": len(questions),
               "games_declared": int(sum(q["declared_games"] for q in questions)),
@@ -259,12 +282,16 @@ def main(argv=None):
               "scoring_wall_s": float(sum(m["scoring_wall_s"] for m in shard_metas)), "total_wall_s": time.time() - t0,
               "expectations": {"rows": a.expect_rows, "pub_": a.expect_public, "priv_": a.expect_private},
               "fallback_questions": fallback, "allow_fallback": a.allow_fallback,
+              "lenient_inputs": a.lenient_inputs, "input_warnings": input_warnings, "allow_input_warnings": a.allow_input_warnings,
               "predicted_counts": dict(Counter(r for _, r in rows)), "problems": problems, "exit_code": code}
     report_path.write_text(json.dumps(report, indent=1, ensure_ascii=False))
     print(f"wrote {out} ({len(rows)} rows) and {report_path}; problems: {problems or 'none'}", flush=True)
     if fallback:
         print(f"WARNING: {len(fallback)} questions had no usable game and were set to {FALLBACK}: {fallback[:5]}"
               + ("" if a.allow_fallback else f" (exit {EXIT_FALLBACK}; pass --allow-fallback to accept)"), file=sys.stderr, flush=True)
+    if input_warnings and code == EXIT_INPUT_WARNINGS:
+        print(f"WARNING: {len(input_warnings)} questions were read leniently (exit {EXIT_INPUT_WARNINGS}; pass "
+              f"--allow-input-warnings to accept)", file=sys.stderr, flush=True)
     return code
 
 
