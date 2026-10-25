@@ -91,3 +91,63 @@ def test_train_cli_and_check_init(tmp_path, capsys):
     assert lt.main([*base, "--epochs", "1"]) == 2
     assert "overwrite" in capsys.readouterr().err
     assert lt.main([*base, "--epochs", "1", "--batch", "8", "--lr", "1e-3", "--overwrite"]) == 0
+
+
+def test_score_cli_matches_score_folds_layout(tmp_path, monkeypatch, capsys):
+    import numpy as np
+    import torch
+    from katago.game.features import Features
+    from katago.train import modelconfigs
+    from katago.train.model_pytorch import Model
+
+    import l1b_score as ls
+    from aicup import l1b
+    from aicup.metric import LEVELS
+    from aicup.pilot import game_positions
+    from aicup.scoring import read_scored_games
+
+    games_df, sgfs, folds_csv = _fake_data(tmp_path)
+    monkeypatch.setattr(ls, "player_games", lambda: games_df)
+    monkeypatch.setattr(ls, "load_games", lambda keys: {k: sgfs[k] for k in keys})
+    torch.manual_seed(0)
+    model = Model(modelconfigs.config_of_name["b2c16"], 19)  # the CLI builds the same model from --model-config b2c16
+    model.initialize()
+    model.eval()
+    heads = l1b.RankHeads(model.policy_head)
+    pt = tmp_path / "heads_B.pt"
+    l1b.save_heads(heads, pt, {"train_folds": [3, 4], "max_games": 40, "best_epoch": 0.5, "inner_nll_best": 1.0})
+    out = tmp_path / "scores"
+    args = ["--heads", str(pt), "--folds", "1", "2", "--out", str(out), "--model-config", "b2c16", "--device", "cpu", "--workers", "1",
+            "--part-size", "5", "--min-games", "1", "--folds-csv", str(folds_csv)]
+    assert ls.main(args) == 0
+    printed = capsys.readouterr().out
+    assert "fold 1" in printed and "fold 2" in printed
+    features = Features(modelconfigs.config_of_name["b2c16"], 19)
+    for fold in (1, 2):
+        games = read_scored_games(out / f"fold{fold}")
+        assert list(games.columns) == ["game_key", "player_id", "rank", "color", "n_moves"] + [f"sum_{lv}" for lv in LEVELS]
+        assert len(games) == 6 and (out / f"fold{fold}" / "meta_s0.json").exists()
+        sums = games[[f"sum_{lv}" for lv in LEVELS]].to_numpy()
+        assert np.allclose(sums, sums[:, :1])  # ten heads at init: identical columns
+        for row in games.itertuples():
+            pos = game_positions(*sgfs[row.game_key], features)
+            want = l1b.score_positions(model, heads, pos["bins"], pos["globs"], pos["legal"], pos["target"], pos["color"])[:, 0].sum()
+            assert row.n_moves == len(pos["target"]) and abs(row.sum_D - want) < 1e-4
+        npz = sorted((out / f"fold{fold}").glob("moves_s0_p*.npz"))
+        assert npz
+        with np.load(npz[0]) as z:
+            assert z["logp"].shape[1] == 10 and z["logp"].dtype == np.float32 and set(z.files) >= {"logp", "game_row", "t"}
+            assert len(z["logp"]) == len(z["game_row"]) == len(z["t"])
+    meta = json.loads((out / "fold1" / "meta_s0.json").read_text())
+    assert meta["heads"]["train_folds"] == [3, 4] and meta["heads"]["best_epoch"] == 0.5 and meta["fold"] == 1 and "code_sha256" in meta
+    assert meta["games"] == 6 and meta["positions"] > 0 and meta["levels"] == LEVELS
+    # the same command again scores nothing new
+    assert ls.main(args) == 0 and "0 to score" in capsys.readouterr().out
+    # heads that saw a fold are refused for it unless --allow-seen, and then only into a *_seen directory
+    seen = tmp_path / "heads_seen.pt"
+    l1b.save_heads(heads, seen, {"train_folds": [1, 2], "max_games": 40})
+    base = ["--heads", str(seen), "--folds", "1", "--model-config", "b2c16", "--device", "cpu", "--workers", "1", "--min-games", "1",
+            "--folds-csv", str(folds_csv)]
+    assert ls.main([*base, "--out", str(tmp_path / "s2")]) == 2 and "train_folds" in capsys.readouterr().err
+    assert ls.main([*base, "--out", str(tmp_path / "s2"), "--allow-seen"]) == 2 and "_seen" in capsys.readouterr().err
+    assert ls.main([*base, "--out", str(tmp_path / "s2_seen"), "--allow-seen"]) == 0

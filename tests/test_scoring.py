@@ -131,3 +131,32 @@ def test_compare_scored_games_reports_per_move_differences_and_gaps():
     assert res["max_abs_per_move"] == pytest.approx(0.2 / 100)
     assert res["mean_abs_per_move"] == pytest.approx(0.2 / 100 / 4)
     assert res["best_profile_agreement"] == 1.0
+
+
+def test_score_stream_default_scorer_is_humansl_and_scorer_overrides(monkeypatch):
+    """score_stream(pool, model, tasks, rows) still scores with humansl.score_positions; scorer= replaces it."""
+    import multiprocessing as mp
+
+    from katago.train import modelconfigs
+
+    from aicup import humansl, scoring
+
+    calls = []
+
+    def fake_humansl(model, bins, globs, legal, target, colors, rows):
+        calls.append(("humansl", model, rows))
+        return np.full((len(target), 3), -1.0, dtype=np.float32)
+
+    monkeypatch.setattr(humansl, "score_positions", fake_humansl)
+    tasks = [(0, "(;SZ[19];B[pd];W[dp];B[pq])", "B"), (1, "(;SZ[19];B[pd];W[dp])", "W")]
+    with mp.get_context("fork").Pool(1, initializer=scoring.init_worker, initargs=(modelconfigs.config_of_name["b2c16"],)) as pool:
+        per_task, arrays, n_pos, wall = scoring.score_stream(pool, "MODEL", tasks, "ROWS", log=lambda *a, **k: None)
+        assert calls == [("humansl", "MODEL", "ROWS")] and n_pos == 3 and per_task[0][0] == 2 and per_task[1][0] == 1
+        np.testing.assert_array_equal(per_task[0][1], [-2.0, -2.0, -2.0])
+        assert arrays[0].shape == (3, 3) and arrays[1].tolist() == [0, 0, 1] and arrays[2].tolist() == [0, 2, 1]
+
+        def l1b_like(bins, globs, legal, target, colors, rows):
+            return np.tile(np.arange(10, dtype=np.float32), (len(target), 1))
+
+        per_task2, arrays2, _, _ = scoring.score_stream(pool, None, tasks, None, scorer=l1b_like, log=lambda *a, **k: None)
+    assert len(calls) == 1 and arrays2[0].shape == (3, 10) and per_task2[0][1].tolist() == [0, 2, 4, 6, 8, 10, 12, 14, 16, 18]

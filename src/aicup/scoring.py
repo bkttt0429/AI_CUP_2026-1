@@ -47,13 +47,19 @@ def load_games(keys, train_dir=TRAIN_DIR):
     return out
 
 
-def score_stream(pool, model, tasks, rows, flush_at=1024, log_every=200, log=print):
+def score_stream(pool, model, tasks, rows, flush_at=1024, log_every=200, log=print, scorer=None):
     """Score (idx, sgf, colour) tasks under every metadata row.
 
-    Returns per-task {idx: (n_moves, sums[S])}, stacked per-move arrays (logp [M, S],
-    task idx [M], move index t [M]) or None, number of positions, wall seconds.
+    The default scorer is humansl.score_positions(model, ...) under every row of `rows`; `scorer`
+    replaces it: scorer(bins, globs, legal, target, colors, rows) -> [N, S] (the L1b heads pass one
+    that ignores `model` and `rows`). Returns per-task {idx: (n_moves, sums[S])}, stacked per-move
+    arrays (logp [M, S], task idx [M], move index t [M]) or None, number of positions, wall seconds.
     """
-    from aicup.humansl import score_positions
+    if scorer is None:
+        from aicup import humansl
+
+        def scorer(bins, globs, legal, target, colors, rows_):
+            return humansl.score_positions(model, bins, globs, legal, target, colors, rows_)
 
     per_task, move_logp, move_task, move_t = {}, [], [], []
     buf, t0, done, n_pos = [], time.time(), 0, 0
@@ -63,7 +69,7 @@ def score_stream(pool, model, tasks, rows, flush_at=1024, log_every=200, log=pri
         if not buf:
             return
         cat = {k: np.concatenate([p[k] for _, p in buf]) for k in ("bins", "globs", "legal", "target", "color")}
-        logp = score_positions(model, cat["bins"], cat["globs"], cat["legal"], cat["target"], cat["color"], rows)
+        logp = scorer(cat["bins"], cat["globs"], cat["legal"], cat["target"], cat["color"], rows)
         o = 0
         for idx, p in buf:
             n = len(p["t"])
