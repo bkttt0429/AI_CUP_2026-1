@@ -69,7 +69,9 @@ def test_heads_start_equal_to_the_policy_head(tiny_model):
 
 
 def test_heads_are_independent_copies(tiny_model):
+    tiny_model.requires_grad_(False)  # the frozen trunk; the heads copied from it must still train
     heads = l1b.RankHeads(tiny_model.policy_head, n_ranks=10)
+    assert all(p.requires_grad for p in heads.parameters()) and not any(p.requires_grad for p in tiny_model.parameters())
     before = tiny_model.policy_head.conv1p.weight.clone()
     with torch.no_grad():
         heads.heads[3].conv1p.weight.add_(1.0)

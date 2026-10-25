@@ -4,6 +4,7 @@ import json
 import pandas as pd
 
 import l1b_build_cache as bc
+import l1b_train as lt
 from aicup import featcache as fc
 
 POINTS = ["pd", "dp", "pq", "dd", "qf", "cf", "jj", "fc", "nc", "cn", "pn", "gq"]
@@ -73,3 +74,20 @@ def test_build_cache_cli(tmp_path, monkeypatch, capsys):
     assert (merged["games"], merged["positions"], merged["nshards"]) == (12, meta["positions"], 2)
     games2, _ = fc.read_cache(out2)
     assert set(games2["game_key"]) == set(sgfs)
+
+
+def test_train_cli_and_check_init(tmp_path, capsys):
+    from tests.test_l1btrain import _tiny_cache_dir
+    cache = _tiny_cache_dir(tmp_path)
+    out = tmp_path / "heads_A.pt"
+    base = ["--cache", str(cache), "--out", str(out), "--model-config", "b2c16", "--device", "cpu"]
+    assert lt.main([*base, "--check-init"]) == 0
+    printed = capsys.readouterr().out
+    assert "max |Δ log p|" in printed and not out.exists()
+    assert lt.main([*base, "--epochs", "1", "--batch", "8", "--lr", "1e-3"]) == 0
+    assert out.exists() and out.with_suffix(".json").exists()
+    meta = json.loads(out.with_suffix(".json").read_text())
+    assert meta["train_cfg"]["epochs"] == 1 and meta["model_source"] == "config:b2c16" and meta["humanv0_sha256"] is None
+    assert lt.main([*base, "--epochs", "1"]) == 2
+    assert "overwrite" in capsys.readouterr().err
+    assert lt.main([*base, "--epochs", "1", "--batch", "8", "--lr", "1e-3", "--overwrite"]) == 0

@@ -52,6 +52,7 @@ class RankHeads(torch.nn.Module):
         super().__init__()
         self.n_ranks = int(n_ranks)
         self.heads = torch.nn.ModuleList([copy.deepcopy(policy_head) for _ in range(self.n_ranks)])
+        self.requires_grad_(True)  # trainable even when copied from a frozen model
 
     def forward(self, trunk, mask, mask_sum_hw, mask_sum):
         """[B, n_ranks, 362] policy logits (channel 0 of every head), computed in fp32 as KataGo does."""
