@@ -151,3 +151,105 @@ def test_score_cli_matches_score_folds_layout(tmp_path, monkeypatch, capsys):
     assert ls.main([*base, "--out", str(tmp_path / "s2")]) == 2 and "train_folds" in capsys.readouterr().err
     assert ls.main([*base, "--out", str(tmp_path / "s2"), "--allow-seen"]) == 2 and "_seen" in capsys.readouterr().err
     assert ls.main([*base, "--out", str(tmp_path / "s2_seen"), "--allow-seen"]) == 0
+
+
+def _write_scored(fold_dir, shard, k, games, logp_by_game, t_by_game, levels):
+    """One part in score_folds' layout: games table with sum_<level> columns and the per-move npz."""
+    import numpy as np
+    from aicup.scoring import part_paths
+
+    fold_dir.mkdir(parents=True, exist_ok=True)
+    recs, logps, rows, ts = [], [], [], []
+    for i, (g, lp, t) in enumerate(zip(games, logp_by_game, t_by_game)):
+        recs.append({**g, "n_moves": len(t), **{f"sum_{lv}": float(s) for lv, s in zip(levels, lp.sum(axis=0))}})
+        logps.append(lp)
+        rows.append(np.full(len(t), i, dtype=np.int32))
+        ts.append(np.asarray(t, dtype=np.int16))
+    csv_path, npz_path = part_paths(fold_dir, shard, k)
+    np.savez_compressed(npz_path, logp=np.concatenate(logps).astype(np.float32), game_row=np.concatenate(rows), t=np.concatenate(ts))
+    pd.DataFrame(recs).to_csv(csv_path, index=False)
+
+
+def _synthetic_scores(tmp_path, fold=3, players_per_rank=3, games_per_player=20, moves=5):
+    """L1b (10 heads) and Human SL (18 profiles) scores of the same games: peaked at the player's rank, so the
+    posterior-mean index separates adjacent ranks perfectly; returns (l1b_dir, hsl_dir, pilot peak profiles)."""
+    import numpy as np
+    from aicup.humansl import PROFILES
+    from aicup.metric import LEVELS
+
+    rng = np.random.RandomState(0)
+    peak = {"D": "6k", "C": "5k", "B": "4k", "A": "3k", "1D": "2k", "2D": "2k", "3D": "2k", "4D": "1k", "5D": "1d", "6D": "2d"}
+    l1b_dir, hsl_dir = tmp_path / "l1b", tmp_path / "hsl"
+    games, l1b_lp, hsl_lp, ts = [], [], [], []
+    for r, lv in enumerate(LEVELS):
+        for p in range(players_per_rank):
+            pid = f"{r:04x}{p:04x}"
+            for g in range(games_per_player):
+                games.append({"game_key": f"{lv}:g{r}_{p}_{g}", "player_id": pid, "rank": lv, "color": "BW"[g % 2]})
+                t = np.arange(moves) * 2 + (g % 2)
+                l1b_lp.append(-1.0 - np.abs(np.arange(10) - r)[None, :] * 0.5 + rng.randn(moves, 1) * 0.01)
+                j = PROFILES.index(peak[lv])
+                hsl_lp.append(-1.5 - np.abs(np.arange(18) - j)[None, :] * 0.3 + rng.randn(moves, 1) * 0.01)
+                ts.append(t)
+    half = len(games) // 2
+    _write_scored(l1b_dir / f"fold{fold}", 0, 0, games[:half], l1b_lp[:half], ts[:half], LEVELS)
+    _write_scored(l1b_dir / f"fold{fold}", 1, 0, games[half:], l1b_lp[half:], ts[half:], LEVELS)
+    _write_scored(hsl_dir / f"fold{fold}", 0, 0, games[half:], hsl_lp[half:], ts[half:], PROFILES)  # other shard order
+    _write_scored(hsl_dir / f"fold{fold}", 0, 1, games[:half], hsl_lp[:half], ts[:half], PROFILES)
+    return l1b_dir, hsl_dir, peak
+
+
+def test_early_signal(tmp_path, capsys):
+    import numpy as np
+    import l1b_early_signal as es
+    from aicup import l1beval
+    from aicup.metric import LEVELS
+
+    l1b_dir, hsl_dir, peak = _synthetic_scores(tmp_path)
+    games, lp_l1b, lp_hsl, game_row, t = l1beval.align_moves(l1b_dir, hsl_dir, 3)
+    assert len(games) == 600 and lp_l1b.shape == (3000, 10) and lp_hsl.shape == (3000, 18) and len(game_row) == len(t) == 3000
+    assert games["game_key"].is_unique and (np.diff(game_row) >= 0).all()
+    rank_idx = games["rank"].map({lv: i for i, lv in enumerate(LEVELS)}).to_numpy()[game_row]
+    nll = l1beval.per_rank_nll(lp_l1b, lp_hsl, rank_idx)
+    assert len(nll["l1b"]) == 10 and all(abs(v - 1.0) < 0.05 for v in nll["l1b"])  # the true head is the peak: -log p = 1.0
+    assert nll["hsl_best_profile"] == [peak[lv] for lv in LEVELS] and all(abs(v - 1.5) < 0.05 for v in nll["hsl_best"])
+    assert nll["hsl_pilot_peak"] == nll["hsl_best"] and nll["n_moves"] == [300] * 10
+    sums_q, ranks_q, n_q = l1beval.question_sums(games, lp_l1b, game_row, n_games=20)
+    assert sums_q.shape == (30, 10) and len(ranks_q) == 30 and n_q.tolist() == [100] * 30
+    auc = l1beval.adjacent_auc(sums_q, ranks_q)
+    assert list(auc) == [f"{a}|{b}" for a, b in zip(LEVELS, LEVELS[1:])] and all(v == 1.0 for v in auc.values())
+    out = tmp_path / "early.json"
+    assert es.main(["--l1b", str(l1b_dir), "--hsl", str(hsl_dir), "--folds", "3", "--out", str(out)]) == 0
+    printed = capsys.readouterr().out
+    assert "NLL" in printed and "AUC" in printed and "1D|2D" in printed and "0.62" in printed
+    res = json.loads(out.read_text())
+    assert res["folds"] == [3] and res["nll"]["l1b"] == nll["l1b"] and res["auc_question20"]["l1b"]["3D|4D"] == 1.0
+    assert res["auc_question20"]["hsl"]["1D|2D"] == 0.5  # the pilot peaks of 1D and 2D are the same profile: indistinguishable
+    assert res["auc_game"]["l1b"]["D|C"] == 1.0 and res["pilot_reference"]["3D|4D"] == 0.65 and res["n_players_by_rank"]["D"] == 3
+
+
+def test_misaligned_scores_are_refused(tmp_path):
+    import numpy as np
+    import pytest
+    from aicup import l1beval
+    from aicup.scoring import part_paths
+
+    l1b_dir, hsl_dir, _ = _synthetic_scores(tmp_path, players_per_rank=1, games_per_player=2)
+    # a game missing on one side
+    csv_path, npz_path = part_paths(hsl_dir / "fold3", 0, 1)
+    games = pd.read_csv(csv_path)
+    games.iloc[:-1].to_csv(csv_path, index=False)
+    with np.load(npz_path) as z:
+        keep = z["game_row"] < len(games) - 1
+        np.savez_compressed(npz_path, logp=z["logp"][keep], game_row=z["game_row"][keep], t=z["t"][keep])
+    with pytest.raises(ValueError, match="game"):
+        l1beval.align_moves(l1b_dir, hsl_dir, 3)
+    # the same games but one move index differs
+    l1b_dir, hsl_dir, _ = _synthetic_scores(tmp_path / "b", players_per_rank=1, games_per_player=2)
+    _, npz_path = part_paths(hsl_dir / "fold3", 0, 0)
+    with np.load(npz_path) as z:
+        t = z["t"].copy()
+        t[0] += 1
+        np.savez_compressed(npz_path, logp=z["logp"], game_row=z["game_row"], t=t)
+    with pytest.raises(ValueError, match="move"):
+        l1beval.align_moves(l1b_dir, hsl_dir, 3)
