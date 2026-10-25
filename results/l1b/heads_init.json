@@ -1,0 +1,155 @@
+{
+ "format": 1,
+ "n_ranks": 10,
+ "levels": [
+  "D",
+  "C",
+  "B",
+  "A",
+  "1D",
+  "2D",
+  "3D",
+  "4D",
+  "5D",
+  "6D"
+ ],
+ "n_params": 450240,
+ "state_sha256": "462301912f0baa64d53f576e8ae48f025d375df3f26687cda2e0f827d63b9a17",
+ "git_head": "10d3543",
+ "git_dirty": false,
+ "code_sha256": "2991f69d8953ae6e21b4c87cc870df5b60be18a4242b2eaadaa9009dd6218536",
+ "code_files": [
+  "src/aicup/gamevec.py",
+  "src/aicup/ladder_data.py",
+  "src/aicup/aggregators.py",
+  "src/aicup/settrain.py",
+  "src/aicup/rankmodel.py",
+  "src/aicup/qfeatures.py",
+  "src/aicup/metric.py"
+ ],
+ "torch_version": "2.14.1+cu126",
+ "device_name": "NVIDIA H200",
+ "train_cfg": {
+  "epochs": 0,
+  "batch": 256,
+  "lr": 0.0001,
+  "eval_every": 0.25,
+  "patience": 4,
+  "inner_frac": 0.1,
+  "inner_max_positions": 400000,
+  "seed": 0,
+  "device": "cuda"
+ },
+ "train_folds": [
+  1,
+  2
+ ],
+ "max_games": 40,
+ "n_train_positions": 10153266,
+ "n_inner_positions": 400000,
+ "per_rank_positions": {
+  "D": 1153185,
+  "C": 1026788,
+  "B": 1207365,
+  "A": 1596082,
+  "1D": 657725,
+  "2D": 864870,
+  "3D": 864356,
+  "4D": 878200,
+  "5D": 929057,
+  "6D": 975638
+ },
+ "inner_nll_init": 1.6164393153290686,
+ "inner_nll_best": 1.6164393153290686,
+ "inner_nll_best_by_rank": [
+  1.8860669398777914,
+  1.8042535444932424,
+  1.7126197560310232,
+  1.6767269202670096,
+  1.5921032877408627,
+  1.5997308513324437,
+  1.5174103715433507,
+  1.481577344528948,
+  1.4495382006452682,
+  1.4443659368307444
+ ],
+ "best_epoch": 0.0,
+ "stopped_early": false,
+ "inner_ranks_present": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9
+ ],
+ "history": [
+  [
+   0.0,
+   1.6164393153290686
+  ]
+ ],
+ "steps_per_epoch": 39662,
+ "steps_run": 0,
+ "resumed_from_step": 0,
+ "wall_seconds": 145.31119680404663,
+ "cache_dir": "results/l1b/cache_A",
+ "cache_meta": {
+  "folds": [
+   1,
+   2
+  ],
+  "max_games": 40,
+  "min_games": 1,
+  "nshards": 8,
+  "shards": [
+   0,
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7
+  ],
+  "players": 3206,
+  "games_selected": 102019,
+  "games": 102019,
+  "positions": 11316535,
+  "per_rank_positions": {
+   "D": 1283704,
+   "C": 1139627,
+   "B": 1343904,
+   "A": 1782111,
+   "1D": 731495,
+   "2D": 973080,
+   "3D": 971988,
+   "4D": 975257,
+   "5D": 1026871,
+   "6D": 1088498
+  },
+  "games_sha256": "1dc5d65abae69a7e881092c24bf0ec5fc26597c2750aaaafaf95ac15659959d0",
+  "model_input_config": "b18c384nbt",
+  "git_head": "10d3543",
+  "git_dirty": false,
+  "code_sha256": "2991f69d8953ae6e21b4c87cc870df5b60be18a4242b2eaadaa9009dd6218536",
+  "code_files": [
+   "src/aicup/gamevec.py",
+   "src/aicup/ladder_data.py",
+   "src/aicup/aggregators.py",
+   "src/aicup/settrain.py",
+   "src/aicup/rankmodel.py",
+   "src/aicup/qfeatures.py",
+   "src/aicup/metric.py"
+  ],
+  "torch_version": "2.14.1+cu126",
+  "device_name": "cpu"
+ },
+ "head_init": "humanv0_policy_head",
+ "model_source": "/home/u2507115/BK_AICUP_2026-1/models/katago/b18c384nbt-humanv0.ckpt",
+ "humanv0_sha256": "00e608f3e6458ba8cb0e3ad8b775a447e051ad935303e73e153a12dd16e48d09"
+}

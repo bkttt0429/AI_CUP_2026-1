@@ -1,0 +1,44 @@
+{
+ "folds": [
+  3,
+  4
+ ],
+ "max_games": 40,
+ "min_games": 1,
+ "nshards": 8,
+ "shards": [
+  0
+ ],
+ "players": 3196,
+ "games_selected": 101711,
+ "games": 12714,
+ "positions": 1409760,
+ "per_rank_positions": {
+  "D": 160009,
+  "C": 138813,
+  "B": 169152,
+  "A": 218125,
+  "1D": 91270,
+  "2D": 125444,
+  "3D": 120683,
+  "4D": 124958,
+  "5D": 122512,
+  "6D": 138794
+ },
+ "games_sha256": "a6253da1b4d21ddb43cee71f0e74deb9b26a8657fe04d6183e2db7dca4ad186a",
+ "model_input_config": "b18c384nbt",
+ "git_head": "10d3543",
+ "git_dirty": false,
+ "code_sha256": "2991f69d8953ae6e21b4c87cc870df5b60be18a4242b2eaadaa9009dd6218536",
+ "code_files": [
+  "src/aicup/gamevec.py",
+  "src/aicup/ladder_data.py",
+  "src/aicup/aggregators.py",
+  "src/aicup/settrain.py",
+  "src/aicup/rankmodel.py",
+  "src/aicup/qfeatures.py",
+  "src/aicup/metric.py"
+ ],
+ "torch_version": "2.14.1+cu126",
+ "device_name": "cpu"
+}
