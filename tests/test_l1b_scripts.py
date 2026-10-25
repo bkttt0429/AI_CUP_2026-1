@@ -170,7 +170,7 @@ def _write_scored(fold_dir, shard, k, games, logp_by_game, t_by_game, levels):
     pd.DataFrame(recs).to_csv(csv_path, index=False)
 
 
-def _synthetic_scores(tmp_path, fold=3, players_per_rank=3, games_per_player=20, moves=5):
+def _synthetic_scores(tmp_path, fold=3, players_per_rank=3, games_per_player=20, moves=5, folds=None, l1b_name="l1b"):
     """L1b (10 heads) and Human SL (18 profiles) scores of the same games: peaked at the player's rank, so the
     posterior-mean index separates adjacent ranks perfectly; returns (l1b_dir, hsl_dir, pilot peak profiles)."""
     import numpy as np
@@ -179,23 +179,24 @@ def _synthetic_scores(tmp_path, fold=3, players_per_rank=3, games_per_player=20,
 
     rng = np.random.RandomState(0)
     peak = {"D": "6k", "C": "5k", "B": "4k", "A": "3k", "1D": "2k", "2D": "2k", "3D": "2k", "4D": "1k", "5D": "1d", "6D": "2d"}
-    l1b_dir, hsl_dir = tmp_path / "l1b", tmp_path / "hsl"
-    games, l1b_lp, hsl_lp, ts = [], [], [], []
-    for r, lv in enumerate(LEVELS):
-        for p in range(players_per_rank):
-            pid = f"{r:04x}{p:04x}"
-            for g in range(games_per_player):
-                games.append({"game_key": f"{lv}:g{r}_{p}_{g}", "player_id": pid, "rank": lv, "color": "BW"[g % 2]})
-                t = np.arange(moves) * 2 + (g % 2)
-                l1b_lp.append(-1.0 - np.abs(np.arange(10) - r)[None, :] * 0.5 + rng.randn(moves, 1) * 0.01)
-                j = PROFILES.index(peak[lv])
-                hsl_lp.append(-1.5 - np.abs(np.arange(18) - j)[None, :] * 0.3 + rng.randn(moves, 1) * 0.01)
-                ts.append(t)
-    half = len(games) // 2
-    _write_scored(l1b_dir / f"fold{fold}", 0, 0, games[:half], l1b_lp[:half], ts[:half], LEVELS)
-    _write_scored(l1b_dir / f"fold{fold}", 1, 0, games[half:], l1b_lp[half:], ts[half:], LEVELS)
-    _write_scored(hsl_dir / f"fold{fold}", 0, 0, games[half:], hsl_lp[half:], ts[half:], PROFILES)  # other shard order
-    _write_scored(hsl_dir / f"fold{fold}", 0, 1, games[:half], hsl_lp[:half], ts[:half], PROFILES)
+    l1b_dir, hsl_dir = tmp_path / l1b_name, tmp_path / "hsl"
+    for fold in (folds or (fold,)):
+        games, l1b_lp, hsl_lp, ts = [], [], [], []
+        for r, lv in enumerate(LEVELS):
+            for p in range(players_per_rank):
+                pid = f"{r:04x}{fold:02x}{p:02x}"
+                for g in range(games_per_player):
+                    games.append({"game_key": f"{lv}:g{fold}_{r}_{p}_{g}", "player_id": pid, "rank": lv, "color": "BW"[g % 2]})
+                    t = np.arange(moves) * 2 + (g % 2)
+                    l1b_lp.append(-1.0 - np.abs(np.arange(10) - r)[None, :] * 0.5 + rng.randn(moves, 1) * 0.01)
+                    j = PROFILES.index(peak[lv])
+                    hsl_lp.append(-1.5 - np.abs(np.arange(18) - j)[None, :] * 0.3 + rng.randn(moves, 1) * 0.01)
+                    ts.append(t)
+        half = len(games) // 2
+        _write_scored(l1b_dir / f"fold{fold}", 0, 0, games[:half], l1b_lp[:half], ts[:half], LEVELS)
+        _write_scored(l1b_dir / f"fold{fold}", 1, 0, games[half:], l1b_lp[half:], ts[half:], LEVELS)
+        _write_scored(hsl_dir / f"fold{fold}", 0, 0, games[half:], hsl_lp[half:], ts[half:], PROFILES)  # other shard order
+        _write_scored(hsl_dir / f"fold{fold}", 0, 1, games[:half], hsl_lp[:half], ts[:half], PROFILES)
     return l1b_dir, hsl_dir, peak
 
 
@@ -253,3 +254,38 @@ def test_misaligned_scores_are_refused(tmp_path):
         np.savez_compressed(npz_path, logp=z["logp"], game_row=z["game_row"], t=t)
     with pytest.raises(ValueError, match="move"):
         l1beval.align_moves(l1b_dir, hsl_dir, 3)
+
+
+def test_cv_cli(tmp_path, capsys):
+    import l1b_cv as cv
+    from aicup.metric import LEVELS
+
+    l1b_a, hsl_dir, _ = _synthetic_scores(tmp_path, folds=(1, 2), l1b_name="l1b_A")
+    l1b_b, _, _ = _synthetic_scores(tmp_path, folds=(3, 4), l1b_name="l1b_B")
+    players = []
+    for fold in (1, 2, 3, 4):
+        for r, lv in enumerate(LEVELS):
+            for p in range(3):
+                players.append({"rank": lv, "player_id": f"{r:04x}{fold:02x}{p:02x}", "n_games": 20, "fold": fold})
+    folds_csv = tmp_path / "folds.csv"
+    pd.DataFrame(players).to_csv(folds_csv, index=False)
+    out = tmp_path / "cv_summary.json"
+    base = ["--hsl", str(hsl_dir), "--folds", "1", "2", "3", "4", "--per-player", "2", "--n-boot", "200", "--folds-csv", str(folds_csv),
+            "--out", str(out)]
+    assert cv.main(["--l1b", str(l1b_a), str(l1b_b), *base]) == 0
+    printed = capsys.readouterr().out
+    assert "l1b vs hsl" in printed and "fused vs hsl" in printed
+    res = json.loads(out.read_text())
+    assert res["folds"] == [1, 2, 3, 4] and res["per_player"] == 2 and res["n_boot"] == 200 and res["questions"] == 4 * 30 * 7
+    for name in ("hsl", "l1b", "fused"):
+        fs = res["feature_sets"][name]
+        assert 0.0 <= fs["balanced_mean_over_n"] <= 1.0 and len(fs["per_fold"]) == 4 and set(fs["balanced_by_n"]) == {"5", "10", "20"}
+        assert fs["n_features"] == {"hsl": 24, "l1b": 16, "fused": 40}[name] and fs["nll_balanced"] > 0
+    for key in ("l1b_vs_hsl", "fused_vs_hsl"):
+        c = res["comparisons"][key]
+        assert len(c["ci95"]) == 2 and c["ci95"][0] <= c["diff"] <= c["ci95"][1] and len(c["per_fold_diff"]) == 4
+        assert set(c["conditions"]) == {"1", "2", "3", "4"} and c["conditions"]["2"] == "n/a" and isinstance(c["pass"], bool)
+    assert res["comparisons"]["l1b_vs_hsl"]["diff"] > 0.05  # synthetic L1b separates 1D-3D, the Human SL peaks do not
+    # a fold in two --l1b directories, or in none, is refused
+    assert cv.main(["--l1b", str(l1b_a), str(l1b_a), *base]) == 2 and "more than one" in capsys.readouterr().err
+    assert cv.main(["--l1b", str(l1b_a), *base]) == 2 and "3" in capsys.readouterr().err

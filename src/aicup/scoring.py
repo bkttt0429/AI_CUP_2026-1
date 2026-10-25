@@ -191,7 +191,8 @@ def read_scored_games(fold_dir):
     paths = [part_paths(fold_dir, s, k)[0] for s, k in completed_parts(fold_dir)]
     if not paths:
         raise FileNotFoundError(f"no finished parts in {fold_dir}")
-    games = pd.concat([pd.read_csv(p) for p in paths], ignore_index=True)
+    str_cols = {"game_key": str, "player_id": str, "rank": str, "color": str}  # an all-digit hex player id must stay a string
+    games = pd.concat([pd.read_csv(p, dtype=str_cols, keep_default_na=False) for p in paths], ignore_index=True)
     if not games["game_key"].is_unique:
         raise ValueError(f"{fold_dir}: {int(games['game_key'].duplicated().sum())} games scored more than once")
     return games
