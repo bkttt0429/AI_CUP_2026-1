@@ -1,0 +1,103 @@
+{
+ "tasks": 375,
+ "matched": 375,
+ "unmatched": [],
+ "ambiguous": [],
+ "tol": 0.05,
+ "sum_tol": 0.5,
+ "groups": {
+  "staged.mean": {
+   "max_abs_diff": 0.0010582804679870605,
+   "task": 153,
+   "column": "s4_mean_6k",
+   "count": false
+  },
+  "staged.std": {
+   "max_abs_diff": 0.0010544061660766602,
+   "task": 153,
+   "column": "s4_std_6k",
+   "count": false
+  },
+  "staged.q10": {
+   "max_abs_diff": 0.004126310348510742,
+   "task": 220,
+   "column": "s1_q10_6d",
+   "count": false
+  },
+  "staged.q90": {
+   "max_abs_diff": 0.0026091337203979492,
+   "task": 35,
+   "column": "s3_q90_5d",
+   "count": false
+  },
+  "staged.n_eff": {
+   "max_abs_diff": 0.0,
+   "task": 0,
+   "column": "s1_n_eff",
+   "count": true
+  },
+  "staged.mean_surprisal": {
+   "max_abs_diff": 0.00017762184143066406,
+   "task": 98,
+   "column": "s4_mean_surprisal",
+   "count": false
+  },
+  "staged.present": {
+   "max_abs_diff": 0.0,
+   "task": 0,
+   "column": "s1_present",
+   "count": true
+  },
+  "whole.mean": {
+   "max_abs_diff": 0.00020386278629302979,
+   "task": 148,
+   "column": "w_mean_6d",
+   "count": false
+  },
+  "whole.std": {
+   "max_abs_diff": 0.0002753734588623047,
+   "task": 57,
+   "column": "w_std_6d",
+   "count": false
+  },
+  "whole.q10": {
+   "max_abs_diff": 0.0026192665100097656,
+   "task": 275,
+   "column": "w_q10_5d",
+   "count": false
+  },
+  "whole.q90": {
+   "max_abs_diff": 0.0022375285625457764,
+   "task": 81,
+   "column": "w_q90_1d",
+   "count": false
+  },
+  "whole.n_eff": {
+   "max_abs_diff": 0.0,
+   "task": 0,
+   "column": "w_n_eff",
+   "count": true
+  },
+  "whole.mean_surprisal": {
+   "max_abs_diff": 5.1021575927734375e-05,
+   "task": 98,
+   "column": "w_mean_surprisal",
+   "count": false
+  },
+  "whole.present": {
+   "max_abs_diff": 0.0,
+   "task": 0,
+   "column": "w_present",
+   "count": true
+  },
+  "log1p_n_moves": {
+   "max_abs_diff": 0.0,
+   "task": null,
+   "column": null,
+   "count": true
+  }
+ },
+ "failed_groups": [],
+ "proba": null,
+ "pass": true
+}
