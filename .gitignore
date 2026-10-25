@@ -20,6 +20,7 @@ results/nano4_smoke/
 data/mock_tests/
 submission_rank*.csv
 submission_rank*.json
+submission_rank*.npz
 results/replay/
 results/ladder/vectors/
 results/ladder/**/*.npz
