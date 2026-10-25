@@ -21,6 +21,19 @@ merge in the same process, so it writes the same files.
   bash scripts/nano4/shards.sh 8 python -I scripts/predict_submission.py ...   # 8 GPUs: adds --shard i --nshards 8
   python -I scripts/predict_submission.py --merge --nshards 8 ...              # then, on any node, no GPU
 
+With --set-models (item 2) the decision comes from set models instead of the saved L3/L4 model: each
+.pt + .json (aicup.setmodel_io) is a Δ-correction trained by scripts/train_set_model.py on top of the
+paired base --set-base (a rank_model.json fitted on the same training questions; a sidecar's training
+question hash must equal the base's, exit 2 otherwise). The merge reads the
+shards' per-move log p, builds every game's staged and whole vectors (aicup.gamevec) and the packed
+question sets (aicup.ladder_data.pack_questions), takes the base logits log(clip(base probabilities)),
+runs every model and averages the probabilities first over the seeds of a rung, then over the rungs
+(uniform), before the expected-score decision -- as the CV ensemble ens_top3 does. Three r3_pma seeds are
+r3_pma; adding r4_xattn_t1 and r5_ctm makes ens_top3. A question whose set-model probabilities are not
+finite falls back to the base's probabilities and is listed in the report (set_model_fallback_questions);
+a question with no usable game still gets FALLBACK. Single-GPU and sharded runs give the same decisions,
+not bit-identical vectors (TF32 and batch composition move log p by up to ~4e-3 nats).
+
 --expect-rows / --expect-public / --expect-private (defaults: the official 800 = 400 + 400; 0 disables
 one) are checked against the questions read, so a truncated input fails validation; a mock test passes
 its own counts. A malformed input (a question whose num_games disagrees with its filled sgf columns)
@@ -50,10 +63,14 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
+from aicup.gamevec import SEGMENTS, WHOLE, game_vector  # noqa: E402
 from aicup.humansl import PROFILES  # noqa: E402
+from aicup.ladder_data import pack_questions  # noqa: E402
 from aicup.metric import LEVELS, expected_score_decision  # noqa: E402
 from aicup.qfeatures import FEATURE_NAMES, question_features  # noqa: E402
-from aicup.rankmodel import from_state  # noqa: E402
+from aicup.rankmodel import _softmax, from_state  # noqa: E402
+from aicup.setmodel_io import file_sha256, load_set_model, summary as set_model_summary  # noqa: E402
+from aicup.settrain import BASE_CLIP, predict_set_model  # noqa: E402
 from aicup.submission import check_game, read_test, read_test_lenient, validate_submission, write_submission  # noqa: E402
 
 CKPT = ROOT / "models" / "katago" / "b18c384nbt-humanv0.ckpt"
@@ -146,11 +163,13 @@ def save_shard(path, shard, nshards, tasks, per_task, moves, n_pos, wall, inputs
     return meta
 
 
-def load_shards(out, nshards, n_tasks_total, sha):
-    """({k: (n_moves, sums)}, [meta per shard]) from the nshards files of `out`. Every file must exist, be
-    shard i of nshards made from the same questions (questions_sha256), and together they must score every
-    task 0..n_tasks_total-1 exactly once; FileNotFoundError / ValueError otherwise."""
-    per_task, metas = {}, []
+def load_shards(out, nshards, n_tasks_total, sha, with_moves=False):
+    """({k: (n_moves, sums)}, [meta per shard], moves) from the nshards files of `out`. Every file must exist,
+    be shard i of nshards made from the same questions (questions_sha256), and together they must score every
+    task 0..n_tasks_total-1 exactly once; FileNotFoundError / ValueError otherwise. moves is None, or with
+    with_moves {k: (logp [n_moves, 18] float64, t [n_moves])} -- each task's per-move log p and move indices,
+    checked to count n_moves."""
+    per_task, metas, moves = {}, [], {} if with_moves else None
     for i in range(nshards):
         path = shard_path(out, i, nshards)
         if not path.exists():
@@ -164,13 +183,110 @@ def load_shards(out, nshards, n_tasks_total, sha):
                 if k in per_task:
                     raise ValueError(f"task {k} was scored by two shards (shard {i} and an earlier one)")
                 per_task[k] = (int(n), s)
+            if with_moves:
+                mt, logp, t = z["move_task"].astype(np.int64), z["move_logp"].astype(np.float64), z["move_t"].astype(np.int64)
+                order = np.argsort(mt, kind="stable")
+                mt, logp, t = mt[order], logp[order], t[order]
+                tasks_here, starts = np.unique(mt, return_index=True)
+                ends = np.append(starts[1:], len(mt))
+                for k, a, b in zip(tasks_here.tolist(), starts.tolist(), ends.tolist()):
+                    moves[k] = (logp[a:b], t[a:b])
+                for k in z["task"].tolist():
+                    got = len(moves[k][0]) if k in moves else 0
+                    if got != per_task[k][0]:
+                        raise ValueError(f"{path}: task {k} has {got} scored moves, n_moves says {per_task[k][0]}")
         metas.append(meta)
     missing = sorted(set(range(n_tasks_total)) - set(per_task))
     unknown = sorted(set(per_task) - set(range(n_tasks_total)))
     if missing or unknown:
         raise ValueError(f"the shards cover {len(per_task) - len(unknown)} of {n_tasks_total} tasks: {len(missing)} missing "
                          f"(e.g. {missing[:3]}), {len(unknown)} unknown (e.g. {unknown[:3]})")
-    return per_task, metas
+    return per_task, metas, moves
+
+
+def game_vectors(per_task, moves):
+    """The vectors dict pack_questions reads, one row per task in index order: game_key (str(k)), staged [T, 300]
+    and whole [T, 75] (aicup.gamevec.game_vector of the task's per-move log p), sums [T, 18] (float64) and
+    n_moves [T]."""
+    keys = sorted(per_task)
+    staged = np.stack([game_vector(*moves[k], SEGMENTS) for k in keys]) if keys else np.zeros((0, 300), dtype=np.float32)
+    whole = np.stack([game_vector(*moves[k], WHOLE) for k in keys]) if keys else np.zeros((0, 75), dtype=np.float32)
+    return {"game_key": np.asarray([str(k) for k in keys], dtype=str), "staged": staged, "whole": whole,
+            "sums": np.stack([np.asarray(per_task[k][1], dtype=np.float64) for k in keys]) if keys else np.zeros((0, len(PROFILES))),
+            "n_moves": np.asarray([per_task[k][0] for k in keys], dtype=np.int64)}
+
+
+def load_set_models(paths, device="cpu"):
+    """[(Fitted, sidecar, path)] of the .pt files and the loader's warnings (aicup.setmodel_io.load_set_model)."""
+    models, warnings = [], []
+    for path in paths:
+        fitted, meta, w = load_set_model(path, device)
+        models.append((fitted, meta, str(path)))
+        warnings += w
+    return models, warnings
+
+
+def check_pairing(models, base_doc, base_path):
+    """The set models must be Δ-corrections of --set-base. A sidecar that records its training questions
+    (questions_sha256, scripts/train_set_model.py) needs a base document with the same value: ValueError
+    otherwise, also when the base has none (results/models/rank_model.json is not a paired base). Returns
+    warnings: a sidecar's base_model_sha256 that is not the file's (the same base rewritten, or another file
+    fitted on the same questions)."""
+    warnings, sha = [], file_sha256(base_path)
+    for _, meta, path in models:
+        want = meta.get("questions_sha256")
+        if want and base_doc.get("questions_sha256") != want:
+            have = base_doc.get("questions_sha256")
+            raise ValueError(f"{path}: trained on other questions than the base {base_path} (questions_sha256 {want[:12]} vs "
+                             f"{have[:12] if have else 'none'}); --set-base must be the paired base its sidecar names ({meta.get('base_model')})")
+        if meta.get("base_model_sha256") and meta["base_model_sha256"] != sha:
+            warnings.append(f"{path}: its sidecar records the base file sha256 {meta['base_model_sha256'][:12]}, "
+                            f"{base_path} has {sha[:12]} (the same questions; a rewritten base file)")
+    return warnings
+
+
+def average_set_models(frame, vec, X, base_model, models):
+    """(P [Q, 10], info) of the set models on the questions of `frame` (question_id, player_id, n_games, game_keys
+    into `vec`) with q24 features X [Q, 24]: the base logits are log(clip(base_model probabilities, BASE_CLIP));
+    every model's predict_set_model gives probabilities, averaged first over the models of one rung (its seeds),
+    then over the rungs. A question whose averaged probabilities are not finite gets the base's softmax instead
+    and is listed in info["set_model_fallback_questions"]; info["rungs"] counts the models per rung."""
+    base = np.log(np.clip(base_model.predict_proba(X), BASE_CLIP, None))
+    packed = {rep: pack_questions(frame, vec, rep, True) for rep in {meta["rep"] for _, meta, _ in models}}
+    per_rung = {}
+    for fitted, meta, _ in models:
+        per_rung.setdefault(meta["rung"], []).append(predict_set_model(fitted, packed[meta["rep"]], base))
+    P = np.mean([np.mean(ps, axis=0) for ps in per_rung.values()], axis=0)
+    bad = ~np.isfinite(P).all(axis=1)
+    if bad.any():
+        P[bad] = _softmax(base[bad])
+    info = {"set_model_fallback_questions": frame["question_id"][bad].tolist(), "rungs": {r: len(ps) for r, ps in per_rung.items()}}
+    return P, info
+
+
+def question_frame(questions, owner, keys):
+    """(frame for pack_questions, qis, by_q): the questions with a usable game, player_id = question_id, game_keys
+    = keys[k] of their tasks k in task order; by_q[qi] lists those tasks."""
+    by_q = {}
+    for k, qi in enumerate(owner):
+        by_q.setdefault(qi, []).append(k)
+    qis = sorted(by_q)
+    frame = pd.DataFrame({"question_id": [questions[qi]["question_id"] for qi in qis],
+                          "player_id": [questions[qi]["question_id"] for qi in qis],
+                          "n_games": [len(by_q[qi]) for qi in qis], "game_keys": [[keys[k] for k in by_q[qi]] for qi in qis]})
+    return frame, qis, by_q
+
+
+def set_model_probs(questions, owner, per_task, moves, base_model, models):
+    """({question index: probabilities [10]} for every question with a usable game, info) -- average_set_models
+    over the per-game vectors of the shards (game_vectors; task k is game key str(k))."""
+    frame, qis, by_q = question_frame(questions, owner, [str(k) for k in range(len(owner))])
+    if not qis:
+        return {}, {"set_model_fallback_questions": [], "rungs": {}}
+    X = np.stack([question_features(np.stack([per_task[k][1] for k in by_q[qi]]), np.array([per_task[k][0] for k in by_q[qi]]))
+                  for qi in qis])
+    P, info = average_set_models(frame, game_vectors(per_task, moves), X, base_model, models)
+    return dict(zip(qis, P)), info
 
 
 def load_rank_model(path):
@@ -182,10 +298,10 @@ def load_rank_model(path):
     return saved, from_state(saved["state"])
 
 
-def predict_questions(questions, owner, per_task, rank_model):
+def predict_questions(questions, owner, per_task, rank_model, set_probs=None):
     """(rows [(question_id, rank)], probs [[10 floats]] (NaN for a fallback question), fallback [question ids]):
-    the expected-score decision on the model's probabilities of each question's features; a question with no
-    usable game gets FALLBACK."""
+    the expected-score decision on each question's probabilities -- set_probs[qi] when given (set_model_probs),
+    else rank_model's on the question's q24 features; a question with no usable game gets FALLBACK."""
     by_q = {}
     for k, qi in enumerate(owner):
         by_q.setdefault(qi, []).append(per_task[k])
@@ -197,8 +313,11 @@ def predict_questions(questions, owner, per_task, rank_model):
             probs.append([float("nan")] * len(LEVELS))
             fallback.append(q["question_id"])
             continue
-        x = question_features(np.stack([s for _, s in games]), np.array([n for n, _ in games]))
-        p = rank_model.predict_proba(x[None, :])[0]
+        if set_probs is not None:
+            p = set_probs[qi]
+        else:
+            x = question_features(np.stack([s for _, s in games]), np.array([n for n, _ in games]))
+            p = rank_model.predict_proba(x[None, :])[0]
         rows.append((q["question_id"], LEVELS[expected_score_decision(p)]))
         probs.append([float(v) for v in p])
     return rows, probs, fallback
@@ -223,7 +342,13 @@ def main(argv=None):
                     help="read a question whose num_games disagrees with its filled sgf columns from the non-empty columns, "
                          "with a warning in the report, instead of stopping (exit 4 unless --allow-input-warnings)")
     ap.add_argument("--allow-input-warnings", action="store_true", help="exit 0 despite --lenient-inputs warnings")
+    ap.add_argument("--set-models", nargs="*", default=[], metavar="PT",
+                    help="set models (.pt with .json sidecars, scripts/train_set_model.py) whose averaged probabilities decide")
+    ap.add_argument("--set-base", default=None, help="the paired base of the set models (rank_model.json format); required with them")
+    ap.add_argument("--set-device", default="cpu", help="device the set models run on")
     a = ap.parse_args(argv)
+    if a.set_models and not a.set_base:
+        ap.error("--set-models needs --set-base, the paired base they were trained on")
     if a.nshards < 1:
         ap.error("--nshards must be >= 1")
     if a.shard is not None and (a.merge or not 0 <= a.shard < a.nshards):
@@ -259,13 +384,21 @@ def main(argv=None):
         if a.shard is not None:
             return EXIT_OK  # one shard of a multi-GPU run; the merge is a separate invocation
 
+    set_probs, set_info, set_models, set_warnings = None, {"set_model_fallback_questions": [], "rungs": {}}, [], []
     try:
-        per_task, shard_metas = load_shards(out, a.nshards, len(tasks), sha)
+        per_task, shard_metas, moves = load_shards(out, a.nshards, len(tasks), sha, with_moves=bool(a.set_models))
         saved, rank_model = load_rank_model(a.model)
+        if a.set_models:
+            set_models, set_warnings = load_set_models(a.set_models, a.set_device)
+            base_doc, set_base = load_rank_model(a.set_base)
+            set_warnings += check_pairing(set_models, base_doc, a.set_base)
+            set_probs, set_info = set_model_probs(questions, owner, per_task, moves, set_base, set_models)
     except (FileNotFoundError, ValueError) as e:
         print(e, file=sys.stderr)
         return EXIT_INPUTS
-    rows, probs, fallback = predict_questions(questions, owner, per_task, rank_model)
+    for w in set_warnings:
+        print(f"WARNING: {w}", file=sys.stderr, flush=True)
+    rows, probs, fallback = predict_questions(questions, owner, per_task, rank_model, set_probs)
     write_submission(rows, out)
     expect_prefix = {p: n for p, n in (("pub_", a.expect_public), ("priv_", a.expect_private)) if n > 0}
     problems = validate_submission(out, [q["question_id"] for q in questions], a.expect_rows or None, expect_prefix or None)
@@ -283,12 +416,19 @@ def main(argv=None):
               "expectations": {"rows": a.expect_rows, "pub_": a.expect_public, "priv_": a.expect_private},
               "fallback_questions": fallback, "allow_fallback": a.allow_fallback,
               "lenient_inputs": a.lenient_inputs, "input_warnings": input_warnings, "allow_input_warnings": a.allow_input_warnings,
+              "decision_model": "set_models" if a.set_models else "rank_model",
+              "set_models": [{"path": path, **set_model_summary(meta)} for _, meta, path in set_models], "set_base": a.set_base,
+              "set_rungs": set_info["rungs"], "set_model_warnings": set_warnings,
+              "set_model_fallback_questions": set_info["set_model_fallback_questions"],
               "predicted_counts": dict(Counter(r for _, r in rows)), "problems": problems, "exit_code": code}
     report_path.write_text(json.dumps(report, indent=1, ensure_ascii=False))
     print(f"wrote {out} ({len(rows)} rows) and {report_path}; problems: {problems or 'none'}", flush=True)
     if fallback:
         print(f"WARNING: {len(fallback)} questions had no usable game and were set to {FALLBACK}: {fallback[:5]}"
               + ("" if a.allow_fallback else f" (exit {EXIT_FALLBACK}; pass --allow-fallback to accept)"), file=sys.stderr, flush=True)
+    if set_info["set_model_fallback_questions"]:
+        print(f"WARNING: {len(set_info['set_model_fallback_questions'])} questions got the base's probabilities because the set "
+              f"models' were not finite: {set_info['set_model_fallback_questions'][:5]}", file=sys.stderr, flush=True)
     if input_warnings and code == EXIT_INPUT_WARNINGS:
         print(f"WARNING: {len(input_warnings)} questions were read leniently (exit {EXIT_INPUT_WARNINGS}; pass "
               f"--allow-input-warnings to accept)", file=sys.stderr, flush=True)

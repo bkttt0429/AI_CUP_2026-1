@@ -180,6 +180,48 @@ sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J ladens scripts/nan
 
 `ens_top3` 的檔已存在時要加 `--overwrite`（成員重跑過就該重建）。要 commit 的是 `results/ladder/cv_summary.json`；`.npz` 一律不進 git。
 
+### 4.1 集合模型接進提交管線（2026-10-25，待辦第 2 項）
+
+四個步驟，順序固定：訓練 → 向量一致性 → mock test → seed 平均報告。前三步都讀 `results/ladder/vectors/fold{F}.npz`（`ladder_build_vectors.py` 的輸出，folds 0–4 都要在）。
+
+**1. 訓練**（`scripts/train_set_model.py`）：一個 rung、三個 seed、folds 0–4 的全部訓練題（每人 32 題，和 CV 同一套抽樣），base logits 用 5 折交叉擬合。輸出 `results/models/set/{rung}_s{seed}.pt`（`state_dict`）加同名 `.json` 側檔（rung、seed、TrainCfg、標準化統計、內層提早停止診斷、provenance、訓練折與題目雜湊、base 檔名與 sha256），以及**配對的推論用 base** `results/models/rank_model_f01234.json`（`r2_mlp24` 在同一組訓練題上的全折擬合，`rank_model.json` 格式）。先跑 `r3_pma`；單張 H200 三個 seed 約 40 分鐘：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus -t 04:00:00 -J setpma scripts/nano4/run.sbatch python -I scripts/train_set_model.py --rung r3_pma
+```
+
+模型檔已存在時腳本 exit 2、什麼都不寫，要重訓就加 `--overwrite`。`rank_model_f01234.json` 已存在時，腳本仍會重新擬合一次，確認是同一個 base（同一組訓練題的雜湊、folds、每人題數，參數也相同）就沿用、不改檔；不同就 exit 2（`--overwrite` 會連 base 一起重寫，配這個 base 的其他 rung 就得重訓）。所以 `r4_xattn_t1`、`r5_ctm` 之後各跑一次同樣的指令、不加任何旗標即可，三個 rung 共用同一個 base。`.pt`／`.json`／`rank_model_f01234.json` 都進 git（`results/models/` 已在版本控制內）。
+
+**2. 向量一致性**（`scripts/check_game_vectors.py`，CPU）：提交管線從 shard 檔的每手 log p 算的每局向量，必須和訓練用的 `fold0.npz` 一樣。先用現有的 mock test 分片檔（第 1 項的 `submock`，`results/mock_fold0_40/`），以手數與 18 維 log p 總和把 40 題的 375 局對回 fold 0 的局，再逐欄比較 300 維 staged、75 維 whole 和 log1p 手數：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J vecchk scripts/nano4/run.sbatch python -I scripts/check_game_vectors.py --inputs tests/fixtures/mock_fold0_40/rank_prediction_test_public.csv tests/fixtures/mock_fold0_40/rank_prediction_test_private.csv --out results/mock_fold0_40/submission_rank.csv --nshards 1 --vectors results/ladder/vectors/fold0.npz --report results/mock_fold0_40/game_vectors_check.json
+```
+
+浮點欄位的容許差 `--tol` 預設 0.05（單卡／多卡與批次組成的 TF32 差異在每手 4e-3 nats 以內，向量差應該遠小於 0.05；差到 0.1–1 整組一起偏掉就是正規化、分段或濾手規則不同），計數欄位（各段 n_eff、present）必須完全相等；有局對不上（`unmatched`）或對到兩局（`ambiguous`）也算失敗，exit 1。多卡跑的 mock test 要給 `--nshards 8`。報告 JSON 請 commit。
+
+**3. mock test 用集合模型決策**（`predict_submission.py --set-models … --set-base …`）：不必重新評分，`--merge` 會從 shard 檔重建每局向量；所以對已跑過的 mock test 直接 merge 一次即可（CPU 幾分鐘；集合模型預設在 CPU 上跑，`--set-device cuda` 可改）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J mockset scripts/nano4/run.sbatch python -I scripts/predict_submission.py --merge --nshards 1 --inputs tests/fixtures/mock_fold0_40/rank_prediction_test_public.csv tests/fixtures/mock_fold0_40/rank_prediction_test_private.csv --expect-rows 40 --expect-public 20 --expect-private 20 --out results/mock_fold0_40_set/submission_rank.csv --set-models results/models/set/r3_pma_s0.pt results/models/set/r3_pma_s1.pt results/models/set/r3_pma_s2.pt --set-base results/models/rank_model_f01234.json
+```
+
+（`--out` 指到新目錄時要先把 `results/mock_fold0_40/submission_rank_shard0of1.npz` 複製或連結過去；或直接用原目錄的 `--out`，提交檔會被覆寫。）平均規則：**同一 rung 的各 seed 先平均機率，再在 rung 之間平均**，最後期望得分決策；三個 `r3_pma` 就是 `r3_pma`，再加 `r4_xattn_t1`、`r5_ctm` 各三個就是 `ens_top3`。報告多了 `decision_model`（`set_models`）、每個 `.pt` 的側檔摘要、`set_rungs`（每個 rung 幾個模型）、`set_model_warnings`（側檔 `code_sha256` 與現行程式不同、或側檔記的 base 檔 sha256 與 `--set-base` 不同時只警告）、`set_model_fallback_questions`（集合模型機率非有限數的題目改用 base 的機率，印一行 WARNING，不改 exit code）。配對檢查：側檔記的訓練題雜湊必須等於 `--set-base` 文件的 `questions_sha256`（拿 `rank_model.json` 當 base 會被拒）；這個、側檔的 `d_in`／profiles／features 與程式不符、rung 不認得、`.pt` 的 sha256 不符 → exit 2。
+
+mock test 來自 fold 0（現在是訓練資料），所以只驗**一致性**不看分數：步驟 2 的腳本加上同一組 `--set-models`／`--set-base`，會另走離線路徑——同 40 題直接用 `fold0.npz` 裡對到的局的向量與總和、同一個 base、同一個平均——逐題比對剛寫出的 `submission_rank_proba.csv` 與 `submission_rank.csv`：每題 max |Δp| 要在 `--proba-tol`（預設 1e-3；步驟 2 的向量差傳到機率上的量級）以內，40 題決策要全部相同，否則 exit 1：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J vecset scripts/nano4/run.sbatch python -I scripts/check_game_vectors.py --inputs tests/fixtures/mock_fold0_40/rank_prediction_test_public.csv tests/fixtures/mock_fold0_40/rank_prediction_test_private.csv --out results/mock_fold0_40_set/submission_rank.csv --nshards 1 --vectors results/ladder/vectors/fold0.npz --set-models results/models/set/r3_pma_s0.pt results/models/set/r3_pma_s1.pt results/models/set/r3_pma_s2.pt --set-base results/models/rank_model_f01234.json --report results/mock_fold0_40_set/game_vectors_check.json
+```
+
+**4. seed 平均的量化**（`ladder_ensemble.py --across-seeds`，CPU，只報告）：CV 統計量是每個 seed 各自決策再平均分數，提交只能出一個答案、是機率平均後決策；用現有 CV 檔算這個差（`r3_pma` 三個 seed 機率平均後的分數 − CV 分數，附玩家 bootstrap CI），順便重寫摘要：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J ladseed scripts/nano4/run.sbatch python -I scripts/ladder_ensemble.py --skip-ensemble --across-seeds r3_pma r4_xattn_t1 r5_ctm ens_top3
+```
+
+把印出的四行貼回 issue。
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：
