@@ -3,15 +3,23 @@ their equality, the shard-file checks, the exit codes and the official-count exp
 import hashlib
 import json
 import shutil
+from functools import partial
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 
 import predict_submission as ps
+from aicup import ladder, setmodel_io
+from aicup.aggregators import CTM, SetTransformer
 from aicup.humansl import PROFILES
-from aicup.metric import LEVELS
+from aicup.ladder_data import pack_questions
+from aicup.metric import LEVELS, expected_score_decision
+from aicup.qfeatures import question_features
+from aicup.rankmodel import _softmax
+from aicup.settrain import BASE_CLIP, TrainCfg, fit_set_model, predict_set_model
 from aicup.sgf import parse_moves
 from aicup.submission import read_test
 
@@ -246,3 +254,152 @@ def test_model_with_other_features_is_refused(tmp_path, fake_scorer, capsys):
                     "--expect-public", "3", "--expect-private", "2"]) == ps.EXIT_INPUTS
     assert "different profiles or features" in capsys.readouterr().err and not out.exists()
     assert read_test(inputs[0])[0]["question_id"] == "pub_q_0001"
+
+
+# ---------------------------------------------------------------- set models (item 2)
+
+def _tiny_set_models(tmp_path, monkeypatch, rungs=(("r3_pma", 2), ("r5_ctm", 1))):
+    """Tiny set models trained on random 301-d tokens and saved as .pt + sidecar, n seeds per rung; the rungs are
+    monkeypatched to small modules (load_set_model rebuilds them through SET_RUNGS)."""
+    monkeypatch.setitem(ladder.SET_RUNGS, "r3_pma", ("staged", lambda d: SetTransformer(d, d_tok=16, heads=4, layers=0, hidden=32), {}))
+    monkeypatch.setitem(ladder.SET_RUNGS, "r5_ctm", ("staged", partial(CTM, d_tok=16, d_latent=32, history=4, nlm_hidden=8, heads=4,
+                                                                   ticks=3, n_sync_action=24, n_sync_out=24), {}))
+    rng = np.random.RandomState(0)
+    Q, M, d = 48, 20, 301
+    n = rng.randint(5, M + 1, size=Q)
+    mask = np.arange(M)[None, :] < n[:, None]
+    data = {"tokens": (rng.randn(Q, M, d) * mask[..., None]).astype(np.float32), "mask": mask,
+            "qglob": rng.randn(Q, 6).astype(np.float32), "y": np.arange(Q) % 10, "player_id": np.array([f"p{i // 4}" for i in range(Q)])}
+    base = rng.randn(Q, 10)
+    paths = []
+    for rung, n_seeds in rungs:
+        for seed in range(n_seeds):
+            fitted = fit_set_model(ladder.SET_RUNGS[rung][1], data, base,
+                                   TrainCfg(epochs=1, batch=16, lr=1e-2, device="cpu", seed=seed, inner_frac=0))
+            pt = tmp_path / "set" / f"{rung}_s{seed}.pt"
+            setmodel_io.save_set_model(fitted, rung, seed, pt, extra={"train_folds": [0, 1, 2, 3, 4], "per_player": 32})
+            paths.append(pt)
+    return paths
+
+
+def _manual_set_probs(inputs, out, paths):
+    """What the pipeline should compute: shards -> per-game vectors -> packed questions -> base logits -> every
+    model -> mean over a rung's seeds, then over the rungs."""
+    questions, _ = ps.load_questions(inputs)
+    tasks, owner, _, _ = ps.build_tasks(questions)
+    per_task, _, moves = ps.load_shards(out, 1, len(tasks), ps.questions_sha(inputs, questions), with_moves=True)
+    assert set(moves) == set(range(len(tasks))) and all(len(moves[k][0]) == per_task[k][0] for k in moves)
+    vec = ps.game_vectors(per_task, moves)
+    assert vec["staged"].shape == (len(tasks), 300) and vec["whole"].shape == (len(tasks), 75)
+    assert vec["game_key"].tolist() == [str(k) for k in range(len(tasks))] and vec["n_moves"].tolist() == [per_task[k][0] for k in range(len(tasks))]
+    by_q = {}
+    for k, qi in enumerate(owner):
+        by_q.setdefault(qi, []).append(k)
+    qis = sorted(by_q)
+    frame = pd.DataFrame({"question_id": [questions[qi]["question_id"] for qi in qis], "player_id": [questions[qi]["question_id"] for qi in qis],
+                          "n_games": [len(by_q[qi]) for qi in qis], "game_keys": [[str(k) for k in by_q[qi]] for qi in qis]})
+    packed = pack_questions(frame, vec, "staged", True)
+    _, base_model = ps.load_rank_model(MODEL)
+    X = np.stack([question_features(np.stack([per_task[k][1] for k in by_q[qi]]), np.array([per_task[k][0] for k in by_q[qi]])) for qi in qis])
+    base = np.log(np.clip(base_model.predict_proba(X), BASE_CLIP, None))
+    probs = {}
+    for pt in paths:
+        fitted, meta, _ = setmodel_io.load_set_model(pt)
+        probs.setdefault(meta["rung"], []).append(predict_set_model(fitted, packed, base))
+    want = np.mean([np.mean(v, axis=0) for v in probs.values()], axis=0) if probs else None
+    return want, probs, base
+
+
+def test_set_models_decide_with_seed_then_rung_averaging(tmp_path, fake_scorer, monkeypatch, capsys):
+    paths = _tiny_set_models(tmp_path, monkeypatch)
+    inputs = _small_inputs(tmp_path)
+    out = tmp_path / "run" / "submission_rank.csv"
+    with pytest.raises(SystemExit) as e:  # the paired base is required
+        ps.main(_args(inputs, out, 5, 3, 2, "--set-models", *map(str, paths)))
+    assert e.value.code == 2
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--set-models", *map(str, paths), "--set-base", str(MODEL))) == ps.EXIT_OK
+    report = json.loads(out.with_name("submission_rank_report.json").read_text())
+    assert report["decision_model"] == "set_models" and report["set_rungs"] == {"r3_pma": 2, "r5_ctm": 1} and report["set_base"] == str(MODEL)
+    assert [(m["rung"], m["seed"]) for m in report["set_models"]] == [("r3_pma", 0), ("r3_pma", 1), ("r5_ctm", 0)]
+    assert report["set_models"][0]["path"] == str(paths[0]) and report["set_models"][0]["train_folds"] == [0, 1, 2, 3, 4]
+    assert report["set_model_fallback_questions"] == [] and report["set_model_warnings"] == [] and report["exit_code"] == 0
+    want, probs, base = _manual_set_probs(inputs, out, paths)
+    got = pd.read_csv(out.with_name("submission_rank_proba.csv"))[[f"p_{lv}" for lv in LEVELS]].to_numpy()
+    np.testing.assert_allclose(got, want, rtol=0, atol=1e-12)
+    naive = np.mean([p for v in probs.values() for p in v], axis=0)  # one mean over the 3 models would weight r3_pma twice
+    assert not np.allclose(want, naive) and not np.allclose(want, _softmax(base))
+    sub = pd.read_csv(out, dtype=str, keep_default_na=False)
+    assert sub["pred_rank"].tolist() == [LEVELS[expected_score_decision(p)] for p in want]
+    # without set models the saved L3/L4 model decides, with other probabilities
+    plain = tmp_path / "plain" / "submission_rank.csv"
+    assert ps.main(_args(inputs, plain, 5, 3, 2)) == ps.EXIT_OK
+    assert json.loads(plain.with_name("submission_rank_report.json").read_text())["decision_model"] == "rank_model"
+    assert not np.allclose(pd.read_csv(plain.with_name("submission_rank_proba.csv"))[[f"p_{lv}" for lv in LEVELS]].to_numpy(), got)
+    # sharded scoring + merge with set models gives the same file
+    merged = tmp_path / "sharded" / "submission_rank.csv"
+    for i in range(2):
+        assert ps.main(_args(inputs, merged, 5, 3, 2, "--shard", str(i), "--nshards", "2")) == ps.EXIT_OK
+    assert ps.main(_args(inputs, merged, 5, 3, 2, "--merge", "--nshards", "2", "--set-models", *map(str, paths), "--set-base", str(MODEL))) == ps.EXIT_OK
+    assert merged.read_text() == out.read_text()
+    assert merged.with_name("submission_rank_proba.csv").read_text() == out.with_name("submission_rank_proba.csv").read_text()
+
+
+def test_set_models_must_pair_with_their_base(tmp_path, fake_scorer, monkeypatch, capsys):
+    paths = _tiny_set_models(tmp_path, monkeypatch, rungs=(("r3_pma", 1),))
+    inputs = _small_inputs(tmp_path)
+    out = tmp_path / "run" / "submission_rank.csv"
+    side = setmodel_io.sidecar_path(paths[0])
+    meta, sha = json.loads(side.read_text()), "a" * 64
+    side.write_text(json.dumps({**meta, "questions_sha256": sha, "base_model": "rank_model_f01234.json", "base_model_sha256": "b" * 64}))
+    saved = json.loads(Path(MODEL).read_text())
+    # rank_model.json (no training-question hash) is not the paired base: refused before anything is written
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--set-models", str(paths[0]), "--set-base", str(MODEL))) == ps.EXIT_INPUTS
+    assert "paired base" in capsys.readouterr().err and not out.exists()
+    # a base fitted on other questions: refused too
+    other = tmp_path / "other.json"
+    other.write_text(json.dumps({**saved, "questions_sha256": "c" * 64}))
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--set-models", str(paths[0]), "--set-base", str(other))) == ps.EXIT_INPUTS
+    assert "other questions" in capsys.readouterr().err and not out.exists()
+    # the paired base (the same questions) in a rewritten file: a warning, the run goes on
+    paired = tmp_path / "paired.json"
+    paired.write_text(json.dumps({**saved, "questions_sha256": sha}))
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--set-models", str(paths[0]), "--set-base", str(paired))) == ps.EXIT_OK
+    report = json.loads(out.with_name("submission_rank_report.json").read_text())
+    assert len(report["set_model_warnings"]) == 1 and "sha256" in report["set_model_warnings"][0] and report["exit_code"] == 0
+    assert "WARNING" in capsys.readouterr().err
+    side.write_text(json.dumps({**meta, "questions_sha256": sha, "base_model_sha256": setmodel_io.file_sha256(paired)}))
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--set-models", str(paths[0]), "--set-base", str(paired))) == ps.EXIT_OK
+    assert json.loads(out.with_name("submission_rank_report.json").read_text())["set_model_warnings"] == []
+
+
+def test_set_model_fallback_and_warnings(tmp_path, fake_scorer, monkeypatch, capsys):
+    paths = _tiny_set_models(tmp_path, monkeypatch, rungs=(("r3_pma", 1),))
+    inputs = _small_inputs(tmp_path)
+    out = tmp_path / "run" / "submission_rank.csv"
+    # a model trained by other code: a warning in the report and on stderr, the run goes on
+    side = setmodel_io.sidecar_path(paths[0])
+    meta = json.loads(side.read_text())
+    side.write_text(json.dumps({**meta, "code_sha256": "0" * 64}))
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--set-models", str(paths[0]), "--set-base", str(MODEL))) == ps.EXIT_OK
+    report = json.loads(out.with_name("submission_rank_report.json").read_text())
+    assert len(report["set_model_warnings"]) == 1 and "other training code" in report["set_model_warnings"][0]
+    assert "WARNING" in capsys.readouterr().err and report["set_model_fallback_questions"] == []
+    side.write_text(json.dumps(meta))
+    # a model whose output is not finite: every question falls back to the base's probabilities
+    fitted, _, _ = setmodel_io.load_set_model(paths[0])
+    with torch.no_grad():
+        next(fitted.model.parameters()).fill_(float("nan"))
+    setmodel_io.save_set_model(fitted, "r3_pma", 0, paths[0], extra={"train_folds": [0, 1, 2, 3, 4], "per_player": 32})
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--set-models", str(paths[0]), "--set-base", str(MODEL))) == ps.EXIT_OK
+    report = json.loads(out.with_name("submission_rank_report.json").read_text())
+    ids = [q["question_id"] for q in ps.load_questions(inputs)[0]]
+    assert report["set_model_fallback_questions"] == ids and report["exit_code"] == 0
+    assert "base's probabilities" in capsys.readouterr().err
+    _, _, base = _manual_set_probs(inputs, out, [])
+    got = pd.read_csv(out.with_name("submission_rank_proba.csv"))[[f"p_{lv}" for lv in LEVELS]].to_numpy()
+    np.testing.assert_allclose(got, _softmax(base), rtol=0, atol=1e-12)
+    # a broken model file is refused before anything is written
+    paths[0].write_bytes(paths[0].read_bytes() + b"\0")
+    bad = tmp_path / "bad" / "submission_rank.csv"
+    assert ps.main(_args(inputs, bad, 5, 3, 2, "--set-models", str(paths[0]), "--set-base", str(MODEL))) == ps.EXIT_INPUTS
+    assert "sha256" in capsys.readouterr().err and not bad.exists()

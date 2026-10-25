@@ -582,6 +582,26 @@ def build_ensemble(cv_dir, members=ENSEMBLE_MEMBERS, rung=ENSEMBLE_RUNG, seeds=(
     return written
 
 
+def across_seeds(cv_dir, rung, per_player=DEFAULT_PER_PLAYER, counts=True, n_boot=N_BOOT):
+    """Report only (item 2): how the submission's decision rule -- one decision on the probabilities averaged
+    over a rung's seeds -- scores against the CV statistic of the same files, which decides per seed and
+    averages the scores. {"label", "seeds", "score_seedmean_proba", "score_cv", "diff", "ci95", "by_n",
+    "n_boot"}: diff = seedmean_proba − cv with its player-bootstrap CI (qeval.paired_diff)."""
+    label = _label(rung, per_player, counts)
+    runs = _read_runs(cv_dir)
+    if label not in runs:
+        raise KeyError(f"no CV files of {label} in {cv_dir}")
+    run = runs[label]
+    if len(run["seeds"]) < 2:
+        raise ValueError(f"{label} has {len(run['seeds'])} seed(s); averaging over seeds needs at least 2")
+    y, n, _ = _arrays(run["keys"])
+    P = np.mean([run["proba"][s] for s in run["seeds"]], axis=0)
+    _, s_mean = evaluate(P, y, run["keys"])
+    d = paired_diff(s_mean, run["mean"], y, run["keys"]["player_id"].to_numpy(dtype=str), n, n=n_boot)
+    return {"label": label, "seeds": run["seeds"], "score_seedmean_proba": balanced_mean_over_n(s_mean, y, n),
+            "score_cv": balanced_mean_over_n(run["mean"], y, n), **d, "n_boot": n_boot}
+
+
 # ---------------------------------------------------------------- summary
 
 _RUN_FILE = re.compile(r".+_s\d+\.npz")

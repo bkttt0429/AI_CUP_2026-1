@@ -12,6 +12,9 @@ conditions: aicup.ladder.FOLLOWUP_COMPARISONS -- ens_top3, r5_ctm_minmax_pc and 
 r5_ctm and vs r3_pma; reported, never gated. Nothing is trained: this runs on the CPU in minutes.
 
 An existing ensemble file is refused unless --overwrite, a missing member file always; both exit 2.
+--skip-ensemble only rewrites the summary and prints the reports. --across-seeds RUNG ... adds, per rung,
+how one decision on the seed-averaged probabilities (the submission's rule) scores against the CV
+statistic of per-seed decisions (aicup.ladder.across_seeds; report only).
 """
 import argparse
 import json
@@ -22,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 for d in (ROOT / "src", ROOT / "scripts"):  # `python -I` adds neither; scripts/ holds the sibling ladder_cv
     if str(d) not in sys.path:
         sys.path.insert(0, str(d))
-from aicup.ladder import (DEFAULT_PER_PLAYER, ENSEMBLE_MEMBERS, ENSEMBLE_RUNG, FOLLOWUP_COMPARISONS,  # noqa: E402
+from aicup.ladder import (DEFAULT_PER_PLAYER, ENSEMBLE_MEMBERS, ENSEMBLE_RUNG, FOLLOWUP_COMPARISONS, across_seeds,  # noqa: E402
                           build_ensemble, check_comparison)
 import ladder_cv  # noqa: E402  (the sibling script: the summary is written exactly as it writes it)
 
@@ -45,15 +48,19 @@ def main(argv=None):
     ap.add_argument("--no-counts", action="store_true", help="read and write the _nocounts files")
     ap.add_argument("--out", default=str(ROOT / "results" / "ladder" / "cv"), help="the CV directory (ladder_cv.py --out)")
     ap.add_argument("--overwrite", action="store_true", help="rebuild existing ensemble files")
+    ap.add_argument("--skip-ensemble", action="store_true", help="only rewrite the summary and print the reports")
+    ap.add_argument("--across-seeds", nargs="*", default=[], metavar="RUNG",
+                    help="report the seed-averaged-probability decision of these rungs against the CV statistic")
     a = ap.parse_args(argv)
     out = Path(a.out)
-    try:
-        written = build_ensemble(out, a.members, a.label, a.seeds, a.per_player, not a.no_counts, a.overwrite)
-    except (FileExistsError, FileNotFoundError, ValueError) as e:
-        print(e, file=sys.stderr)
-        return 2
-    for path in written:
-        print(f"wrote {path}", flush=True)
+    if not a.skip_ensemble:
+        try:
+            written = build_ensemble(out, a.members, a.label, a.seeds, a.per_player, not a.no_counts, a.overwrite)
+        except (FileExistsError, FileNotFoundError, ValueError) as e:
+            print(e, file=sys.stderr)
+            return 2
+        for path in written:
+            print(f"wrote {path}", flush=True)
     rc = ladder_cv.main(["--summarize-only", "--out", str(out)])
     if rc:
         return rc
@@ -63,6 +70,17 @@ def main(argv=None):
         key = f"{x} vs {y}"
         c = summary["comparisons"].get(key)
         print(f"  {key}: {_fmt(c) if c is not None else 'no CV results yet'}")
+    if a.across_seeds:
+        print("seed-averaged probabilities (one decision) vs the CV statistic (per-seed decisions, scores averaged); report only:")
+        for rung in a.across_seeds:
+            try:
+                r = across_seeds(out, rung, a.per_player, not a.no_counts)
+            except (KeyError, ValueError) as e:
+                print(f"  {rung}: {e}")
+                continue
+            by_n = " ".join(f"{m}: {d:+.4f}" for m, d in r["by_n"].items())
+            print(f"  {r['label']} (seeds {r['seeds']}): {r['score_seedmean_proba']:.4f} vs {r['score_cv']:.4f}, diff {r['diff']:+.4f} "
+                  f"[{r['ci95'][0]:+.4f}, {r['ci95'][1]:+.4f}]  by n {by_n}")
     return 0
 
 

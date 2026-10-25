@@ -1056,3 +1056,33 @@ def test_ladder_ensemble_cli(tmp_path):
     assert r3.returncode == 0, r3.stderr
     r4 = run("--members", "r3_pma", "r3_settf", "--label", "ens_two")
     assert r4.returncode == 2 and "r3_settf" in r4.stderr and not list(cv.glob("ens_two*"))
+
+
+def test_across_seeds_report_and_cli(tmp_path):
+    """One decision on the seed-averaged probabilities vs the CV statistic (per-seed decisions, scores averaged)."""
+    rng = np.random.RandomState(8)
+    keys = _keys_table(folds=(1, 2, 3, 4), classes=tuple(range(10)))
+    cv = tmp_path / "cv"
+    frames = _member_files(cv, keys, rng)
+    r = ladder.across_seeds(cv, "r5_ctm", n_boot=200)
+    y, n = keys["y"].to_numpy(), keys["n_games"].to_numpy()
+    P = np.mean([frames["r5_ctm", s][PCOLS].to_numpy() for s in (0, 1, 2)], axis=0)
+    _, s_mean = evaluate(P, y, keys)
+    cv_stat = np.mean([frames["r5_ctm", s]["score"].to_numpy() for s in (0, 1, 2)], axis=0)
+    assert r["label"] == "r5_ctm" and r["seeds"] == [0, 1, 2] and r["n_boot"] == 200
+    assert r["score_seedmean_proba"] == pytest.approx(_bal(s_mean, y, n), abs=1e-12)
+    assert r["score_cv"] == pytest.approx(_bal(cv_stat, y, n), abs=1e-12)
+    assert r["diff"] == pytest.approx(r["score_seedmean_proba"] - r["score_cv"], abs=1e-12)
+    assert r["ci95"][0] <= r["diff"] <= r["ci95"][1] and set(r["by_n"]) == {5, 10, 20}
+    with pytest.raises(KeyError, match="r3_settf"):
+        ladder.across_seeds(cv, "r3_settf", n_boot=50)
+    ladder.save_cv(_frame(keys, rng, "r3_settf", 0), cv / ladder.cv_filename("r3_settf", 0))
+    with pytest.raises(ValueError, match="at least 2"):
+        ladder.across_seeds(cv, "r3_settf", n_boot=50)
+    out = subprocess.run([sys.executable, "-I", str(ENSEMBLE_SCRIPT), "--out", str(cv), "--skip-ensemble", "--across-seeds", "r5_ctm",
+                          "r3_pma", "r9_none"], capture_output=True, text=True, timeout=600)
+    assert out.returncode == 0, out.stderr
+    tail = out.stdout.split("seed-averaged probabilities", 1)[1]
+    assert re.search(r"r5_ctm \(seeds \[0, 1, 2\]\): \d\.\d{4} vs \d\.\d{4}, diff [+-]\d\.\d{4} \[[+-]\d\.\d{4}, [+-]\d\.\d{4}\]  by n 5:", tail), tail
+    assert "r3_pma (seeds [0, 1, 2])" in tail and "r9_none: 'no CV files of r9_none" in tail
+    assert not list(cv.glob("ens_top3*"))  # --skip-ensemble built nothing
