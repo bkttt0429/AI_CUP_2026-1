@@ -69,7 +69,9 @@ def main(argv=None):
     ap.add_argument("--seed", type=int, default=HeadsCfg.seed)
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--trunk-lr", type=float, default=HeadsCfg.trunk_lr, help="> 0: fine-tune the trunk at this lr (stage 2)")
-    ap.add_argument("--init-heads", default=None, help="start the heads from this saved run's .pt (e.g. the stage-1 heads)")
+    ap.add_argument("--init-heads", default=None, help="start from this saved run's .pt: its heads and, for a stage-2 run, its fine-tuned trunk")
+    ap.add_argument("--disc-weight", type=float, default=HeadsCfg.disc_weight,
+                    help="> 0: add this x the rank cross-entropy of the heads' log p to the loss and to the selection objective")
     ap.add_argument("--check-init", action="store_true")
     ap.add_argument("--overwrite", action="store_true", help="replace an existing output and its checkpoint")
     ap.add_argument("--extend", action="store_true", help="continue a finished run from its kept checkpoint (e.g. more --epochs)")
@@ -94,7 +96,8 @@ def main(argv=None):
 def _run(a, me):
     out = Path(a.out)
     cfg = HeadsCfg(epochs=a.epochs, batch=a.batch, lr=a.lr, eval_every=a.eval_every, patience=a.patience, inner_frac=a.inner_frac,
-                   inner_max_positions=a.inner_max_positions, seed=a.seed, device=a.device, trunk_lr=a.trunk_lr)
+                   inner_max_positions=a.inner_max_positions, seed=a.seed, device=a.device, trunk_lr=a.trunk_lr,
+                   disc_weight=a.disc_weight)
     model, source, sha = load_trunk(a.ckpt, a.model_config, a.device)
     if a.check_init:
         _, arrays = read_cache(a.cache)
@@ -116,18 +119,17 @@ def _run(a, me):
     extra = {"model_source": source, "humanv0_sha256": sha}
     init_state = None
     if a.init_heads:
-        init, init_meta, _ = load_heads(a.init_heads, model, "cpu")
-        if init_meta.get("trunk_file"):
-            print(f"{a.init_heads} carries a fine-tuned trunk; start a stage-2 run from stage-1 heads only", file=sys.stderr)
-            return 2
+        init, init_meta, _ = load_heads(a.init_heads, model, "cpu")  # a stage-2 file also loads its trunk into model
         init_state = init.state_dict()
         extra.update({"head_init": str(a.init_heads), "head_init_sha256": init_meta.get("state_sha256"),
-                      "head_init_inner_nll_best": init_meta.get("inner_nll_best")})
+                      "head_init_trunk_sha256": init_meta.get("trunk_sha256"), "head_init_inner_nll_best": init_meta.get("inner_nll_best")})
     heads, meta = train_heads(model, a.cache, cfg, out, extra_meta=extra, init_heads=init_state)
     if me == 0:
         fmt = lambda v: "-" if v is None else f"{v:.4f}"  # noqa: E731
-        print(f"wrote {out}: inner NLL {fmt(meta['inner_nll_init'])} -> {fmt(meta['inner_nll_best'])} at epoch {meta['best_epoch']:.2f}, "
-              f"{'stopped early' if meta['stopped_early'] else 'ran to the end'}, {meta['steps_run']} steps, {meta['wall_seconds']:.0f} s"
+        print(f"wrote {out}: inner NLL {fmt(meta['inner_nll_init'])} -> {fmt(meta['inner_nll_best'])} at epoch {meta['best_epoch']:.2f}"
+              + (f" (objective {fmt(meta['inner_objective_init'])} -> {fmt(meta['inner_objective_best'])}, rank CE "
+             f"{fmt(meta['inner_disc_init'])} -> {fmt(meta['inner_disc_best'])})" if cfg.disc_weight > 0 else "")
+          + f", {'stopped early' if meta['stopped_early'] else 'ran to the end'}, {meta['steps_run']} steps, {meta['wall_seconds']:.0f} s"
               + (f", trunk fine-tuned ({meta['n_trunk_params']} parameters, lr {cfg.trunk_lr:g}), world {meta['world_size']}"
                  if meta["trunk_trained"] else ""))
     return 0

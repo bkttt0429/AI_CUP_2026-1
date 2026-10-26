@@ -53,6 +53,7 @@ class HeadsCfg:
     seed: int = 0
     device: str = "cuda"
     trunk_lr: float = 0.0  # 0: the trunk is frozen (stage 1); > 0: fine-tuned at this lr (stage 2)
+    disc_weight: float = 0.0  # > 0: add disc_weight x the rank cross-entropy of the 10 heads' log p (discriminative)
 
 
 def _dist():
@@ -141,13 +142,29 @@ def _to_tensors(arrays, sel, device):
     return bins, globs, legal, target, rank, color
 
 
-def _true_head_logp(model, heads, bins, globs, legal, target, rank, color, rows, autocast, grad_trunk=False):
-    """log p of each position's move under the head of its own rank: [B]. grad_trunk: keep the trunk's graph (stage 2)."""
+def _head_logps(model, heads, bins, globs, legal, target, color, rows, autocast, grad_trunk=False):
+    """log p of each position's move under every head: [B, n_ranks]. grad_trunk: keep the trunk's graph (stage 2)."""
     with torch.set_grad_enabled(grad_trunk and torch.is_grad_enabled()), torch.autocast("cuda", dtype=torch.bfloat16, enabled=autocast):
         trunk, mask, mask_sum_hw, mask_sum = trunk_features(model, bins, globs, color, rows)
     logits = heads(trunk.float(), mask.float(), mask_sum_hw.float(), mask_sum.float())
     logp = masked_logp(logits, legal)
-    return logp[torch.arange(len(target), device=logp.device), rank, target]
+    return logp.gather(2, target[:, None, None].expand(-1, logp.shape[1], 1))[:, :, 0]
+
+
+def _true_head_logp(model, heads, bins, globs, legal, target, rank, color, rows, autocast, grad_trunk=False):
+    """log p of each position's move under the head of its own rank: [B]. grad_trunk: keep the trunk's graph (stage 2)."""
+    lp = _head_logps(model, heads, bins, globs, legal, target, color, rows, autocast, grad_trunk)
+    return lp[torch.arange(len(target), device=lp.device), rank]
+
+
+def position_losses(lp, rank, disc_weight):
+    """Per-position (generative NLL of the true head, rank cross-entropy, total = NLL + disc_weight x CE) from the
+    heads' log p [B, n_ranks]: the CE treats the 10 log p of the played move as logits over the ranks (a uniform
+    prior), so it rewards heads whose differences point at the player's rank."""
+    i = torch.arange(len(rank), device=lp.device)
+    gen = -lp[i, rank]
+    disc = -torch.log_softmax(lp, dim=1)[i, rank]
+    return gen, disc, gen + disc_weight * disc if disc_weight > 0 else gen
 
 
 def evaluate_nll(model, heads, arrays, idx, cfg):
@@ -155,25 +172,30 @@ def evaluate_nll(model, heads, arrays, idx, cfg):
     of the rank's mean NLL, "nll_by_rank": [10] (None for an absent rank), "ranks_present", "n"}."""
     device, rows = cfg.device, neutral_rows()
     autocast = str(device).startswith("cuda")
-    sums, counts = np.zeros(N_RANKS), np.zeros(N_RANKS, dtype=np.int64)
+    sums, dsums, counts = np.zeros(N_RANKS), np.zeros(N_RANKS), np.zeros(N_RANKS, dtype=np.int64)
     was_training = heads.training
     heads.eval()
     me, world = _dist()
     with torch.no_grad():
         for bins, globs, legal, target, rank, color in batches(arrays, np.asarray(idx)[me::world], cfg.batch, None, device):
-            nll = -_true_head_logp(model, heads, bins, globs, legal, target, rank, color, rows, autocast).double().cpu().numpy()
+            lp = _head_logps(model, heads, bins, globs, legal, target, color, rows, autocast).double()
+            gen, disc, _ = position_losses(lp, rank, 0.0)
             r = rank.cpu().numpy()
-            np.add.at(sums, r, nll)
+            np.add.at(sums, r, gen.cpu().numpy())
+            np.add.at(dsums, r, disc.cpu().numpy())
             np.add.at(counts, r, 1)
     if world > 1:
-        t = _all_reduce_(torch.as_tensor(np.concatenate([sums, counts.astype(np.float64)]), dtype=torch.float64, device=device))
+        t = _all_reduce_(torch.as_tensor(np.concatenate([sums, dsums, counts.astype(np.float64)]), dtype=torch.float64, device=device))
         t = t.cpu().numpy()
-        sums, counts = t[:N_RANKS], np.rint(t[N_RANKS:]).astype(np.int64)
+        sums, dsums, counts = t[:N_RANKS], t[N_RANKS:2 * N_RANKS], np.rint(t[2 * N_RANKS:]).astype(np.int64)
     heads.train(was_training)
     present = [int(k) for k in np.flatnonzero(counts > 0)]
     by_rank = [float(sums[k] / counts[k]) if counts[k] else None for k in range(N_RANKS)]
     nll = float(np.mean([by_rank[k] for k in present])) if present else float("nan")
-    return {"nll": nll, "nll_by_rank": by_rank, "ranks_present": present, "n": int(counts.sum())}
+    disc = float(np.mean([dsums[k] / counts[k] for k in present])) if present else float("nan")
+    lam = getattr(cfg, "disc_weight", 0.0)
+    return {"nll": nll, "nll_by_rank": by_rank, "ranks_present": present, "n": int(counts.sum()), "disc": disc,
+            "objective": nll + lam * disc if lam > 0 else nll}
 
 
 def check_init(model, heads, arrays, idx, n=256):
@@ -284,14 +306,18 @@ def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_met
         """Inner evaluation at `step`; keeps the best weights; True when patience is exhausted."""
         res = evaluate_nll(model, heads, arrays, inner_idx, cfg)
         epoch = step / steps_per_epoch
-        state["history"].append((epoch, res["nll"]))
-        improved = state["best"] is None or (np.isfinite(res["nll"]) and res["nll"] < state["best"]["nll"])
+        state["history"].append((epoch, res["objective"]))
+        state.setdefault("history_detail", []).append((epoch, res["nll"], res["disc"]))
+        improved = state["best"] is None or (np.isfinite(res["objective"]) and res["objective"] < state["best"]["objective"])
         if improved:
-            state["best"] = {"nll": res["nll"], "step": step, **snapshot(), "by_rank": res["nll_by_rank"], "ranks_present": res["ranks_present"]}
+            state["best"] = {"nll": res["nll"], "disc": res["disc"], "objective": res["objective"], "step": step, **snapshot(),
+                             "by_rank": res["nll_by_rank"], "ranks_present": res["ranks_present"]}
             state["since_improvement"] = 0
         else:
             state["since_improvement"] += 1
-        log(f"epoch {epoch:.2f} inner NLL {res['nll']:.4f} (best {state['best']['nll']:.4f} @ {state['best']['step'] / steps_per_epoch:.2f})", flush=True)
+        extra = f" rank CE {res['disc']:.4f} objective {res['objective']:.4f}" if cfg.disc_weight > 0 else ""
+        log(f"epoch {epoch:.2f} inner NLL {res['nll']:.4f}{extra} (best {state['best']['objective']:.4f} @ "
+            f"{state['best']['step'] / steps_per_epoch:.2f})", flush=True)
         return state["since_improvement"] >= cfg.patience
 
     if use_inner and state["step"] == 0 and not state["history"]:
@@ -309,9 +335,10 @@ def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_met
             if len(sel):
                 bins, globs, legal, target, rank, color = _to_tensors(arrays, sel, device)
                 w = torch.from_numpy(weight_of[sel]).to(device)
-                logp = _true_head_logp(model, heads, bins, globs, legal, target, rank, color, rows, autocast, grad_trunk=train_trunk)
+                lp = _head_logps(model, heads, bins, globs, legal, target, color, rows, autocast, grad_trunk=train_trunk)
+                _, _, per = position_losses(lp, rank, cfg.disc_weight)
                 w_sum = _all_reduce_(w.sum().detach().clone())
-                loss = (-logp * w).sum() / w_sum
+                loss = (per * w).sum() / w_sum
                 if not torch.isfinite(loss):
                     raise FloatingPointError(f"non-finite training loss at step {step}")
                 loss.backward()
@@ -346,20 +373,27 @@ def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_met
         heads.load_state_dict(best["heads"])
         if train_trunk:
             model.load_state_dict(best["model"])
-        best_epoch, nll_init, nll_best = best["step"] / steps_per_epoch, state["history"][0][1], best["nll"]
+        detail = state.get("history_detail") or [(e, v, float("nan")) for e, v in state["history"]]
+        best_epoch, nll_init, nll_best = best["step"] / steps_per_epoch, detail[0][1], best["nll"]
+        disc_init, disc_best = detail[0][2], best.get("disc")
+        obj_init, obj_best = state["history"][0][1], best.get("objective", best["nll"])
         by_rank, present = best["by_rank"], best["ranks_present"]
     else:
         best_epoch, nll_init, nll_best, by_rank, present = state["step"] / steps_per_epoch, None, None, [None] * N_RANKS, []
+        disc_init = disc_best = obj_init = obj_best = None
     heads.eval()
     per_rank = np.bincount(arrays["rank_idx"][train_idx], minlength=N_RANKS)
     meta = {"train_cfg": asdict(cfg), "train_folds": cache_meta["folds"], "max_games": cache_meta.get("max_games"),
             "n_train_positions": int(len(train_idx)), "n_inner_positions": int(len(inner_idx)),
             "per_rank_positions": {lv: int(per_rank[k]) for k, lv in enumerate(LEVELS)},
             "inner_nll_init": nll_init, "inner_nll_best": nll_best, "inner_nll_best_by_rank": by_rank,
+            "inner_disc_init": disc_init, "inner_disc_best": disc_best, "inner_objective_init": obj_init, "inner_objective_best": obj_best,
             "best_epoch": best_epoch, "stopped_early": bool(state["stopped_early"]),
             "inner_ranks_present": present, "history": [(float(e), float(v)) for e, v in state["history"]],
             "steps_per_epoch": steps_per_epoch, "steps_run": int(state["step"]), "resumed_from_step": int(resumed_from),
             "world_size": int(world), "global_batch": int(global_batch), "trunk_trained": bool(train_trunk),
+            "selection": "inner NLL" if cfg.disc_weight <= 0 else f"inner NLL + {cfg.disc_weight:g} x rank CE",
+            "history_detail": [(float(e), float(n), float(d)) for e, n, d in state.get("history_detail", [])],
             "n_trunk_params": int(sum(p.numel() for p in trunk_params)),
             "wall_seconds": time.time() - t_start, "cache_dir": str(cache_dir), "cache_meta": cache_meta,
             "head_init": "humanv0_policy_head", **(extra_meta or {})}

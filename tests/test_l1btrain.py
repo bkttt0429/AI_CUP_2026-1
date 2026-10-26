@@ -1,6 +1,7 @@
 """aicup.l1btrain: class-balanced position weights, the per-player inner split, inner NLL, head training with
 early stopping and resume, and the step-0 equality check -- on a random b2c16 model and a tiny real cache."""
 import json
+import math
 from dataclasses import replace
 
 import numpy as np
@@ -250,3 +251,32 @@ def test_two_processes_equal_one_process_on_the_same_global_batch(tmp_path, tiny
         assert torch.allclose(r0["heads"][k], v, atol=1e-5), k
     for k, v in tiny_model.state_dict().items():
         assert torch.allclose(r0["model"][k], v, atol=1e-5), k
+
+
+# ---------------------------------------------------------------- the discriminative objective
+
+def test_position_losses():
+    lp = torch.log(torch.tensor([[0.5, 0.25, 0.25], [0.1, 0.1, 0.8]]))
+    rank = torch.tensor([0, 2])
+    gen, disc, total = l1btrain.position_losses(lp, rank, 0.0)
+    assert torch.allclose(gen, -torch.log(torch.tensor([0.5, 0.8]))) and torch.equal(total, gen)
+    # the rank CE: softmax over the heads' log p of the played move (here already normalised over the 3 heads)
+    assert torch.allclose(disc, -torch.log(torch.tensor([0.5, 0.8])), atol=1e-6)
+    _, _, total2 = l1btrain.position_losses(lp, rank, 2.0)
+    assert torch.allclose(total2, gen + 2.0 * disc)
+
+
+def test_disc_weight_zero_is_the_generative_run(tmp_path, tiny_model, tiny_cache):
+    """disc_weight 0 trains and selects exactly as before (NLL only); > 0 records the rank CE and selects on the sum."""
+    _, m0 = l1btrain.train_heads(tiny_model, tiny_cache, _stage2_cfg(trunk_lr=0.0), tmp_path / "g.pt", log=lambda *a, **k: None)
+    assert m0["selection"] == "inner NLL" and m0["inner_objective_best"] == m0["inner_nll_best"]
+    assert [v for _, v in m0["history"]] == [n for _, n, _ in m0["history_detail"]]
+    torch.manual_seed(0)
+    fresh = Model(modelconfigs.config_of_name["b2c16"], 19)
+    fresh.initialize()
+    fresh.eval()
+    _, m1 = l1btrain.train_heads(fresh, tiny_cache, _stage2_cfg(trunk_lr=0.0, disc_weight=1.0), tmp_path / "d.pt", log=lambda *a, **k: None)
+    assert m1["selection"].startswith("inner NLL + 1")
+    assert abs(m1["inner_objective_best"] - (m1["inner_nll_best"] + m1["inner_disc_best"])) < 1e-9
+    assert m1["inner_objective_best"] <= m1["inner_objective_init"]
+    assert m1["inner_disc_init"] == pytest.approx(math.log(10), abs=1e-6)  # identical heads at step 0: uniform over the ranks
