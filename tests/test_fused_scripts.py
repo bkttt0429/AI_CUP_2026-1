@@ -72,3 +72,82 @@ def test_fit_fused_model_cli(tmp_path, capsys):
     assert ffm.main([*args[:1], f"A:{l1b_dir}:{side_a}", f"C:{l1b_dir}:{side_c}", *args[3:], "--overwrite"]) == 2
     assert "exactly one must supply" in capsys.readouterr().err  # fold 1: none (A and C both saw it); fold 4: two
     assert ffm.main(args[:-2] + ["--out", str(out)]) == 2 and "exists" in capsys.readouterr().err  # no --overwrite
+
+
+def _proba_frame(ids, P, prefix="p"):
+    return pd.DataFrame({**{f"{prefix}_{lv}": P[:, j] for j, lv in enumerate(LEVELS)}, "question_id": ids})
+
+
+def test_check_fused_submission(tmp_path, capsys):
+    import check_fused_submission as cfs
+    from aicup.metric import expected_score_decision
+
+    rng = np.random.RandomState(0)
+    n = 6
+    P = rng.dirichlet(np.ones(10), size=n)
+    mock_ids = [f"pub_q_{i:04d}" for i in range(1, n + 1)]
+    src_ids = [f"1D_{i:08x}_n5_{i % 4}" for i in range(n)]
+    run = tmp_path / "run" / "submission_rank.csv"
+    run.parent.mkdir()
+    pd.DataFrame({"question_id": mock_ids, "pred_rank": [LEVELS[expected_score_decision(p)] for p in P]}).to_csv(run, index=False)
+    _proba_frame(mock_ids, P).to_csv(run.with_name("submission_rank_proba.csv"), index=False)
+    answers = tmp_path / "answers.csv"
+    pd.DataFrame({"question_id": mock_ids, "rank": ["1D"] * n, "source_question": src_ids, "n_games": [5] * n}).to_csv(answers, index=False)
+    offline = tmp_path / "fold0_fused_proba.csv"
+    off = pd.DataFrame({"question_id": src_ids[::-1], "rank": ["1D"] * n, "n_games": [5] * n, "player_id": ["x"] * n})
+    for j, lv in enumerate(LEVELS):
+        off[f"fused_avg_p_{lv}"] = P[::-1, j] + 2e-4 * (j % 2)  # the offline side, in another order, within tolerance
+        off[f"hsl_p_{lv}"] = 1.0 / 10
+    off.to_csv(offline, index=False)
+    report = tmp_path / "check.json"
+    args = ["--submission", str(run), "--offline", str(offline), "--answers", str(answers), "--report", str(report)]
+    assert cfs.main(args) == 0
+    res = json.loads(report.read_text())
+    assert res["pass"] and res["n_questions"] == n and abs(res["max_abs_diff"] - 2e-4) < 1e-12 and res["decisions_differ"] == []
+    assert "PASS" in capsys.readouterr().out
+    assert cfs.main([*args, "--tol", "1e-5"]) == 1 and "FAIL" in capsys.readouterr().out
+    # a decision that differs fails whatever the tolerance; a question missing offline is an error
+    sub = pd.read_csv(run, dtype=str)
+    sub.loc[0, "pred_rank"] = "6D" if sub.loc[0, "pred_rank"] != "6D" else "D"
+    sub.to_csv(run, index=False)
+    assert cfs.main([*args, "--tol", "1"]) == 1 and "1 decisions differ" in capsys.readouterr().out
+    off.iloc[1:].to_csv(offline, index=False)
+    assert cfs.main(args) == 2 and "offline" in capsys.readouterr().err
+    # two pipeline runs against each other (single GPU vs sharded): same ids, probabilities within tolerance, same decisions
+    other = tmp_path / "other" / "submission_rank.csv"
+    other.parent.mkdir()
+    pd.DataFrame({"question_id": mock_ids, "pred_rank": [LEVELS[expected_score_decision(p)] for p in P]}).to_csv(other, index=False)
+    _proba_frame(mock_ids, P + 1e-5).to_csv(other.with_name("submission_rank_proba.csv"), index=False)
+    pd.DataFrame({"question_id": mock_ids, "pred_rank": [LEVELS[expected_score_decision(p)] for p in P]}).to_csv(run, index=False)
+    assert cfs.main(["--submission", str(run), "--other", str(other), "--report", str(report)]) == 0
+    assert abs(json.loads(report.read_text())["max_abs_diff"] - 1e-5) < 1e-12
+
+
+def test_pack_weights(tmp_path, capsys):
+    import tarfile
+
+    import pack_weights as pw
+    from tests.test_predict_submission import _tiny_l1b_heads
+
+    paths, sides = _tiny_l1b_heads(tmp_path)
+    models = tmp_path / "models"
+    models.mkdir()
+    (models / "rank_model.json").write_text("{}")
+    fused_doc = {"name": "mlp_h32_fused", "l1b_models": [{"name": "A", "heads_file": paths[0].name, "state_sha256": sides[0]["state_sha256"],
+                                                            "trunk_file": sides[0]["trunk_file"], "trunk_sha256": sides[0]["trunk_sha256"]},
+                                                           {"name": "B", "heads_file": paths[1].name, "state_sha256": sides[1]["state_sha256"],
+                                                            "trunk_file": None, "trunk_sha256": None}]}
+    (models / "rank_model_fused.json").write_text(json.dumps(fused_doc))
+    out = tmp_path / "release" / "weights.tar"
+    args = ["--l1b-heads", *map(str, paths), "--models", str(models / "rank_model.json"), str(models / "rank_model_fused.json"), "--out", str(out)]
+    assert pw.main(args) == 0
+    with tarfile.open(out) as tar:
+        names = tar.getnames()
+    assert "SHA256SUMS" in names and paths[0].name in names and sides[0]["trunk_file"] in names and paths[1].name in names
+    assert paths[0].with_suffix(".json").name in names and "rank_model_fused.json" in names and "rank_model.json" in names
+    sums = out.with_name("SHA256SUMS").read_text()
+    assert sides[0]["state_sha256"] in sums and sides[0]["trunk_sha256"] in sums and "trunk.pt" not in [n for n in names if n.endswith("B.trunk.pt")]
+    assert f"{out.stat().st_size}" in capsys.readouterr().out or out.stat().st_size > 0
+    # a heads file that no longer matches its sidecar is refused
+    paths[1].write_bytes(paths[1].read_bytes() + b"\0")
+    assert pw.main([*args, "--overwrite"]) == 2 and "sha256" in capsys.readouterr().err

@@ -2,6 +2,7 @@
 import json
 
 import hashlib
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -158,3 +159,53 @@ def test_vectors_match_the_ladder_builder():
     np.testing.assert_array_equal(vec["whole"][0], game_vector(logp, t, WHOLE))
     assert vec["n_moves"].tolist() == [57] and vec["game_key"].tolist() == ["0"]
     np.testing.assert_array_equal(vec["sums"][0], logp.sum(axis=0))
+
+
+def test_l1b_sums_compared_per_game(tmp_path, distinct_scorer, capsys):
+    """--l1b-scores: the shards' per-game L1b sums against l1b_score.py's tables of the same fold-0 games, model by model."""
+    from aicup.metric import LEVELS
+    from aicup.scoring import part_paths
+    from tests.test_predict_submission import _tiny_l1b_heads
+
+    paths, sides = _tiny_l1b_heads(tmp_path)
+    inputs = _small_inputs(tmp_path)
+    out = tmp_path / "run" / "submission_rank.csv"
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--l1b-heads", *map(str, paths))) == ps.EXIT_OK
+    questions, _ = ps.load_questions(inputs)
+    tasks, _, _, _ = ps.build_tasks(questions)
+    per_task, _, moves = ps.load_shards(out, 1, len(tasks), ps.questions_sha(inputs, questions), with_moves=True)
+    _, l1b_per_task, _ = ps.load_shards_l1b(out, 1)
+    rng = np.random.RandomState(7)
+    vec = ps.game_vectors(per_task, moves)
+    ref = _ref_from(vec, rng)
+    vectors = tmp_path / "fold0.npz"
+    np.savez_compressed(vectors, **ref)
+    # one scores directory per model, in l1b_score.py's layout, keyed to the model by the sidecar sha256 in meta_s0.json
+    key_of_task = {i: ref["game_key"][i] for i in range(len(vec["n_moves"]))}  # _ref_from permutes rows; match recovers the mapping
+    match, _, _ = cgv.match_tasks(vec, ref, 0.5)
+    dirs = []
+    for j, (name, side) in enumerate(zip(("heads3_A", "heads3_B"), sides)):
+        d = tmp_path / f"scores_{name}" / "fold0"
+        d.mkdir(parents=True)
+        rows = [{"game_key": ref["game_key"][match[k]], "player_id": "p", "rank": "D", "color": "B", "n_moves": int(per_task[k][0]),
+                 **{f"sum_{lv}": float(l1b_per_task[k][j, i]) for i, lv in enumerate(LEVELS)}} for k in range(len(tasks))]
+        csv_path, npz_path = part_paths(d, 0, 0)
+        pd.DataFrame(rows).to_csv(csv_path, index=False)
+        np.savez_compressed(npz_path, logp=np.zeros((0, 10), np.float32), game_row=np.zeros(0, np.int32), t=np.zeros(0, np.int16))
+        (d / "meta_s0.json").write_text(json.dumps({"fold": 0, "heads": {"state_sha256": side["state_sha256"], "trunk_sha256": side.get("trunk_sha256")}}))
+        dirs.append(str(d))
+    del key_of_task
+    report = tmp_path / "check.json"
+    args = ["--inputs", *inputs, "--out", str(out), "--nshards", "1", "--vectors", str(vectors), "--l1b-scores", *dirs[::-1], "--report", str(report)]
+    assert cgv.main(args) == 0  # directories in any order: matched by sha256
+    res = json.loads(report.read_text())
+    # the tables went through CSV (pandas' float parser is within an ulp): equal up to 1e-9, every game matched
+    assert set(res["l1b"]) == {"heads3_A", "heads3_B"} and all(v["max_abs_diff"] <= 1e-9 and v["matched"] == len(tasks) and v["pass"] for v in res["l1b"].values())
+    assert "l1b.heads3_A" in capsys.readouterr().out
+    # a perturbed table fails and names the model; an unknown directory (no sha256 in the shards) fails too
+    table = pd.read_csv(Path(dirs[1]) / "games_s0_p000.csv")
+    table.loc[0, "sum_1D"] += 0.2
+    table.to_csv(Path(dirs[1]) / "games_s0_p000.csv", index=False)
+    assert cgv.main(args) == 1 and "l1b.heads3_B" in capsys.readouterr().out.split("FAIL:")[-1]
+    (Path(dirs[1]) / "meta_s0.json").write_text(json.dumps({"fold": 0, "heads": {"state_sha256": "0" * 64}}))
+    assert cgv.main(args) == 1 and "no shard model" in capsys.readouterr().out

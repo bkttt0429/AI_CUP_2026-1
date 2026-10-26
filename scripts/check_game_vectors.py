@@ -123,6 +123,43 @@ def compare_probs(P, qids, out, tol):
             "decisions_differ": differ, "tol": tol, "pass": bool((len(diff) == 0 or diff.max() <= tol) and not differ)}
 
 
+def compare_l1b(fold_dir, shard_models, l1b_per_task, ref, match, tol):
+    """One l1b_score.py fold directory against the shards' L1b sums of the same games: (model name, row). The directory's
+    meta_s*.json names the heads (state and trunk sha256); it must match exactly one shard model. Games the table
+    lacks count as missing (and fail)."""
+    import glob
+
+    from aicup.scoring import read_scored_games
+    metas = [json.loads(Path(p).read_text()) for p in sorted(glob.glob(str(Path(fold_dir) / "meta_s*.json")))]
+    if not metas:
+        raise ValueError("no meta_s*.json (not an l1b_score.py fold directory)")
+    heads = metas[0].get("heads", {})
+    key = (heads.get("state_sha256"), heads.get("trunk_sha256"))
+    hits = [j for j, m in enumerate(shard_models) if (m.get("state_sha256"), m.get("trunk_sha256")) == key]
+    if len(hits) != 1:
+        raise ValueError(f"no shard model matches its heads sha256 {str(key[0])[:12]} ({len(hits)} matches)")
+    j = hits[0]
+    name = shard_models[j].get("name") or f"model{j}"
+    table = read_scored_games(fold_dir).set_index("game_key")
+    cols = [f"sum_{lv}" for lv in LEVELS]
+    diffs, tasks, missing = [], [], 0
+    for k in range(len(match)):
+        gk = str(ref["game_key"][match[k]])
+        if gk not in table.index:
+            missing += 1
+            continue
+        diffs.append(np.abs(table.loc[gk, cols].to_numpy(dtype=np.float64) - l1b_per_task[k][j]))
+        tasks.append(k)
+    if diffs:
+        d = np.stack(diffs)
+        at = np.unravel_index(int(np.argmax(d)), d.shape)
+        row = {"dir": str(fold_dir), "max_abs_diff": float(d.max()), "task": int(tasks[at[0]]), "level": LEVELS[at[1]]}
+    else:
+        row = {"dir": str(fold_dir), "max_abs_diff": 0.0, "task": None, "level": None}
+    row.update({"matched": len(tasks), "missing": missing, "tol": tol, "pass": bool(missing == 0 and row["max_abs_diff"] <= tol)})
+    return name, row
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--inputs", nargs="+", default=ps.DEFAULT_INPUTS)
@@ -136,6 +173,10 @@ def main(argv=None):
     ap.add_argument("--set-base", default=None, help="the run's --set-base; required with --set-models")
     ap.add_argument("--set-device", default="cpu")
     ap.add_argument("--proba-tol", type=float, default=1e-3, help="max |Δp| allowed per question")
+    ap.add_argument("--l1b-scores", nargs="*", default=[], metavar="FOLD_DIR",
+                    help="l1b_score.py fold directories (e.g. results/l1b/scores3_A/fold0): the shards' per-game L1b sums are compared "
+                         "with their tables, each directory matched to a shard model by the sha256 in its meta_s*.json")
+    ap.add_argument("--l1b-tol", type=float, default=0.05, help="max |Δ sum| allowed per game and head")
     ap.add_argument("--report", default=None, help="write the result as JSON here too")
     a = ap.parse_args(argv)
     if a.set_models and not a.set_base:
@@ -157,6 +198,28 @@ def main(argv=None):
         where = "" if r["task"] is None else f"  (task {r['task']}, {r['column']})"
         flag = "FAIL" if g in bad_groups else "ok"
         print(f"  {g:22s} max |Δ| {r['max_abs_diff']:.3e}  {flag}{where}")
+    if a.l1b_scores:
+        result["l1b"] = {}
+        if unmatched or ambiguous:
+            print("  l1b sums: not checked (unmatched or ambiguous tasks)")
+            result["pass"] = False
+        else:
+            l1b_models, l1b_per_task, _ = ps.load_shards_l1b(Path(a.out), a.nshards)
+            for d in a.l1b_scores:
+                try:
+                    name, row = compare_l1b(d, l1b_models, l1b_per_task, ref, match, a.l1b_tol)
+                except ValueError as e:
+                    print(f"  l1b {d}: {e}")
+                    result["pass"] = False
+                    bad_groups.append(f"l1b.{Path(d).parent.name}")
+                    continue
+                result["l1b"][name] = row
+                if not row["pass"]:
+                    bad_groups.append(f"l1b.{name}")
+                    result["pass"] = False
+                where = "" if row["task"] is None else f"  (task {row['task']}, {row['level']})"
+                print(f"  {'l1b.' + name:22s} max |Δ sum| {row['max_abs_diff']:.3e}  {'ok' if row['pass'] else 'FAIL'}{where}  "
+                      f"({row['matched']} games, {row['missing']} missing from {d})")
     if a.set_models:
         if unmatched or ambiguous:
             print("  set models: not checked (unmatched or ambiguous tasks)")
