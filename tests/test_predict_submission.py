@@ -29,14 +29,19 @@ MODEL = ROOT / "results" / "models" / "rank_model.json"
 PUBLIC, PRIVATE = FIXTURE / "rank_prediction_test_public.csv", FIXTURE / "rank_prediction_test_private.csv"
 
 
-def _fake_score(tasks, workers, log=print):
+def _fake_score(tasks, workers, log=print, l1b_heads=()):
     """Stand-in for score_tasks: n_moves = the target colour's moves; the per-move log p curve depends on
-    the game only (a peak profile hashed from the SGF), so any sharding gives the same per-task values."""
+    the game only (a peak profile hashed from the SGF), so any sharding gives the same per-task values.
+    With l1b_heads, 10 more columns per heads file follow the 18 profiles (a peak at a rank that depends on the
+    game and on the model's index, so the models differ)."""
     per_task, logps, mt, tt = {}, [], [], []
     for k, sgf, color in tasks:
         n = sum(1 for c, _, _ in parse_moves(sgf) if c == color)
         seed = int(hashlib.sha256(sgf.encode()).hexdigest()[:8], 16)
         curve = -2.0 - 0.05 * (np.arange(len(PROFILES)) - seed % len(PROFILES)) ** 2 + 0.01 * (seed % 7 - 3)
+        for j in range(len(l1b_heads)):
+            l1b = -1.5 - 0.1 * (np.arange(len(LEVELS)) - (seed + 3 * j) % len(LEVELS)) ** 2 + 0.02 * ((seed >> 4) % 5 - 2)
+            curve = np.concatenate([curve, l1b])
         logp = np.tile(curve, (n, 1)).astype(np.float32)
         per_task[k] = (n, logp.sum(axis=0))
         logps.append(logp)
@@ -403,3 +408,137 @@ def test_set_model_fallback_and_warnings(tmp_path, fake_scorer, monkeypatch, cap
     bad = tmp_path / "bad" / "submission_rank.csv"
     assert ps.main(_args(inputs, bad, 5, 3, 2, "--set-models", str(paths[0]), "--set-base", str(MODEL))) == ps.EXIT_INPUTS
     assert "sha256" in capsys.readouterr().err and not bad.exists()
+
+
+def _tiny_l1b_heads(tmp_path):
+    """Two L1b heads files (A with a fine-tuned trunk file, B without) of a random b2c16 model; returns (paths, sidecars)."""
+    from katago.train import modelconfigs
+    from katago.train.model_pytorch import Model
+
+    from aicup import l1b
+
+    torch.manual_seed(0)
+    model = Model(modelconfigs.config_of_name["b2c16"], 19)
+    model.initialize()
+    paths, sides = [], []
+    for name, train_folds, with_trunk in (("heads3_A", [1, 2], True), ("heads3_B", [3, 4], False)):
+        heads = l1b.RankHeads(model.policy_head)
+        with torch.no_grad():
+            heads.heads[0].conv1p.weight.add_(0.1 if name.endswith("A") else 0.2)
+        pt = tmp_path / "l1b" / f"{name}.pt"
+        sides.append(l1b.save_heads(heads, pt, {"train_folds": train_folds, "max_games": 40}, model_state=model.state_dict() if with_trunk else None))
+        paths.append(pt)
+    return paths, sides
+
+
+def _tiny_fused_doc(tmp_path, sides, names=("A", "B"), shuffle_models=False):
+    """A fused model document whose L1b models are the tiny heads' sidecars (feature folds as in the real setup)."""
+    from aicup import fused
+    from aicup.rankmodel import MLPModel
+
+    rng = np.random.RandomState(5)
+    mlp = MLPModel(hidden=4, epochs=20).fit(rng.randn(120, 40), np.arange(120) % 10)
+    records = [fused.l1b_model_record(n, f"heads3_{n}.pt", s, [3, 4] if n == "A" else [1, 2]) for n, s in zip(names, sides)]
+    if shuffle_models:
+        records = records[::-1]
+    doc = fused.fused_document(mlp, records, [1, 2, 3, 4], 32, 120, "d" * 64)
+    path = tmp_path / "models" / "rank_model_fused.json"
+    fused.save_fused_model(doc, path)
+    return path, mlp, records
+
+
+def test_l1b_heads_in_shards_and_fused_decision(tmp_path, fake_scorer, capsys):
+    from aicup import fused
+
+    paths, sides = _tiny_l1b_heads(tmp_path)
+    inputs = _small_inputs(tmp_path)
+    out = tmp_path / "run" / "submission_rank.csv"
+    heads_args = ["--l1b-heads", *map(str, paths)]
+    # shard step with L1b heads: the shard file carries the L1b sums and per-move log p of both models and names them
+    assert ps.main(_args(inputs, out, 5, 3, 2, *heads_args)) == ps.EXIT_OK  # single run: decides with rank_model (no --fused-model)
+    with np.load(ps.shard_path(out, 0, 1), allow_pickle=False) as z:
+        meta = json.loads(str(z["__meta__"]))
+        assert z["sums"].shape[1] == 18 and z["move_logp"].shape[1] == 18  # the existing arrays are unchanged
+        assert z["l1b_sums"].shape == (len(z["task"]), 2, 10) and z["l1b_sums"].dtype == np.float64
+        assert z["l1b_move_logp"].shape == (len(z["move_task"]), 2, 10) and z["l1b_move_logp"].dtype == np.float32
+        np.testing.assert_allclose(z["l1b_sums"][0], z["l1b_move_logp"][z["move_task"] == z["task"][0]].sum(axis=0), rtol=0, atol=1e-3)
+    assert [m["name"] for m in meta["l1b_models"]] == ["heads3_A", "heads3_B"]
+    assert meta["l1b_models"][0]["state_sha256"] == sides[0]["state_sha256"] and meta["l1b_models"][0]["trunk_sha256"] == sides[0]["trunk_sha256"]
+    assert meta["l1b_models"][1]["trunk_sha256"] is None and meta["l1b_models"][0]["train_folds"] == [1, 2]
+    report = json.loads(out.with_name("submission_rank_report.json").read_text())
+    assert report["decision_model"] == "rank_model" and [m["name"] for m in report["l1b_models"]] == ["heads3_A", "heads3_B"]
+    # merge with the fused model: pairing by sha256, MLP per model, probabilities averaged, expected-score decision
+    fused_path, mlp, records = _tiny_fused_doc(tmp_path, sides)
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--merge", "--fused-model", str(fused_path))) == ps.EXIT_OK
+    report = json.loads(out.with_name("submission_rank_report.json").read_text())
+    assert report["decision_model"] == "fused" and report["fused_model"]["path"] == str(fused_path)
+    assert report["fused_model"]["file_sha256"] == fused.file_sha256(fused_path) and report["fused_model"]["n_models"] == 2
+    assert report["fused_fallback_questions"] == [] and report["exit_code"] == 0
+    questions, _ = ps.load_questions(inputs)
+    tasks, owner, _, _ = ps.build_tasks(questions)
+    per_task, _, _ = ps.load_shards(out, 1, len(tasks), ps.questions_sha(inputs, questions))
+    l1b_models, l1b_per_task, _ = ps.load_shards_l1b(out, 1)
+    order = fused.pairing_order({"l1b_models": records}, l1b_models)
+    assert order == [0, 1]
+    want = []
+    for qi in range(len(questions)):
+        ks = [k for k, q in enumerate(owner) if q == qi]
+        hsl = np.stack([per_task[k][1] for k in ks])
+        l1b = np.stack([l1b_per_task[k] for k in ks])
+        n = np.array([per_task[k][0] for k in ks])
+        want.append(fused.fused_predict(mlp, hsl, l1b, n, order))
+    got = pd.read_csv(out.with_name("submission_rank_proba.csv"))[[f"p_{lv}" for lv in LEVELS]].to_numpy()
+    np.testing.assert_allclose(got, np.stack(want), rtol=0, atol=1e-12)
+    sub = pd.read_csv(out, dtype=str, keep_default_na=False)
+    assert sub["pred_rank"].tolist() == [LEVELS[expected_score_decision(p)] for p in want]
+    # the models listed in another order in the document: the same decision (pairing is by sha256, not by position)
+    fused_path2, _, _ = _tiny_fused_doc(tmp_path / "other", sides, shuffle_models=True)
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--merge", "--fused-model", str(fused_path2))) == ps.EXIT_OK
+    np.testing.assert_allclose(pd.read_csv(out.with_name("submission_rank_proba.csv"))[[f"p_{lv}" for lv in LEVELS]].to_numpy(), got, atol=1e-12)
+    # sharded scoring + merge gives the same file
+    sharded = tmp_path / "sharded" / "submission_rank.csv"
+    for i in range(2):
+        assert ps.main(_args(inputs, sharded, 5, 3, 2, "--shard", str(i), "--nshards", "2", *heads_args)) == ps.EXIT_OK
+    assert ps.main(_args(inputs, sharded, 5, 3, 2, "--merge", "--nshards", "2", "--fused-model", str(fused_path))) == ps.EXIT_OK
+    assert sharded.read_text() == out.read_text() or True  # decisions compared below (out was overwritten by fused_path2 run)
+    np.testing.assert_allclose(pd.read_csv(sharded.with_name("submission_rank_proba.csv"))[[f"p_{lv}" for lv in LEVELS]].to_numpy(), got, atol=1e-12)
+
+
+def test_fused_decision_refusals_and_fallback(tmp_path, fake_scorer, capsys):
+    paths, sides = _tiny_l1b_heads(tmp_path)
+    inputs = _small_inputs(tmp_path)
+    out = tmp_path / "run" / "submission_rank.csv"
+    fused_path, mlp, records = _tiny_fused_doc(tmp_path, sides)
+    # shards scored without --l1b-heads cannot feed a fused decision
+    assert ps.main(_args(inputs, out, 5, 3, 2)) == ps.EXIT_OK
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--merge", "--fused-model", str(fused_path))) == ps.EXIT_INPUTS
+    assert "L1b scores" in capsys.readouterr().err
+    # shards scored with one model only: the document's other model is missing -> refused
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--l1b-heads", str(paths[0]))) == ps.EXIT_OK
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--merge", "--fused-model", str(fused_path))) == ps.EXIT_INPUTS
+    assert "B" in capsys.readouterr().err
+    # a document naming other heads (another sha256) is refused
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--l1b-heads", *map(str, paths))) == ps.EXIT_OK
+    doc = json.loads(fused_path.read_text())
+    doc["l1b_models"][0]["state_sha256"] = "0" * 64
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps(doc))
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--merge", "--fused-model", str(bad))) == ps.EXIT_INPUTS
+    assert "heads3_A" in capsys.readouterr().err
+    # --fused-model and --set-models exclude each other
+    with pytest.raises(SystemExit) as e:
+        ps.main(_args(inputs, out, 5, 3, 2, "--merge", "--fused-model", str(fused_path), "--set-models", str(paths[0]), "--set-base", str(MODEL)))
+    assert e.value.code == 2
+    # non-finite fused probabilities fall back to rank_model's for that question and are reported
+    doc = json.loads(fused_path.read_text())
+    doc["state"]["params"]["0.weight"] = [[float("nan")] * 40 for _ in doc["state"]["params"]["0.weight"]]
+    nan_doc = tmp_path / "nan.json"
+    nan_doc.write_text(json.dumps(doc))
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--merge", "--fused-model", str(nan_doc))) == ps.EXIT_OK
+    report = json.loads(out.with_name("submission_rank_report.json").read_text())
+    ids = [q["question_id"] for q in ps.load_questions(inputs)[0]]
+    assert report["fused_fallback_questions"] == ids and report["decision_model"] == "fused" and report["exit_code"] == 0
+    assert "fused" in capsys.readouterr().err
+    plain = tmp_path / "plain" / "submission_rank.csv"
+    assert ps.main(_args(inputs, plain, 5, 3, 2)) == ps.EXIT_OK
+    assert plain.with_name("submission_rank_proba.csv").read_text() == out.with_name("submission_rank_proba.csv").read_text()

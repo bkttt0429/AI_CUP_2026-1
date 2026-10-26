@@ -13,10 +13,10 @@ from aicup.metric import LEVELS
 from tests.test_predict_submission import MODEL, _args, _fake_score, _small_inputs, _tiny_set_models
 
 
-def _distinct_score(tasks, workers, log=print):
+def _distinct_score(tasks, workers, log=print, l1b_heads=()):
     """_fake_score plus a per-game constant from the SGF hash: its 126 curves collide on games of equal
     length (two of the 30 small-input games), which real log p never does; vectors must stay consistent."""
-    per_task, (logp, mt, tt), positions, secs = _fake_score(tasks, workers, log)
+    per_task, (logp, mt, tt), positions, secs = _fake_score(tasks, workers, log, l1b_heads)
     logp = logp.astype(np.float64)
     for k, sgf, _ in tasks:
         rows = mt == k
