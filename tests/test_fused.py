@@ -1,0 +1,97 @@
+"""aicup.fused: the fused (Human SL + L1b) question features, the fused model document and the L1b pairing check."""
+import json
+
+import numpy as np
+import pandas as pd
+import pytest
+
+import l1b_cv
+from aicup import fused
+from aicup.humansl import PROFILES
+from aicup.metric import LEVELS
+from aicup.qfeatures import FEATURE_NAMES, feature_names
+from aicup.rankmodel import MLPModel
+
+
+def _tables(rng, n_games=12):
+    keys = [f"g{i}" for i in range(n_games)]
+    n = rng.randint(40, 200, size=n_games)
+    hsl = pd.DataFrame({"game_key": keys, "n_moves": n, **{f"sum_{p}": -rng.rand(n_games) * 300 for p in PROFILES}})
+    l1b = pd.DataFrame({"game_key": keys, "n_moves": n, **{f"sum_{lv}": -rng.rand(n_games) * 300 for lv in LEVELS}})
+    questions = pd.DataFrame({"question_id": ["q1", "q2", "q3"], "rank": ["D", "3D", "6D"],
+                              "game_keys": [keys[:5], keys[5:10], keys[10:]]})
+    return hsl, l1b, questions
+
+
+def test_fused_features_match_l1b_cv_feature_sets():
+    rng = np.random.RandomState(0)
+    hsl, l1b, questions = _tables(rng)
+    assert len(fused.FUSED_FEATURE_NAMES) == 40 and fused.FUSED_FEATURE_NAMES[:24] == FEATURE_NAMES
+    assert fused.FUSED_FEATURE_NAMES[24:] == [f"l1b_{n}" for n in feature_names(LEVELS)]
+    want = l1b_cv.feature_sets(hsl, l1b, questions)[0]["fused"]
+    h, l = hsl.set_index("game_key"), l1b.set_index("game_key")
+    got = np.stack([fused.fused_features(h.loc[ks, [f"sum_{p}" for p in PROFILES]].to_numpy(), l.loc[ks, [f"sum_{lv}" for lv in LEVELS]].to_numpy(),
+                                         h.loc[ks, "n_moves"].to_numpy()) for ks in questions["game_keys"]])
+    np.testing.assert_array_equal(got, want)
+    assert got.shape == (3, 40)
+
+
+def _models():
+    return [{"name": "A", "heads_file": "heads3_A.pt", "state_sha256": "a" * 64, "trunk_file": "heads3_A.trunk.pt", "trunk_sha256": "1" * 64,
+             "train_folds": [1, 2], "feature_folds": [3, 4]},
+            {"name": "B", "heads_file": "heads3_B.pt", "state_sha256": "b" * 64, "trunk_file": "heads3_B.trunk.pt", "trunk_sha256": "2" * 64,
+             "train_folds": [3, 4], "feature_folds": [1, 2]}]
+
+
+def test_document_round_trip_and_checks(tmp_path):
+    rng = np.random.RandomState(1)
+    X, y = rng.randn(80, 40), np.arange(80) % 10
+    mlp = MLPModel(hidden=4, epochs=5).fit(X, y)
+    doc = fused.fused_document(mlp, _models(), train_folds=[1, 2, 3, 4], per_player=32, n_train=80, questions_sha256="c" * 64,
+                               extra={"fold0_check": {"fused_avg": 0.6535}})
+    assert doc["name"] == fused.NAME and doc["features"] == fused.FUSED_FEATURE_NAMES and doc["profiles"] == list(PROFILES)
+    assert doc["levels"] == list(LEVELS) and doc["l1b_models"] == _models() and doc["fold0_check"]["fused_avg"] == 0.6535
+    assert doc["train_folds"] == [1, 2, 3, 4] and doc["per_player"] == 32 and doc["train_questions"] == 80 and "code_sha256" in doc
+    path = tmp_path / "rank_model_fused.json"
+    fused.save_fused_model(doc, path)
+    doc2, mlp2 = fused.load_fused_model(path)
+    assert doc2["l1b_models"] == _models() and doc2["file_sha256"] == fused.file_sha256(path)
+    np.testing.assert_array_equal(mlp2.predict_proba(X[:7]), mlp.predict_proba(X[:7]))
+    broken = json.loads(path.read_text())
+    broken["features"] = broken["features"][:-1]
+    (tmp_path / "bad.json").write_text(json.dumps(broken))
+    with pytest.raises(ValueError, match="features"):
+        fused.load_fused_model(tmp_path / "bad.json")
+    broken = json.loads(path.read_text())
+    broken["l1b_models"] = []
+    (tmp_path / "bad2.json").write_text(json.dumps(broken))
+    with pytest.raises(ValueError, match="l1b_models"):
+        fused.load_fused_model(tmp_path / "bad2.json")
+
+
+def test_pairing_order_and_mismatch():
+    doc = {"l1b_models": _models()}
+    shard = [{"name": "heads3_B", "state_sha256": "b" * 64, "trunk_sha256": "2" * 64}, {"name": "heads3_A", "state_sha256": "a" * 64, "trunk_sha256": "1" * 64}]
+    assert fused.pairing_order(doc, shard) == [1, 0]  # doc's A is shard column 1, doc's B is shard column 0
+    with pytest.raises(ValueError, match="B"):
+        fused.pairing_order(doc, shard[1:])
+    with pytest.raises(ValueError, match="not in the fused model"):
+        fused.pairing_order(doc, shard + [{"name": "heads3_C", "state_sha256": "c" * 64, "trunk_sha256": "3" * 64}])
+    with pytest.raises(ValueError, match="trunk"):
+        fused.pairing_order(doc, [{**shard[0], "trunk_sha256": "9" * 64}, shard[1]])
+    with pytest.raises(ValueError, match="L1b scores"):
+        fused.pairing_order(doc, [])
+
+
+def test_fused_predict_averages_the_models():
+    rng = np.random.RandomState(2)
+    mlp = MLPModel(hidden=4, epochs=5).fit(rng.randn(60, 40), np.arange(60) % 10)
+    m = 6
+    hsl = -rng.rand(m, 18) * 200
+    l1b = -rng.rand(m, 2, 10) * 200  # shard order: column 0 = B, column 1 = A
+    n = rng.randint(50, 150, size=m)
+    p = fused.fused_predict(mlp, hsl, l1b, n, order=[1, 0])
+    want = np.mean([mlp.predict_proba(fused.fused_features(hsl, l1b[:, k], n)[None])[0] for k in (1, 0)], axis=0)
+    np.testing.assert_allclose(p, want, rtol=0, atol=1e-15)
+    assert p.shape == (10,) and abs(p.sum() - 1) < 1e-9
+    assert not np.allclose(p, mlp.predict_proba(fused.fused_features(hsl, l1b[:, 0], n)[None])[0])
