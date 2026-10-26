@@ -1,0 +1,250 @@
+{
+ "format": 1,
+ "n_ranks": 10,
+ "levels": [
+  "D",
+  "C",
+  "B",
+  "A",
+  "1D",
+  "2D",
+  "3D",
+  "4D",
+  "5D",
+  "6D"
+ ],
+ "n_params": 450240,
+ "state_sha256": "6bb4ebf40747ebdcaeb7e9e2def6b5cbd5e22fd7b13399dde8e55de791bbe2c3",
+ "trunk_file": "heads3_A.trunk.pt",
+ "trunk_sha256": "5c6acadb53043a383056374f69c3731643c1dc97291afbb021fc8f3606719f64",
+ "git_head": "354f470",
+ "git_dirty": false,
+ "code_sha256": "2991f69d8953ae6e21b4c87cc870df5b60be18a4242b2eaadaa9009dd6218536",
+ "code_files": [
+  "src/aicup/gamevec.py",
+  "src/aicup/ladder_data.py",
+  "src/aicup/aggregators.py",
+  "src/aicup/settrain.py",
+  "src/aicup/rankmodel.py",
+  "src/aicup/qfeatures.py",
+  "src/aicup/metric.py"
+ ],
+ "torch_version": "2.14.1+cu126",
+ "device_name": "NVIDIA H200",
+ "train_cfg": {
+  "epochs": 2,
+  "batch": 128,
+  "lr": 0.0001,
+  "eval_every": 0.25,
+  "patience": 4,
+  "inner_frac": 0.1,
+  "inner_max_positions": 400000,
+  "seed": 0,
+  "device": "cuda:0",
+  "trunk_lr": 1e-05,
+  "disc_weight": 1.0
+ },
+ "train_folds": [
+  1,
+  2
+ ],
+ "max_games": 40,
+ "n_train_positions": 10153266,
+ "n_inner_positions": 400000,
+ "per_rank_positions": {
+  "D": 1153185,
+  "C": 1026788,
+  "B": 1207365,
+  "A": 1596082,
+  "1D": 657725,
+  "2D": 864870,
+  "3D": 864356,
+  "4D": 878200,
+  "5D": 929057,
+  "6D": 975638
+ },
+ "inner_nll_init": 1.4338647792920278,
+ "inner_nll_best": 1.5155574959658888,
+ "inner_nll_best_by_rank": [
+  1.668829145323203,
+  1.5782843011735008,
+  1.5373716058570406,
+  1.5540037096335027,
+  1.4831178254864206,
+  1.5133278602975448,
+  1.4656407292399114,
+  1.4664105690469684,
+  1.4279099963670447,
+  1.4606792172337524
+ ],
+ "inner_disc_init": 2.285969645729487,
+ "inner_disc_best": 2.136510754129275,
+ "inner_objective_init": 3.7198344250215145,
+ "inner_objective_best": 3.652068250095164,
+ "best_epoch": 1.0,
+ "stopped_early": true,
+ "inner_ranks_present": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9
+ ],
+ "history": [
+  [
+   0.0,
+   3.7198344250215145
+  ],
+  [
+   0.25,
+   3.71483693665483
+  ],
+  [
+   0.5,
+   3.669286737213139
+  ],
+  [
+   0.75,
+   3.654358960514681
+  ],
+  [
+   1.0,
+   3.652068250095164
+  ],
+  [
+   1.25,
+   3.677919448003784
+  ],
+  [
+   1.5,
+   3.706475144382056
+  ],
+  [
+   1.75,
+   3.8058878877619655
+  ],
+  [
+   2.0,
+   3.821696825845679
+  ]
+ ],
+ "steps_per_epoch": 9916,
+ "steps_run": 19832,
+ "resumed_from_step": 0,
+ "world_size": 8,
+ "global_batch": 1024,
+ "trunk_trained": true,
+ "selection": "inner NLL + 1 x rank CE",
+ "history_detail": [
+  [
+   0.0,
+   1.4338647792920278,
+   2.285969645729487
+  ],
+  [
+   0.25,
+   1.442065876868088,
+   2.272771059786742
+  ],
+  [
+   0.5,
+   1.4814110087295131,
+   2.187875728483626
+  ],
+  [
+   0.75,
+   1.494591731300654,
+   2.159767229214027
+  ],
+  [
+   1.0,
+   1.5155574959658888,
+   2.136510754129275
+  ],
+  [
+   1.25,
+   1.5470431730682939,
+   2.13087627493549
+  ],
+  [
+   1.5,
+   1.5699079511429643,
+   2.1365671932390917
+  ],
+  [
+   1.75,
+   1.6400971562747735,
+   2.165790731487192
+  ],
+  [
+   2.0,
+   1.6559949469744677,
+   2.1657018788712112
+  ]
+ ],
+ "n_trunk_params": 26613504,
+ "wall_seconds": 2413.4841878414154,
+ "cache_dir": "results/l1b/cache_A",
+ "cache_meta": {
+  "folds": [
+   1,
+   2
+  ],
+  "max_games": 40,
+  "min_games": 1,
+  "nshards": 8,
+  "shards": [
+   0,
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7
+  ],
+  "players": 3206,
+  "games_selected": 102019,
+  "games": 102019,
+  "positions": 11316535,
+  "per_rank_positions": {
+   "D": 1283704,
+   "C": 1139627,
+   "B": 1343904,
+   "A": 1782111,
+   "1D": 731495,
+   "2D": 973080,
+   "3D": 971988,
+   "4D": 975257,
+   "5D": 1026871,
+   "6D": 1088498
+  },
+  "games_sha256": "1dc5d65abae69a7e881092c24bf0ec5fc26597c2750aaaafaf95ac15659959d0",
+  "model_input_config": "b18c384nbt",
+  "git_head": "10d3543",
+  "git_dirty": false,
+  "code_sha256": "2991f69d8953ae6e21b4c87cc870df5b60be18a4242b2eaadaa9009dd6218536",
+  "code_files": [
+   "src/aicup/gamevec.py",
+   "src/aicup/ladder_data.py",
+   "src/aicup/aggregators.py",
+   "src/aicup/settrain.py",
+   "src/aicup/rankmodel.py",
+   "src/aicup/qfeatures.py",
+   "src/aicup/metric.py"
+  ],
+  "torch_version": "2.14.1+cu126",
+  "device_name": "cpu"
+ },
+ "head_init": "results/l1b/heads2_A.pt",
+ "model_source": "/home/u2507115/BK_AICUP_2026-1/models/katago/b18c384nbt-humanv0.ckpt",
+ "humanv0_sha256": "00e608f3e6458ba8cb0e3ad8b775a447e051ad935303e73e153a12dd16e48d09",
+ "head_init_sha256": "9620e82f85075e1af38a9136e35f63b90a37e44ee60b7a83c7899a1c85c0ae81",
+ "head_init_trunk_sha256": "06a05a8b802358e0de9038f0f4edf29fc1a6ac95a0af40c1474b95381ebb82ca",
+ "head_init_inner_nll_best": 1.4338647792920278
+}
