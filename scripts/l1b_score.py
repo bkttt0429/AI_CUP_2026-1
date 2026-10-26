@@ -70,8 +70,9 @@ def check_unseen(meta, folds, allow_seen, out):
         raise ValueError(f"--allow-seen writes only into a directory whose name contains '_seen', not {out}")
 
 
-def score_fold(fold, players, out, shard, nshards, part_size, pool, scorer, meta_heads, log=print):
-    """Score one fold's pending parts into out/fold{F}; returns (games in shard, positions scored, seconds)."""
+def score_fold(fold, players, out, shard, nshards, part_size, pool, scorer, meta_heads, log=print, opponent=False):
+    """Score one fold's pending parts into out/fold{F}; returns (games in shard, positions scored, seconds). opponent: score
+    the moves of the target player's opponent instead (the other colour; the table's color column is the side scored)."""
     games = [(p.rank, p.player_id, k) for p in players.itertuples() for k in p.game_keys][shard::nshards]
     info = {g[2]: g for g in games}
     fold_dir = Path(out) / f"fold{fold}"
@@ -84,10 +85,11 @@ def score_fold(fold, players, out, shard, nshards, part_size, pool, scorer, meta
     if plan:
         data = load_games([k for _, keys in plan for k in keys])
         for j, (k, keys) in enumerate(plan):
-            tasks = [(i, data[key][0], data[key][1]) for i, key in enumerate(keys)]
+            side = {key: (("W" if data[key][1] == "B" else "B") if opponent else data[key][1]) for key in keys}
+            tasks = [(i, data[key][0], side[key]) for i, key in enumerate(keys)]
             per_task, arrays, n, wall = score_stream(pool, None, tasks, None, log_every=10**9, scorer=scorer)
             logp, task_idx, ts = arrays if arrays is not None else (np.zeros((0, len(LEVELS)), np.float32), np.zeros(0, np.int32), np.zeros(0, np.int16))
-            recs = [{"game_key": key, "player_id": info[key][1], "rank": info[key][0], "color": data[key][1], "n_moves": per_task[i][0],
+            recs = [{"game_key": key, "player_id": info[key][1], "rank": info[key][0], "color": side[key], "n_moves": per_task[i][0],
                      **{f"sum_{lv}": float(s) for lv, s in zip(LEVELS, per_task[i][1])}} for i, key in enumerate(keys)]
             csv_path, npz_path = part_paths(fold_dir, shard, k)
             tmp_csv, tmp_npz = csv_path.with_suffix(".tmp.csv"), npz_path.with_name(npz_path.stem + ".tmp.npz")
@@ -99,7 +101,7 @@ def score_fold(fold, players, out, shard, nshards, part_size, pool, scorer, meta
             log(f"  fold {fold} part {j + 1}/{len(plan)} (index {k}): {len(keys)} games, {n} positions, {n / max(wall, 1e-9):.0f} positions/s", flush=True)
     secs = time.time() - t0
     meta = {"fold": fold, "shard": shard, "nshards": nshards, "part_size": part_size, "games": len(games), "positions": int(n_pos),
-            "scoring_wall_s": secs, "levels": list(LEVELS), "heads": meta_heads, "finished": datetime.now().isoformat(timespec="seconds"),
+            "scoring_wall_s": secs, "levels": list(LEVELS), "heads": meta_heads, "side": "opponent" if opponent else "target", "finished": datetime.now().isoformat(timespec="seconds"),
             **environment("cpu")}
     (fold_dir / f"meta_s{shard}.json").write_text(to_json(meta, indent=1) + "\n")
     return len(games), n_pos, secs
@@ -121,6 +123,7 @@ def main(argv=None):
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--folds-csv", default=str(FOLDS_CSV))
     ap.add_argument("--allow-seen", action="store_true")
+    ap.add_argument("--opponent", action="store_true", help="score the opponent's moves (the other colour) instead of the target player's")
     a = ap.parse_args(argv)
     model = load_trunk(a.ckpt, a.model_config, "cpu")  # on the CPU until the pool is forked
     try:
@@ -143,7 +146,7 @@ def main(argv=None):
     try:
         for fold in a.folds:
             players = fold_players(all_games, folds_df, fold, max_games=a.max_games, min_games=a.min_games)
-            n_games, n_pos, secs = score_fold(fold, players, a.out, a.shard, a.nshards, a.part_size, pool, scorer, meta_heads)
+            n_games, n_pos, secs = score_fold(fold, players, a.out, a.shard, a.nshards, a.part_size, pool, scorer, meta_heads, opponent=a.opponent)
             print(f"fold {fold} done: {n_games} games, {n_pos} positions scored, {secs / 60:.1f} min", flush=True)
     finally:
         pool.close()
