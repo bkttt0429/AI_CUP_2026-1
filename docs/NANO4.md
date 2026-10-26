@@ -286,6 +286,53 @@ sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 02:00:00 -J l1bcv scripts/nano
 
 把印出的五行（三組分數、兩組比較）貼回 issue #6；`cv_summary.json` 進 git。
 
+### 4.3 提交改用鑑別式 L1b 的 fused MLP（2026-10-26，issue #9）
+
+提交的決策模型從 `ens_top3` 換成 fused MLP：Human SL 24 維 + L1b 16 維題目特徵，`MLPModel(hidden=32)`，A、B 兩個 L1b 模型各出一套特徵、各預測一次、機率平均（CV 0.6545、fold 0 0.6535；`ens_top3` 留當退路）。權重檔：`results/l1b/heads3_{A,B}.pt` 加 `heads3_{A,B}.trunk.pt`（微調後的 trunk，各 108 MB，不進 git，見下面第 5 步）。五步順序固定：
+
+**1. 擬合 fused MLP**（CPU 幾分鐘；訓練完全照 `l1b_fold0_check.py`：folds 1–4、每人 32 題、folds 1、2 用 B 的評分、3、4 用 A 的；A 的評分目錄在 nano4 上是 `results/l1b/scores3`，B 是 `results/l1b/scores3_B`）。順便在 fold 0 重算 `hsl`／`fused_A`／`fused_B`／`fused_avg`，`--reference` 會印出與 `fold0_check.json` 的差（應為 0），並存下 fold 0 每題機率給第 4 步用：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J fitfused scripts/nano4/run.sbatch python -I scripts/fit_fused_model.py --l1b A:results/l1b/scores3:results/l1b/heads3_A.json B:results/l1b/scores3_B:results/l1b/heads3_B.json --out results/models/rank_model_fused.json --fold0-proba results/l1b/fold0_fused_proba.csv --reference results/l1b/fold0_check.json --reference-run disc
+```
+
+`rank_model_fused.json` 與 `fold0_fused_proba.csv` 進 git。文件裡的 `l1b_models` 記了 A、B 的 heads 檔 sha256 與 trunk sha256，merge 時會用來確認分片用的是同一組模型。
+
+**2. mock test 分片評分加 L1b**（`--l1b-heads` 讓每個分片在 18 個 profile 之外多做 A、B 各一次 trunk 前向，分片檔多 `l1b_sums`／`l1b_move_logp`；不加這個旗標的分片檔和以前一模一樣）。單卡一次、4 卡一次，給第 4 步比對：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 02:00:00 -J mockf1 scripts/nano4/run.sbatch python -I scripts/predict_submission.py --inputs tests/fixtures/mock_fold0_40/rank_prediction_test_public.csv tests/fixtures/mock_fold0_40/rank_prediction_test_private.csv --expect-rows 40 --expect-public 20 --expect-private 20 --out results/mock_fold0_40_fused/submission_rank.csv --l1b-heads results/l1b/heads3_A.pt results/l1b/heads3_B.pt --fused-model results/models/rank_model_fused.json
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus --gres=gpu:4 -c 48 -t 02:00:00 -J mockf4 scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 4 python -I scripts/predict_submission.py --inputs tests/fixtures/mock_fold0_40/rank_prediction_test_public.csv tests/fixtures/mock_fold0_40/rank_prediction_test_private.csv --expect-rows 40 --expect-public 20 --expect-private 20 --out results/mock_fold0_40_fused4/submission_rank.csv --l1b-heads results/l1b/heads3_A.pt results/l1b/heads3_B.pt
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J mockf4m scripts/nano4/run.sbatch python -I scripts/predict_submission.py --merge --nshards 4 --inputs tests/fixtures/mock_fold0_40/rank_prediction_test_public.csv tests/fixtures/mock_fold0_40/rank_prediction_test_private.csv --expect-rows 40 --expect-public 20 --expect-private 20 --out results/mock_fold0_40_fused4/submission_rank.csv --fused-model results/models/rank_model_fused.json
+```
+
+單卡那次把評分和 merge 做在同一個工作裡（`--fused-model` 在評分完直接用）。報告的 `decision_model` 是 `fused`，`fused_model` 記 fused 文件的 sha256 與 `l1b_models`，`l1b_models` 記分片用的模型。配對檢查：分片的 (state_sha256, trunk_sha256) 集合必須等於 fused 文件裡的，否則 exit 2；`--fused-model` 和 `--set-models` 互斥。
+
+分片時的 CPU：`shards.sh` 把每個分片的 `OMP_NUM_THREADS`／`MKL_NUM_THREADS` 設成 2（`SHARD_THREADS=k` 可改）。PR #10 實測 4 卡時每個分片主行程開了 44 條 torch 執行緒在 48 核上空轉，worker 搶不到 CPU，65 秒的評分拖成 8 分鐘；模型在 GPU 上，主行程只搬批次、加總 log p，2 條就夠。每個分片 log 的開頭印 `torch CPU threads: 2` 代表設定生效。單卡直接跑的工作不受影響。
+
+**3. 每局 L1b 總和對帳**（CPU；`check_game_vectors.py` 原有的向量檢查加 `--l1b-scores`：局對回 fold 0 後，分片的 A、B 每局 10 維總和逐局比 `l1b_score.py` 的表，目錄靠 `meta_s*.json` 的 sha256 對到模型）。容差兩條、都按 head：每局 |Δ sum| / n_moves ≤ `--l1b-tol` 0.02，且跨局的平均有號差 |mean(Δ sum / n_moves)| ≤ `--l1b-bias-tol` 1e-3。前者放過 bf16 的批次雜訊（trunk 在 bf16 autocast 下跑，同一局的局面離線和分片落在不同批次：PR #10 實測 375 局大多數逐位元相同，少數每手差到 0.007、每局總和差到 0.57，HSL 分片間每手 4e-3 同量級，對機率的影響就是第 4 步的 ≤ 3.9e-4），後者抓用錯模型或 metadata 那種整體偏移（雜訊的平均只有 1e-5）。PR #10 之前的 `l1b_score.py` 沒把 `trunk_sha256` 寫進 `meta_s*.json`，這種目錄只靠 `state_sha256` 對模型並印 WARNING（state 的 sha256 已能唯一識別一次訓練）；之後評分的目錄兩個都比：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J vecl1b scripts/nano4/run.sbatch python -I scripts/check_game_vectors.py --inputs tests/fixtures/mock_fold0_40/rank_prediction_test_public.csv tests/fixtures/mock_fold0_40/rank_prediction_test_private.csv --out results/mock_fold0_40_fused/submission_rank.csv --nshards 1 --vectors results/ladder/vectors/fold0.npz --l1b-scores results/l1b/scores3/fold0 results/l1b/scores3_B/fold0 --report results/mock_fold0_40_fused/game_vectors_check.json
+```
+
+**4. 機率與決策對帳**（CPU；`answers.csv` 的 `source_question` 把 40 題對回 fold 0 的題；管線 vs 離線 40 題決策全同、max |Δp| ≤ `--tol` 1e-3；再比單卡 vs 4 卡）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J fusedchk scripts/nano4/run.sbatch python -I scripts/check_fused_submission.py --submission results/mock_fold0_40_fused/submission_rank.csv --offline results/l1b/fold0_fused_proba.csv --answers tests/fixtures/mock_fold0_40/answers.csv --report results/mock_fold0_40_fused/fused_check.json
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J fusedchk4 scripts/nano4/run.sbatch python -I scripts/check_fused_submission.py --submission results/mock_fold0_40_fused/submission_rank.csv --other results/mock_fold0_40_fused4/submission_rank.csv --report results/mock_fold0_40_fused4/fused_check.json
+```
+
+兩份 `fused_check.json` 與 `game_vectors_check.json` 進 git。容差 1e-3 是分片間每手 log p 差（≤ 4e-3）傳到機率上的量級，實測若超過，先看第 3 步的每局總和差再調。
+
+**5. 權重封存**（CPU；不進 git）：`pack_weights.py` 把 heads、trunk、側檔、`rank_model*.json`、集合模型打成一個 tar 加 `SHA256SUMS`，打包前逐檔核對側檔與 fused 文件記的 sha256。得獎時由使用者上傳成 GitHub Release 資產（單檔上限 2 GB）；repo 裡的側檔與 `rank_model_fused.json` 已記每個檔的 sha256，對得上就是同一份權重：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J pack scripts/nano4/run.sbatch python -I scripts/pack_weights.py --l1b-heads results/l1b/heads3_A.pt results/l1b/heads3_B.pt --models results/models/rank_model.json results/models/rank_model_f01234.json results/models/rank_model_fused.json --set-dir results/models/set --out release/weights-2026-11.tar
+```
+
+**11/04 正式流程**：8 卡 `shards.sh 8 … --l1b-heads results/l1b/heads3_A.pt results/l1b/heads3_B.pt`（§4 的 `sub8` 指令加這個旗標；`shards.sh` 自動限制每分片 2 條 CPU 執行緒）→ `--merge --nshards 8 --fused-model results/models/rank_model_fused.json`。退路：同一組分片檔 `--merge` 改給 `--set-models …`（`ens_top3`）或什麼都不給（`rank_model.json`），不用重新評分。
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：

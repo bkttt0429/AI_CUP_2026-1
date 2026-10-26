@@ -36,7 +36,7 @@ from aicup.scoring import fold_players, init_worker, load_games, part_paths, pla
 
 CKPT = ROOT / "models" / "katago" / "b18c384nbt-humanv0.ckpt"
 HEADS_SUMMARY = ("train_folds", "max_games", "best_epoch", "inner_nll_init", "inner_nll_best", "stopped_early", "n_params",
-                 "state_sha256", "code_sha256", "git_head", "git_dirty", "humanv0_sha256", "model_source")
+                 "state_sha256", "trunk_file", "trunk_sha256", "code_sha256", "git_head", "git_dirty", "humanv0_sha256", "model_source")
 
 
 def load_trunk(ckpt, model_config, device):

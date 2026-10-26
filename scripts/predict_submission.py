@@ -34,6 +34,16 @@ finite falls back to the base's probabilities and is listed in the report (set_m
 a question with no usable game still gets FALLBACK. Single-GPU and sharded runs give the same decisions,
 not bit-identical vectors (TF32 and batch composition move log p by up to ~4e-3 nats).
 
+With --l1b-heads (issue #9) the shard step also scores every position under each L1b heads file's 10 rank
+heads (aicup.l1b; a fine-tuned trunk named in the sidecar is restored into its own model instance), one
+trunk forward per model next to the 18 profile passes, and the shard file gains l1b_sums [n, K, 10] and
+l1b_move_logp [M, K, 10] plus the models' names and sha256s. --fused-model (rank_model_fused.json,
+scripts/fit_fused_model.py) then decides at the merge: the shards' L1b models must be exactly the
+document's (state and trunk sha256), the fused MLP runs once per model on that model's fused features
+(aicup.fused) and the probabilities are averaged before the expected-score decision; a question whose
+fused probabilities are not finite gets --model's and is listed (fused_fallback_questions). --fused-model
+and --set-models exclude each other; shards scored without --l1b-heads cannot feed a fused decision (exit 2).
+
 --expect-rows / --expect-public / --expect-private (defaults: the official 800 = 400 + 400; 0 disables
 one) are checked against the questions read, so a truncated input fails validation; a mock test passes
 its own counts. A malformed input (a question whose num_games disagrees with its filled sgf columns)
@@ -63,13 +73,14 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
+from aicup.fused import fused_predict, load_fused_model, pairing_order  # noqa: E402
 from aicup.gamevec import SEGMENTS, WHOLE, game_vector  # noqa: E402
 from aicup.humansl import PROFILES  # noqa: E402
 from aicup.ladder_data import pack_questions  # noqa: E402
 from aicup.metric import LEVELS, expected_score_decision  # noqa: E402
 from aicup.qfeatures import FEATURE_NAMES, question_features  # noqa: E402
 from aicup.rankmodel import _softmax, from_state  # noqa: E402
-from aicup.setmodel_io import file_sha256, load_set_model, summary as set_model_summary  # noqa: E402
+from aicup.setmodel_io import file_sha256, load_set_model, sidecar_path, summary as set_model_summary  # noqa: E402
 from aicup.settrain import BASE_CLIP, predict_set_model  # noqa: E402
 from aicup.submission import check_game, read_test, read_test_lenient, validate_submission, write_submission  # noqa: E402
 
@@ -129,38 +140,130 @@ def shard_path(out, shard, nshards):
     return out.with_name(f"{out.stem}_shard{shard}of{nshards}.npz")
 
 
-def score_tasks(tasks, workers, log=print):
-    """Score (k, sgf, colour) tasks on this GPU under the 18 profiles: ({k: (n_moves, sums[18])},
-    (move_logp [M, 18], move_task [M], move_t [M]) or None, positions, wall seconds)."""
+def l1b_models_meta(paths):
+    """The shard meta's record of the L1b heads files: name (stem), path, sha256s and training folds from their sidecars
+    (aicup.l1b.save_heads); ValueError when a sidecar is missing."""
+    out = []
+    for p in paths:
+        side = sidecar_path(p)
+        if not side.exists():
+            raise ValueError(f"{p}: sidecar {side.name} is missing")
+        meta = json.loads(side.read_text())
+        out.append({"name": Path(p).stem, "path": str(p), "state_sha256": meta.get("state_sha256"), "trunk_file": meta.get("trunk_file"),
+                    "trunk_sha256": meta.get("trunk_sha256"), "train_folds": meta.get("train_folds"), "levels": meta.get("levels")})
+    return out
+
+
+def score_tasks(tasks, workers, log=print, l1b_heads=()):
+    """Score (k, sgf, colour) tasks on this GPU under the 18 profiles and, per L1b heads file, under its 10 rank
+    heads: ({k: (n_moves, sums[18 + 10K])}, (move_logp [M, 18 + 10K], move_task [M], move_t [M]) or None, positions,
+    wall seconds). Each heads file gets its own model instance (load_heads restores a fine-tuned trunk in place);
+    the positions' features are computed once for every model."""
     import torch
-    from aicup.humansl import load_humansl, meta_rows
+    from aicup.humansl import load_humansl, meta_rows, score_positions as hsl_score
+    from aicup.l1b import load_heads, score_positions as l1b_score
     from aicup.scoring import init_worker, score_stream
     config = torch.load(CKPT, map_location="cpu", weights_only=True)["config"]
+    log(f"torch CPU threads: {torch.get_num_threads()} (scripts/nano4/shards.sh caps them per shard)")
     pool = mp.get_context("fork").Pool(workers, initializer=init_worker, initargs=(config,))
     try:
         model, _ = load_humansl(str(CKPT), "cuda")
-        return score_stream(pool, model, tasks, meta_rows([(p, p) for p in PROFILES]), log_every=500, log=log)
+        l1b = []
+        for p in l1b_heads:
+            model_k, _ = load_humansl(str(CKPT), "cuda")
+            heads_k, meta_k, warnings = load_heads(p, model_k, "cuda")
+            for w in warnings:
+                log(f"WARNING: {w}")
+            l1b.append((model_k, heads_k))
+        rows = meta_rows([(p, p) for p in PROFILES])
+
+        def scorer(bins, globs, legal, target, colors, rows_):
+            parts = [hsl_score(model, bins, globs, legal, target, colors, rows_)]
+            parts += [l1b_score(m, h, bins, globs, legal, target, colors) for m, h in l1b]
+            return np.concatenate(parts, axis=1)
+
+        return score_stream(pool, model, tasks, rows, log_every=500, log=log, scorer=scorer if l1b else None)
     finally:
         pool.close()
 
 
-def save_shard(path, shard, nshards, tasks, per_task, moves, n_pos, wall, inputs, sha, n_tasks_total):
+def save_shard(path, shard, nshards, tasks, per_task, moves, n_pos, wall, inputs, sha, n_tasks_total, l1b_models=()):
     """Write a shard file atomically: task (the global indices scored), n_moves, sums [n, 18] (float64),
-    move_logp [M, 18], move_task [M], move_t [M] and __meta__ (JSON). Returns the meta."""
+    move_logp [M, 18], move_task [M], move_t [M] and __meta__ (JSON). With l1b_models (K heads files, scored as
+    columns 18.. of the sums and per-move log p) also l1b_sums [n, K, 10] (float64) and l1b_move_logp [M, K, 10]
+    (float32), and the meta lists the models. Returns the meta."""
+    P, L, K = len(PROFILES), len(LEVELS), len(l1b_models)
     idx = np.array([k for k, _, _ in tasks], dtype=np.int64)
     n_moves = np.array([per_task[k][0] for k in idx], dtype=np.int64)
-    sums = np.stack([per_task[k][1] for k in idx]).astype(np.float64) if len(idx) else np.zeros((0, len(PROFILES)))
+    all_sums = np.stack([per_task[k][1] for k in idx]).astype(np.float64) if len(idx) else np.zeros((0, P + L * K))
+    if all_sums.shape[1] != P + L * K:
+        raise ValueError(f"scored {all_sums.shape[1]} columns per game, expected {P} profiles + {K} x {L} L1b heads")
     if moves is None:
-        moves = (np.zeros((0, len(PROFILES)), dtype=np.float32), np.zeros(0, dtype=np.int32), np.zeros(0, dtype=np.int32))
+        moves = (np.zeros((0, P + L * K), dtype=np.float32), np.zeros(0, dtype=np.int32), np.zeros(0, dtype=np.int32))
     meta = {"shard": shard, "nshards": nshards, "n_tasks_total": n_tasks_total, "n_tasks": int(len(idx)),
             "inputs": [str(p) for p in inputs], "questions_sha256": sha, "positions": int(n_pos), "scoring_wall_s": float(wall),
-            "profiles": list(PROFILES), "ckpt": CKPT.name, "written": datetime.now().isoformat(timespec="seconds")}
+            "profiles": list(PROFILES), "ckpt": CKPT.name, "l1b_models": [dict(m) for m in l1b_models], "levels": list(LEVELS),
+            "written": datetime.now().isoformat(timespec="seconds")}
+    arrays = {"task": idx, "n_moves": n_moves, "sums": all_sums[:, :P], "move_logp": moves[0][:, :P], "move_task": moves[1], "move_t": moves[2]}
+    if K:
+        arrays["l1b_sums"] = all_sums[:, P:].reshape(len(idx), K, L)
+        arrays["l1b_move_logp"] = moves[0][:, P:].reshape(len(moves[1]), K, L).astype(np.float32)
     path = Path(path)
     tmp = path.with_name(path.stem + ".tmp.npz")
-    np.savez_compressed(tmp, task=idx, n_moves=n_moves, sums=sums, move_logp=moves[0], move_task=moves[1], move_t=moves[2],
-                        __meta__=np.asarray(json.dumps(meta)))
+    np.savez_compressed(tmp, __meta__=np.asarray(json.dumps(meta)), **arrays)
     os.replace(tmp, path)
     return meta
+
+
+def load_shards_l1b(out, nshards, with_moves=False):
+    """([L1b model records], {k: l1b sums [K, 10]}, moves) from the shard files: the models (name, state and trunk
+    sha256) must be the same in every shard; shards without L1b scores give ([], {}, None). moves is None, or with
+    with_moves {k: (logp [n_moves, K, 10], t [n_moves])}."""
+    models, per_task, moves = None, {}, {} if with_moves else None
+    for i in range(nshards):
+        path = shard_path(out, i, nshards)
+        with np.load(path, allow_pickle=False) as z:
+            meta = json.loads(str(z["__meta__"]))
+            here = [(m.get("name"), m.get("state_sha256"), m.get("trunk_sha256")) for m in meta.get("l1b_models", [])]
+            if models is None:
+                models, key = meta.get("l1b_models", []), here
+            elif here != key:
+                raise ValueError(f"{path}: L1b models {here} differ from shard 0's {key}; every shard must be scored with the same heads")
+            if not here:
+                continue
+            for k, s in zip(z["task"].tolist(), z["l1b_sums"]):
+                per_task[k] = s.astype(np.float64)
+            if with_moves:
+                mt, logp, t = z["move_task"].astype(np.int64), z["l1b_move_logp"].astype(np.float64), z["move_t"].astype(np.int64)
+                order = np.argsort(mt, kind="stable")
+                mt, logp, t = mt[order], logp[order], t[order]
+                tasks_here, starts = np.unique(mt, return_index=True)
+                ends = np.append(starts[1:], len(mt))
+                for k, a, b in zip(tasks_here.tolist(), starts.tolist(), ends.tolist()):
+                    moves[k] = (logp[a:b], t[a:b])
+    return models or [], per_task, moves
+
+
+def fused_probs(questions, owner, per_task, l1b_per_task, mlp, order, rank_model):
+    """({question index: probabilities [10]} for every question with a usable game, info): the fused MLP on each
+    L1b model's fused features (shard columns `order`), averaged; a question whose averaged probabilities are not
+    finite gets rank_model's (q24) probabilities and is listed in info["fused_fallback_questions"]."""
+    by_q = {}
+    for k, qi in enumerate(owner):
+        by_q.setdefault(qi, []).append(k)
+    probs, fallback = {}, []
+    for qi, ks in by_q.items():
+        hsl = np.stack([per_task[k][1] for k in ks])
+        n = np.array([per_task[k][0] for k in ks])
+        missing = [k for k in ks if k not in l1b_per_task]
+        if missing:
+            raise ValueError(f"question {questions[qi]['question_id']}: {len(missing)} games have no L1b scores in the shards")
+        p = fused_predict(mlp, hsl, np.stack([l1b_per_task[k] for k in ks]), n, order)
+        if not np.isfinite(p).all():
+            p = rank_model.predict_proba(question_features(hsl, n)[None, :])[0]
+            fallback.append(questions[qi]["question_id"])
+        probs[qi] = p
+    return probs, {"fused_fallback_questions": fallback}
 
 
 def load_shards(out, nshards, n_tasks_total, sha, with_moves=False):
@@ -346,9 +449,17 @@ def main(argv=None):
                     help="set models (.pt with .json sidecars, scripts/train_set_model.py) whose averaged probabilities decide")
     ap.add_argument("--set-base", default=None, help="the paired base of the set models (rank_model.json format); required with them")
     ap.add_argument("--set-device", default="cpu", help="device the set models run on")
+    ap.add_argument("--l1b-heads", nargs="*", default=[], metavar="PT",
+                    help="L1b heads files (.pt + .json, with a fine-tuned trunk when the sidecar names one) scored alongside the "
+                         "18 profiles at the shard step; their sums go into the shard files for a fused decision")
+    ap.add_argument("--fused-model", default=None,
+                    help="rank_model_fused.json (scripts/fit_fused_model.py): decide with the fused MLP averaged over its L1b models, "
+                         "which must be exactly the models the shards were scored with")
     a = ap.parse_args(argv)
     if a.set_models and not a.set_base:
         ap.error("--set-models needs --set-base, the paired base they were trained on")
+    if a.fused_model and a.set_models:
+        ap.error("--fused-model and --set-models exclude each other (one decision model)")
     if a.nshards < 1:
         ap.error("--nshards must be >= 1")
     if a.shard is not None and (a.merge or not 0 <= a.shard < a.nshards):
@@ -375,24 +486,35 @@ def main(argv=None):
     if not a.merge:
         shard = 0 if a.shard is None else a.shard
         mine = tasks[shard::a.nshards]
-        print(f"scoring shard {shard} of {a.nshards}: {len(mine)} games", flush=True)
-        per_task, moves, n_pos, wall = score_tasks(mine, a.workers)
+        try:
+            l1b_models = l1b_models_meta(a.l1b_heads)
+        except ValueError as e:
+            print(e, file=sys.stderr)
+            return EXIT_INPUTS
+        print(f"scoring shard {shard} of {a.nshards}: {len(mine)} games" + (f", L1b heads {[m['name'] for m in l1b_models]}" if l1b_models else ""), flush=True)
+        per_task, moves, n_pos, wall = score_tasks(mine, a.workers, l1b_heads=a.l1b_heads)
         path = shard_path(out, shard, a.nshards)
         out.parent.mkdir(parents=True, exist_ok=True)
-        save_shard(path, shard, a.nshards, mine, per_task, moves, n_pos, wall, a.inputs, sha, len(tasks))
+        save_shard(path, shard, a.nshards, mine, per_task, moves, n_pos, wall, a.inputs, sha, len(tasks), l1b_models)
         print(f"wrote {path}: {len(mine)} games, {n_pos} positions, {wall:.0f} s", flush=True)
         if a.shard is not None:
             return EXIT_OK  # one shard of a multi-GPU run; the merge is a separate invocation
 
     set_probs, set_info, set_models, set_warnings = None, {"set_model_fallback_questions": [], "rungs": {}}, [], []
+    fused_doc, fused_info, l1b_models = None, {"fused_fallback_questions": []}, []
     try:
         per_task, shard_metas, moves = load_shards(out, a.nshards, len(tasks), sha, with_moves=bool(a.set_models))
         saved, rank_model = load_rank_model(a.model)
+        l1b_models, l1b_per_task, _ = load_shards_l1b(out, a.nshards)
         if a.set_models:
             set_models, set_warnings = load_set_models(a.set_models, a.set_device)
             base_doc, set_base = load_rank_model(a.set_base)
             set_warnings += check_pairing(set_models, base_doc, a.set_base)
             set_probs, set_info = set_model_probs(questions, owner, per_task, moves, set_base, set_models)
+        if a.fused_model:
+            fused_doc, fused_mlp = load_fused_model(a.fused_model)
+            order = pairing_order(fused_doc, l1b_models)
+            set_probs, fused_info = fused_probs(questions, owner, per_task, l1b_per_task, fused_mlp, order, rank_model)
     except (FileNotFoundError, ValueError) as e:
         print(e, file=sys.stderr)
         return EXIT_INPUTS
@@ -416,13 +538,21 @@ def main(argv=None):
               "expectations": {"rows": a.expect_rows, "pub_": a.expect_public, "priv_": a.expect_private},
               "fallback_questions": fallback, "allow_fallback": a.allow_fallback,
               "lenient_inputs": a.lenient_inputs, "input_warnings": input_warnings, "allow_input_warnings": a.allow_input_warnings,
-              "decision_model": "set_models" if a.set_models else "rank_model",
+              "decision_model": "fused" if a.fused_model else "set_models" if a.set_models else "rank_model",
               "set_models": [{"path": path, **set_model_summary(meta)} for _, meta, path in set_models], "set_base": a.set_base,
               "set_rungs": set_info["rungs"], "set_model_warnings": set_warnings,
               "set_model_fallback_questions": set_info["set_model_fallback_questions"],
+              "l1b_models": l1b_models,
+              "fused_model": ({"path": a.fused_model, **{k: fused_doc.get(k) for k in ("name", "file_sha256", "train_folds", "per_player",
+                                                                                         "questions_sha256", "l1b_models", "git_head")},
+                               "n_models": len(fused_doc["l1b_models"])} if fused_doc else None),
+              "fused_fallback_questions": fused_info["fused_fallback_questions"],
               "predicted_counts": dict(Counter(r for _, r in rows)), "problems": problems, "exit_code": code}
     report_path.write_text(json.dumps(report, indent=1, ensure_ascii=False))
     print(f"wrote {out} ({len(rows)} rows) and {report_path}; problems: {problems or 'none'}", flush=True)
+    if fused_info["fused_fallback_questions"]:
+        print(f"WARNING: {len(fused_info['fused_fallback_questions'])} questions got {Path(a.model).name}'s probabilities because the "
+              f"fused model's were not finite: {fused_info['fused_fallback_questions'][:5]}", file=sys.stderr, flush=True)
     if fallback:
         print(f"WARNING: {len(fallback)} questions had no usable game and were set to {FALLBACK}: {fallback[:5]}"
               + ("" if a.allow_fallback else f" (exit {EXIT_FALLBACK}; pass --allow-fallback to accept)"), file=sys.stderr, flush=True)

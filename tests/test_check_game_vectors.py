@@ -2,6 +2,7 @@
 import json
 
 import hashlib
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -13,10 +14,10 @@ from aicup.metric import LEVELS
 from tests.test_predict_submission import MODEL, _args, _fake_score, _small_inputs, _tiny_set_models
 
 
-def _distinct_score(tasks, workers, log=print):
+def _distinct_score(tasks, workers, log=print, l1b_heads=()):
     """_fake_score plus a per-game constant from the SGF hash: its 126 curves collide on games of equal
     length (two of the 30 small-input games), which real log p never does; vectors must stay consistent."""
-    per_task, (logp, mt, tt), positions, secs = _fake_score(tasks, workers, log)
+    per_task, (logp, mt, tt), positions, secs = _fake_score(tasks, workers, log, l1b_heads)
     logp = logp.astype(np.float64)
     for k, sgf, _ in tasks:
         rows = mt == k
@@ -158,3 +159,71 @@ def test_vectors_match_the_ladder_builder():
     np.testing.assert_array_equal(vec["whole"][0], game_vector(logp, t, WHOLE))
     assert vec["n_moves"].tolist() == [57] and vec["game_key"].tolist() == ["0"]
     np.testing.assert_array_equal(vec["sums"][0], logp.sum(axis=0))
+
+
+def test_l1b_sums_compared_per_game(tmp_path, distinct_scorer, capsys):
+    """--l1b-scores: the shards' per-game L1b sums against l1b_score.py's tables of the same fold-0 games, model by model."""
+    from aicup.metric import LEVELS
+    from aicup.scoring import part_paths
+    from tests.test_predict_submission import _tiny_l1b_heads
+
+    paths, sides = _tiny_l1b_heads(tmp_path)
+    inputs = _small_inputs(tmp_path)
+    out = tmp_path / "run" / "submission_rank.csv"
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--l1b-heads", *map(str, paths))) == ps.EXIT_OK
+    questions, _ = ps.load_questions(inputs)
+    tasks, _, _, _ = ps.build_tasks(questions)
+    per_task, _, moves = ps.load_shards(out, 1, len(tasks), ps.questions_sha(inputs, questions), with_moves=True)
+    _, l1b_per_task, _ = ps.load_shards_l1b(out, 1)
+    rng = np.random.RandomState(7)
+    vec = ps.game_vectors(per_task, moves)
+    ref = _ref_from(vec, rng)
+    vectors = tmp_path / "fold0.npz"
+    np.savez_compressed(vectors, **ref)
+    # one scores directory per model, in l1b_score.py's layout, keyed to the model by the sidecar sha256 in meta_s0.json
+    key_of_task = {i: ref["game_key"][i] for i in range(len(vec["n_moves"]))}  # _ref_from permutes rows; match recovers the mapping
+    match, _, _ = cgv.match_tasks(vec, ref, 0.5)
+    dirs = []
+    for j, (name, side) in enumerate(zip(("heads3_A", "heads3_B"), sides)):
+        d = tmp_path / f"scores_{name}" / "fold0"
+        d.mkdir(parents=True)
+        rows = [{"game_key": ref["game_key"][match[k]], "player_id": "p", "rank": "D", "color": "B", "n_moves": int(per_task[k][0]),
+                 **{f"sum_{lv}": float(l1b_per_task[k][j, i]) for i, lv in enumerate(LEVELS)}} for k in range(len(tasks))]
+        csv_path, npz_path = part_paths(d, 0, 0)
+        pd.DataFrame(rows).to_csv(csv_path, index=False)
+        np.savez_compressed(npz_path, logp=np.zeros((0, 10), np.float32), game_row=np.zeros(0, np.int32), t=np.zeros(0, np.int16))
+        (d / "meta_s0.json").write_text(json.dumps({"fold": 0, "heads": {"state_sha256": side["state_sha256"], "trunk_sha256": side.get("trunk_sha256")}}))
+        dirs.append(str(d))
+    del key_of_task
+    report = tmp_path / "check.json"
+    args = ["--inputs", *inputs, "--out", str(out), "--nshards", "1", "--vectors", str(vectors), "--l1b-scores", *dirs[::-1], "--report", str(report)]
+    assert cgv.main(args) == 0  # directories in any order: matched by sha256
+    res = json.loads(report.read_text())
+    # the tables went through CSV (pandas' float parser is within an ulp): equal up to 1e-9, every game matched
+    assert set(res["l1b"]) == {"heads3_A", "heads3_B"} and all(v["max_abs_diff"] <= 1e-9 and v["matched"] == len(tasks) and v["pass"] for v in res["l1b"].values())
+    assert all(v["max_per_move_diff"] <= 1e-9 and v["max_abs_bias"] <= 1e-9 and len(v["bias_per_move"]) == 10 for v in res["l1b"].values())
+    assert "l1b.heads3_A" in capsys.readouterr().out
+    # a directory scored before l1b_score.py recorded the trunk (no trunk_sha256 key) is matched by state_sha256 alone, with a warning
+    (Path(dirs[0]) / "meta_s0.json").write_text(json.dumps({"fold": 0, "heads": {"state_sha256": sides[0]["state_sha256"]}}))
+    assert cgv.main(args) == 0
+    captured = capsys.readouterr()
+    res = json.loads(report.read_text())
+    assert "WARNING" in captured.err and "trunk_sha256" in captured.err and "heads3_A" in captured.err
+    assert res["pass"] and res["l1b"]["heads3_A"]["trunk_checked"] is False and res["l1b"]["heads3_B"]["trunk_checked"] is True
+    # one game off by 0.05 nats per move fails the per-move tolerance (0.02) and names the model
+    table = pd.read_csv(Path(dirs[1]) / "games_s0_p000.csv")
+    table.loc[0, "sum_1D"] += 0.05 * table.loc[0, "n_moves"]
+    table.to_csv(Path(dirs[1]) / "games_s0_p000.csv", index=False)
+    assert cgv.main(args) == 1 and "l1b.heads3_B" in capsys.readouterr().out.split("FAIL:")[-1]
+    res = json.loads(report.read_text())["l1b"]["heads3_B"]
+    assert abs(res["max_per_move_diff"] - 0.05) < 1e-9 and res["level"] == "1D" and not res["pass"]
+    # a systematic 0.005 nats per move on one head passes the per-move tolerance but fails the bias check (1e-3)
+    table.loc[0, "sum_1D"] -= 0.05 * table.loc[0, "n_moves"]
+    table["sum_D"] += 0.005 * table["n_moves"]
+    table.to_csv(Path(dirs[1]) / "games_s0_p000.csv", index=False)
+    assert cgv.main(args) == 1 and "l1b.heads3_B" in capsys.readouterr().out.split("FAIL:")[-1]
+    res = json.loads(report.read_text())["l1b"]["heads3_B"]
+    assert res["max_per_move_diff"] <= 0.02 and abs(res["max_abs_bias"] - 0.005) < 1e-9 and abs(res["bias_per_move"][0] + 0.005) < 1e-9 and not res["pass"]
+    # an unknown directory (no sha256 in the shards) fails too
+    (Path(dirs[1]) / "meta_s0.json").write_text(json.dumps({"fold": 0, "heads": {"state_sha256": "0" * 64}}))
+    assert cgv.main(args) == 1 and "no shard model" in capsys.readouterr().out
