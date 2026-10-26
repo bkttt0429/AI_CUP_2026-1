@@ -1,0 +1,55 @@
+{
+ "fold": 3,
+ "shard": 2,
+ "nshards": 8,
+ "part_size": 100,
+ "games": 3689,
+ "positions": 413484,
+ "scoring_wall_s": 471.25718450546265,
+ "levels": [
+  "D",
+  "C",
+  "B",
+  "A",
+  "1D",
+  "2D",
+  "3D",
+  "4D",
+  "5D",
+  "6D"
+ ],
+ "heads": {
+  "path": "results/l1b/heads3_A.pt",
+  "train_folds": [
+   1,
+   2
+  ],
+  "max_games": 40,
+  "best_epoch": 1.0,
+  "inner_nll_init": 1.4338647792920278,
+  "inner_nll_best": 1.5155574959658888,
+  "stopped_early": true,
+  "n_params": 450240,
+  "state_sha256": "6bb4ebf40747ebdcaeb7e9e2def6b5cbd5e22fd7b13399dde8e55de791bbe2c3",
+  "code_sha256": "2991f69d8953ae6e21b4c87cc870df5b60be18a4242b2eaadaa9009dd6218536",
+  "git_head": "354f470",
+  "git_dirty": false,
+  "humanv0_sha256": "00e608f3e6458ba8cb0e3ad8b775a447e051ad935303e73e153a12dd16e48d09",
+  "model_source": "/home/u2507115/BK_AICUP_2026-1/models/katago/b18c384nbt-humanv0.ckpt"
+ },
+ "finished": "2026-10-26T20:24:26",
+ "git_head": "d7126e6",
+ "git_dirty": false,
+ "code_sha256": "2991f69d8953ae6e21b4c87cc870df5b60be18a4242b2eaadaa9009dd6218536",
+ "code_files": [
+  "src/aicup/gamevec.py",
+  "src/aicup/ladder_data.py",
+  "src/aicup/aggregators.py",
+  "src/aicup/settrain.py",
+  "src/aicup/rankmodel.py",
+  "src/aicup/qfeatures.py",
+  "src/aicup/metric.py"
+ ],
+ "torch_version": "2.14.1+cu126",
+ "device_name": "cpu"
+}

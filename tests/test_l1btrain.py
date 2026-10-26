@@ -1,6 +1,7 @@
 """aicup.l1btrain: class-balanced position weights, the per-player inner split, inner NLL, head training with
 early stopping and resume, and the step-0 equality check -- on a random b2c16 model and a tiny real cache."""
 import json
+import math
 from dataclasses import replace
 
 import numpy as np
@@ -160,3 +161,122 @@ def test_cache_without_meta_is_refused(tmp_path, tiny_model, tiny_cache):
     cfg = l1btrain.HeadsCfg(epochs=1, batch=8, device="cpu")
     with pytest.raises(ValueError, match="meta.json"):
         l1btrain.train_heads(tiny_model, tiny_cache, cfg, tmp_path / "x.pt", log=lambda *a, **k: None)
+
+
+# ---------------------------------------------------------------- stage 2: the trunk fine-tuned, several processes
+
+def _stage2_cfg(**kw):
+    base = dict(epochs=1, batch=8, lr=1e-3, eval_every=0.5, patience=10, inner_frac=0.34, seed=0, device="cpu", trunk_lr=1e-3)
+    return l1btrain.HeadsCfg(**{**base, **kw})
+
+
+def test_trunk_parameters_exclude_the_output_heads(tiny_model):
+    names = l1btrain.trunk_parameters(tiny_model, "cpu")
+    assert names and not any("policy_head" in n or "value_head" in n for n in names)
+    grad = {n for n, p in tiny_model.named_parameters() if p.requires_grad}
+    assert grad == set(names)
+
+
+def test_stage2_fine_tunes_the_trunk_and_saves_it(tmp_path, tiny_model, tiny_cache):
+    before = {k: v.clone() for k, v in tiny_model.state_dict().items()}
+    out = tmp_path / "heads2_A.pt"
+    heads, meta = l1btrain.train_heads(tiny_model, tiny_cache, _stage2_cfg(inner_frac=0.0), out, log=lambda *a, **k: None)
+    side = json.loads(out.with_suffix(".json").read_text())
+    assert meta["trunk_trained"] and meta["n_trunk_params"] > 0 and meta["world_size"] == 1 and meta["global_batch"] == 8
+    assert side["trunk_file"] == "heads2_A.trunk.pt" and (tmp_path / "heads2_A.trunk.pt").exists()
+    after = tiny_model.state_dict()
+    trunk = set(l1btrain.trunk_parameters(tiny_model, "cpu"))
+    assert any(not torch.equal(before[k], after[k]) for k in trunk)  # the trunk moved
+    assert all(torch.equal(before[k], after[k]) for k in after if "policy_head" in k or "value_head" in k)  # the output heads did not
+    # a fresh model gets the fine-tuned trunk back from load_heads, and scores the same
+    torch.manual_seed(0)
+    fresh = Model(modelconfigs.config_of_name["b2c16"], 19)
+    fresh.initialize()
+    fresh.eval()
+    loaded, _, _ = l1b.load_heads(out, fresh)
+    assert all(torch.equal(fresh.state_dict()[k], after[k]) for k in after)
+    _, arrays = fc.read_cache(tiny_cache)
+    sel = np.arange(min(16, len(arrays["target"])))
+    args = (fc.unpack_bins(arrays["bins_packed"][sel]).astype(np.float32), arrays["globs"][sel], fc.unpack_legal(arrays["legal_packed"][sel]),
+            arrays["target"][sel], arrays["color"][sel])
+    assert np.array_equal(l1b.score_positions(fresh, loaded, *args), l1b.score_positions(tiny_model, heads, *args))
+    # a damaged trunk file is refused
+    tp = tmp_path / "heads2_A.trunk.pt"
+    tp.write_bytes(tp.read_bytes()[:-1] + bytes([tp.read_bytes()[-1] ^ 1]))
+    with pytest.raises(ValueError, match="sha256"):
+        l1b.load_heads(out, fresh)
+
+
+def test_stage1_writes_no_trunk_file(tmp_path, tiny_model, tiny_cache):
+    out = tmp_path / "heads_A.pt"
+    l1btrain.train_heads(tiny_model, tiny_cache, _stage2_cfg(trunk_lr=0.0, inner_frac=0.0), out, log=lambda *a, **k: None)
+    assert not (tmp_path / "heads_A.trunk.pt").exists() and "trunk_file" not in json.loads(out.with_suffix(".json").read_text())
+
+
+def test_init_heads_is_the_starting_point(tmp_path, tiny_model, tiny_cache):
+    start = l1b.RankHeads(tiny_model.policy_head)
+    with torch.no_grad():
+        start.heads[4].conv1p.weight.mul_(0.5)
+    heads, meta = l1btrain.train_heads(tiny_model, tiny_cache, _stage2_cfg(epochs=0, trunk_lr=0.0), tmp_path / "h.pt",
+                                       log=lambda *a, **k: None, init_heads=start.state_dict())
+    assert meta["best_epoch"] == 0.0 and all(torch.equal(a, b) for a, b in zip(heads.state_dict().values(), start.state_dict().values()))
+
+
+def _two_process_worker(rank, world, init_file, cache_dir, out_dir):
+    import torch.distributed as dist
+    dist.init_process_group("gloo", init_method=f"file://{init_file}", rank=rank, world_size=world)
+    try:
+        torch.manual_seed(0)
+        model = Model(modelconfigs.config_of_name["b2c16"], 19)
+        model.initialize()
+        model.eval()
+        heads, meta = l1btrain.train_heads(model, cache_dir, _stage2_cfg(batch=4), f"{out_dir}/dist.pt", log=lambda *a, **k: None)
+        torch.save({"heads": heads.state_dict(), "model": model.state_dict(), "history": meta["history"]}, f"{out_dir}/rank{rank}.pt")
+    finally:
+        dist.destroy_process_group()
+
+
+def test_two_processes_equal_one_process_on_the_same_global_batch(tmp_path, tiny_model, tiny_cache):
+    """batch 4 x 2 processes (gloo) = batch 8 in one process: same steps, inner NLL and weights up to float error."""
+    import torch.multiprocessing as tmp_mp
+    one_heads, one_meta = l1btrain.train_heads(tiny_model, tiny_cache, _stage2_cfg(), tmp_path / "one.pt", log=lambda *a, **k: None)
+    tmp_mp.spawn(_two_process_worker, args=(2, str(tmp_path / "pg_init"), str(tiny_cache), str(tmp_path)), nprocs=2, join=True)
+    r0, r1 = (torch.load(tmp_path / f"rank{r}.pt", weights_only=False) for r in (0, 1))
+    for k in r0["heads"]:  # every rank holds the same weights
+        assert torch.equal(r0["heads"][k], r1["heads"][k])
+    side = json.loads((tmp_path / "dist.json").read_text())
+    assert side["world_size"] == 2 and side["global_batch"] == 8 and side["steps_per_epoch"] == one_meta["steps_per_epoch"]
+    assert np.allclose([v for _, v in r0["history"]], [v for _, v in one_meta["history"]], atol=1e-5)
+    for k, v in one_heads.state_dict().items():
+        assert torch.allclose(r0["heads"][k], v, atol=1e-5), k
+    for k, v in tiny_model.state_dict().items():
+        assert torch.allclose(r0["model"][k], v, atol=1e-5), k
+
+
+# ---------------------------------------------------------------- the discriminative objective
+
+def test_position_losses():
+    lp = torch.log(torch.tensor([[0.5, 0.25, 0.25], [0.1, 0.1, 0.8]]))
+    rank = torch.tensor([0, 2])
+    gen, disc, total = l1btrain.position_losses(lp, rank, 0.0)
+    assert torch.allclose(gen, -torch.log(torch.tensor([0.5, 0.8]))) and torch.equal(total, gen)
+    # the rank CE: softmax over the heads' log p of the played move (here already normalised over the 3 heads)
+    assert torch.allclose(disc, -torch.log(torch.tensor([0.5, 0.8])), atol=1e-6)
+    _, _, total2 = l1btrain.position_losses(lp, rank, 2.0)
+    assert torch.allclose(total2, gen + 2.0 * disc)
+
+
+def test_disc_weight_zero_is_the_generative_run(tmp_path, tiny_model, tiny_cache):
+    """disc_weight 0 trains and selects exactly as before (NLL only); > 0 records the rank CE and selects on the sum."""
+    _, m0 = l1btrain.train_heads(tiny_model, tiny_cache, _stage2_cfg(trunk_lr=0.0), tmp_path / "g.pt", log=lambda *a, **k: None)
+    assert m0["selection"] == "inner NLL" and m0["inner_objective_best"] == m0["inner_nll_best"]
+    assert [v for _, v in m0["history"]] == [n for _, n, _ in m0["history_detail"]]
+    torch.manual_seed(0)
+    fresh = Model(modelconfigs.config_of_name["b2c16"], 19)
+    fresh.initialize()
+    fresh.eval()
+    _, m1 = l1btrain.train_heads(fresh, tiny_cache, _stage2_cfg(trunk_lr=0.0, disc_weight=1.0), tmp_path / "d.pt", log=lambda *a, **k: None)
+    assert m1["selection"].startswith("inner NLL + 1")
+    assert abs(m1["inner_objective_best"] - (m1["inner_nll_best"] + m1["inner_disc_best"])) < 1e-9
+    assert m1["inner_objective_best"] <= m1["inner_objective_init"]
+    assert m1["inner_disc_init"] == pytest.approx(math.log(10), abs=1e-6)  # identical heads at step 0: uniform over the ranks

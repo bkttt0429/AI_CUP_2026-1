@@ -62,6 +62,17 @@ class RankHeads(torch.nn.Module):
         return torch.stack(outs, dim=1)
 
 
+class _GraphExtraOutputs(ExtraOutputs):
+    """ExtraOutputs that keeps the autograd graph: KataGo's report() returns value.detach(), which would cut the
+    stage-2 gradient off the trunk. The values are the same tensors (detach shares storage), so no-grad callers
+    are unaffected."""
+
+    def report(self, name, value):
+        self.available.append(name)
+        if name in self.requested:
+            self.returned[name] = value
+
+
 def trunk_features(model, bins, globs, colors, rows=None):
     """(trunkfinal [B, C, 19, 19] float32, mask [B, 1, 19, 19], mask_sum_hw [B, 1, 1, 1], mask_sum) of a batch.
 
@@ -75,7 +86,7 @@ def trunk_features(model, bins, globs, colors, rows=None):
     if model.get_has_metadata_encoder():
         rows_t = torch.as_tensor(neutral_rows() if rows is None else rows, dtype=torch.float32, device=device)
         input_meta = rows_t[torch.as_tensor(colors, device=device).long()]
-    extra = ExtraOutputs(["trunkfinal"])
+    extra = _GraphExtraOutputs(["trunkfinal"])
     model(bins, globs, input_meta=input_meta, extra_outputs=extra)
     mask = bins[:, 0:1, :, :].contiguous()
     mask_sum_hw = torch.sum(mask, dim=(2, 3), keepdim=True)
@@ -125,15 +136,29 @@ def atomic_save(obj, path):
     os.replace(tmp, path)
 
 
-def save_heads(heads, path, meta):
-    """state_dict -> path (.pt) and the sidecar path.with_suffix('.json'); returns the sidecar dict."""
+def trunk_path(path):
+    """<stem>.trunk.pt next to a heads .pt: the fine-tuned model's state_dict of a stage-2 run."""
+    path = Path(path)
+    return path.with_name(path.stem + ".trunk.pt")
+
+
+def save_heads(heads, path, meta, model_state=None):
+    """state_dict -> path (.pt) and the sidecar path.with_suffix('.json'); returns the sidecar dict.
+
+    model_state (stage 2, the trunk fine-tuned): the whole model's state_dict is written to trunk_path(path)
+    and the sidecar records its file name and sha256, so load_heads restores the trunk with the heads."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_save(heads.state_dict(), path)
+    trunk = {}
+    if model_state is not None:
+        tp = trunk_path(path)
+        atomic_save(model_state, tp)
+        trunk = {"trunk_file": tp.name, "trunk_sha256": file_sha256(tp)}
     device = next(heads.parameters()).device
     side = {"format": FORMAT, "n_ranks": heads.n_ranks, "levels": list(LEVELS[:heads.n_ranks]),
             "n_params": int(sum(p.numel() for p in heads.parameters())), "state_sha256": file_sha256(path),
-            **environment(str(device)), **meta}
+            **trunk, **environment(str(device)), **meta}
     sidecar_path(path).write_text(to_json(side, indent=1) + "\n")
     return json.loads(sidecar_path(path).read_text())
 
@@ -143,6 +168,8 @@ def load_heads(path, model, device="cpu"):
 
     ValueError when the sidecar is missing, its format or n_ranks does not fit, or the .pt sha256 differs.
     A code_sha256 other than the current code's is a warning (the heads were trained by other code).
+    A stage-2 sidecar names a fine-tuned trunk (trunk_file): it is loaded into `model` in place, after the same
+    sha256 check (ValueError when the file is missing, differs or does not fit the model).
     """
     path = Path(path)
     side_path = sidecar_path(path)
@@ -157,6 +184,17 @@ def load_heads(path, model, device="cpu"):
     n_ranks = meta.get("n_ranks")
     if not isinstance(n_ranks, int) or n_ranks < 1 or meta.get("levels") != list(LEVELS[:n_ranks]):
         raise ValueError(f"{path}: n_ranks {n_ranks!r} / levels {meta.get('levels')!r} do not fit this code's LEVELS")
+    if meta.get("trunk_file"):
+        tp = path.with_name(meta["trunk_file"])
+        if not tp.exists():
+            raise ValueError(f"{path}: the fine-tuned trunk {tp.name} is missing")
+        tsha = file_sha256(tp)
+        if meta.get("trunk_sha256") != tsha:
+            raise ValueError(f"{tp}: sha256 {tsha[:12]} differs from the sidecar's {str(meta.get('trunk_sha256'))[:12]}")
+        try:
+            model.load_state_dict(torch.load(tp, map_location="cpu", weights_only=True))
+        except RuntimeError as e:
+            raise ValueError(f"{tp}: state_dict does not fit the model ({e})") from e
     heads = RankHeads(model.policy_head, n_ranks)
     state = torch.load(path, map_location=device, weights_only=True)
     try:
