@@ -9,6 +9,16 @@ inner NLL is evaluated at step 0 and every `eval_every` epoch, the best weights 
 kept, and training stops after `patience` evaluations without improvement. A checkpoint
 (<out>.ckpt) after every evaluation makes an interrupted run resume where it stopped; a finished run
 keeps its checkpoint so a longer run can continue it (same cfg otherwise).
+
+Stage 2 (2026-10-26, issue #6): cfg.trunk_lr > 0 also fine-tunes the trunk -- every model parameter that
+reaches `trunkfinal` (found by a probe backward, trunk_parameters), in its own Adam group at trunk_lr; the
+model stays in eval mode (humanv0 has no batch statistics: fixscaleonenorm, trunk_normless) and its fine-tuned
+state_dict is saved next to the heads (l1b.save_heads, model_state). `init_heads` starts the heads from a saved
+state (the stage-1 heads) instead of the policy-head copies. Under torch.distributed (torchrun) every rank
+takes rank::world of each global batch of cfg.batch x world positions; the loss is normalised by the global
+weight sum and the gradients are summed across ranks, so a step equals one single-process step on the whole
+global batch; the inner NLL is evaluated on rank::world of the inner positions and summed; rank 0 alone
+writes checkpoints and outputs.
 """
 import json
 import math
@@ -42,6 +52,46 @@ class HeadsCfg:
     inner_max_positions: int = 400_000
     seed: int = 0
     device: str = "cuda"
+    trunk_lr: float = 0.0  # 0: the trunk is frozen (stage 1); > 0: fine-tuned at this lr (stage 2)
+
+
+def _dist():
+    """(rank, world size) under an initialised torch.distributed process group, else (0, 1)."""
+    import torch.distributed as dist
+    if dist.is_available() and dist.is_initialized():
+        return dist.get_rank(), dist.get_world_size()
+    return 0, 1
+
+
+def _all_reduce_(t):
+    """Sum a tensor across ranks in place (no-op in a single process)."""
+    if _dist()[1] > 1:
+        import torch.distributed as dist
+        dist.all_reduce(t)
+    return t
+
+
+def _barrier():
+    if _dist()[1] > 1:
+        import torch.distributed as dist
+        dist.barrier()
+
+
+def trunk_parameters(model, device):
+    """The names of the model parameters that reach `trunkfinal` (a probe forward/backward on one empty board under
+    the neutral metadata); those get requires_grad True, every other parameter (policy / value heads) False."""
+    model.requires_grad_(True)
+    model.zero_grad(set_to_none=True)
+    bins = torch.zeros(1, 22, 19, 19, device=device)
+    bins[:, 0] = 1.0
+    trunk, _, _, _ = trunk_features(model, bins, torch.zeros(1, 19, device=device), torch.zeros(1, dtype=torch.long, device=device),
+                                    neutral_rows())
+    trunk.sum().backward()
+    names = {n for n, p in model.named_parameters() if p.grad is not None}
+    model.zero_grad(set_to_none=True)
+    for n, p in model.named_parameters():
+        p.requires_grad_(n in names)
+    return sorted(names)
 
 
 def inner_split(games, frac, seed=INNER_SEED):
@@ -91,9 +141,9 @@ def _to_tensors(arrays, sel, device):
     return bins, globs, legal, target, rank, color
 
 
-def _true_head_logp(model, heads, bins, globs, legal, target, rank, color, rows, autocast):
-    """log p of each position's move under the head of its own rank: [B]."""
-    with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16, enabled=autocast):
+def _true_head_logp(model, heads, bins, globs, legal, target, rank, color, rows, autocast, grad_trunk=False):
+    """log p of each position's move under the head of its own rank: [B]. grad_trunk: keep the trunk's graph (stage 2)."""
+    with torch.set_grad_enabled(grad_trunk and torch.is_grad_enabled()), torch.autocast("cuda", dtype=torch.bfloat16, enabled=autocast):
         trunk, mask, mask_sum_hw, mask_sum = trunk_features(model, bins, globs, color, rows)
     logits = heads(trunk.float(), mask.float(), mask_sum_hw.float(), mask_sum.float())
     logp = masked_logp(logits, legal)
@@ -108,12 +158,17 @@ def evaluate_nll(model, heads, arrays, idx, cfg):
     sums, counts = np.zeros(N_RANKS), np.zeros(N_RANKS, dtype=np.int64)
     was_training = heads.training
     heads.eval()
+    me, world = _dist()
     with torch.no_grad():
-        for bins, globs, legal, target, rank, color in batches(arrays, idx, cfg.batch, None, device):
+        for bins, globs, legal, target, rank, color in batches(arrays, np.asarray(idx)[me::world], cfg.batch, None, device):
             nll = -_true_head_logp(model, heads, bins, globs, legal, target, rank, color, rows, autocast).double().cpu().numpy()
             r = rank.cpu().numpy()
             np.add.at(sums, r, nll)
             np.add.at(counts, r, 1)
+    if world > 1:
+        t = _all_reduce_(torch.as_tensor(np.concatenate([sums, counts.astype(np.float64)]), dtype=torch.float64, device=device))
+        t = t.cpu().numpy()
+        sums, counts = t[:N_RANKS], np.rint(t[N_RANKS:]).astype(np.int64)
     heads.train(was_training)
     present = [int(k) for k in np.flatnonzero(counts > 0)]
     by_rank = [float(sums[k] / counts[k]) if counts[k] else None for k in range(N_RANKS)]
@@ -146,9 +201,14 @@ def _cfg_key(cfg):
     return {k: v for k, v in asdict(cfg).items() if k not in ("epochs", "patience", "device")}
 
 
-def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_meta=None):
-    """Train RankHeads on the cache; returns (heads with the best inner NLL, sidecar meta). See the module docstring."""
+def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_meta=None, init_heads=None):
+    """Train RankHeads (and, with cfg.trunk_lr > 0, the trunk) on the cache; returns (heads with the best inner NLL,
+    sidecar meta). init_heads: a RankHeads state_dict to start from (default: copies of model.policy_head). See the
+    module docstring; under torch.distributed only rank 0 logs and writes, and every rank returns the same heads."""
     t_start = time.time()
+    me, world = _dist()
+    if me != 0:
+        log = lambda *a, **k: None  # noqa: E731
     games, arrays = read_cache(cache_dir)
     cache_meta = _cache_meta(cache_dir)
     train_rows, inner_rows = inner_split(games, cfg.inner_frac)
@@ -161,14 +221,27 @@ def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_met
     device = cfg.device
     torch.manual_seed(cfg.seed)
     model.eval()
-    model.requires_grad_(False)
+    train_trunk = cfg.trunk_lr > 0
+    if train_trunk:
+        trunk_names = trunk_parameters(model, device)
+    else:
+        model.requires_grad_(False)
+        trunk_names = []
+    trunk_params = [p for n, p in model.named_parameters() if n in set(trunk_names)]
     heads = RankHeads(model.policy_head, N_RANKS).to(device)
+    if init_heads is not None:
+        heads.load_state_dict(init_heads)
     heads.train()
-    opt = torch.optim.Adam(heads.parameters(), lr=cfg.lr)
+    groups = [{"params": list(heads.parameters()), "lr": cfg.lr}]
+    if train_trunk:
+        groups.append({"params": trunk_params, "lr": cfg.trunk_lr})
+    opt = torch.optim.Adam(groups)
+    params = [p for g in groups for p in g["params"]]
     weights = torch.as_tensor(position_weights(arrays["rank_idx"][train_idx]), dtype=torch.float32)
     weight_of = np.zeros(len(arrays["target"]), dtype=np.float32)
     weight_of[train_idx] = weights.numpy()
-    steps_per_epoch = math.ceil(len(train_idx) / cfg.batch)
+    global_batch = cfg.batch * world
+    steps_per_epoch = math.ceil(len(train_idx) / global_batch)
     total_steps = cfg.epochs * steps_per_epoch
     eval_steps = max(1, int(round(cfg.eval_every * steps_per_epoch)))
     autocast = str(device).startswith("cuda")
@@ -176,23 +249,36 @@ def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_met
     out_pt = Path(out_pt)
     ckpt_path = out_pt.with_name(out_pt.name + ".ckpt")
 
+    def snapshot():
+        snap = {"heads": {k: v.detach().cpu().clone() for k, v in heads.state_dict().items()}}
+        if train_trunk:
+            snap["model"] = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+        return snap
+
     use_inner = len(inner_idx) > 0  # inner_frac = 0: no early stopping, the last weights are kept (settrain's rule)
     state = {"step": 0, "history": [], "best": None, "since_improvement": 0, "stopped_early": False}
     resumed_from = 0
     if resume and ckpt_path.exists():
         ck = torch.load(ckpt_path, map_location=device, weights_only=False)
         if ck["cfg_key"] != _cfg_key(cfg) or ck["steps_per_epoch"] != steps_per_epoch:
-            raise ValueError(f"{ckpt_path}: checkpoint of another run (batch, lr, seed, inner split or cache differ); "
-                             "delete it or pass --overwrite")
+            raise ValueError(f"{ckpt_path}: checkpoint of another run (batch, lr, trunk_lr, seed, world size, inner split or cache "
+                             "differ); delete it or pass --overwrite")
         heads.load_state_dict(ck["heads"])
+        if train_trunk:
+            model.load_state_dict(ck["model"])
         opt.load_state_dict(ck["opt"])
         state = ck["state"]
         resumed_from = state["step"]
         log(f"resumed from {ckpt_path} at step {resumed_from} (epoch {resumed_from / steps_per_epoch:.2f})", flush=True)
 
     def save_ckpt():
-        atomic_save({"cfg_key": _cfg_key(cfg), "steps_per_epoch": steps_per_epoch, "heads": heads.state_dict(),
-                     "opt": opt.state_dict(), "state": state}, ckpt_path)
+        if me == 0:
+            ck = {"cfg_key": _cfg_key(cfg), "steps_per_epoch": steps_per_epoch, "heads": heads.state_dict(),
+                  "opt": opt.state_dict(), "state": state}
+            if train_trunk:
+                ck["model"] = model.state_dict()
+            atomic_save(ck, ckpt_path)
+        _barrier()
 
     def evaluate(step):
         """Inner evaluation at `step`; keeps the best weights; True when patience is exhausted."""
@@ -201,8 +287,7 @@ def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_met
         state["history"].append((epoch, res["nll"]))
         improved = state["best"] is None or (np.isfinite(res["nll"]) and res["nll"] < state["best"]["nll"])
         if improved:
-            state["best"] = {"nll": res["nll"], "step": step, "heads": {k: v.detach().cpu().clone() for k, v in heads.state_dict().items()},
-                             "by_rank": res["nll_by_rank"], "ranks_present": res["ranks_present"]}
+            state["best"] = {"nll": res["nll"], "step": step, **snapshot(), "by_rank": res["nll_by_rank"], "ranks_present": res["ranks_present"]}
             state["since_improvement"] = 0
         else:
             state["since_improvement"] += 1
@@ -219,18 +304,29 @@ def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_met
         epoch_i, pos_in_epoch = divmod(step, steps_per_epoch)
         order = train_idx[np.random.RandomState(cfg.seed + epoch_i).permutation(len(train_idx))]
         for k in range(pos_in_epoch, steps_per_epoch):
-            sel = np.sort(order[k * cfg.batch:(k + 1) * cfg.batch])
-            bins, globs, legal, target, rank, color = _to_tensors(arrays, sel, device)
-            w = torch.from_numpy(weight_of[sel]).to(device)
-            logp = _true_head_logp(model, heads, bins, globs, legal, target, rank, color, rows, autocast)
-            loss = (-logp * w).sum() / w.sum()
-            if not torch.isfinite(loss):
-                raise FloatingPointError(f"non-finite training loss at step {step}")
+            sel = np.sort(order[k * global_batch:(k + 1) * global_batch][me::world])
             opt.zero_grad(set_to_none=True)
-            loss.backward()
+            if len(sel):
+                bins, globs, legal, target, rank, color = _to_tensors(arrays, sel, device)
+                w = torch.from_numpy(weight_of[sel]).to(device)
+                logp = _true_head_logp(model, heads, bins, globs, legal, target, rank, color, rows, autocast, grad_trunk=train_trunk)
+                w_sum = _all_reduce_(w.sum().detach().clone())
+                loss = (-logp * w).sum() / w_sum
+                if not torch.isfinite(loss):
+                    raise FloatingPointError(f"non-finite training loss at step {step}")
+                loss.backward()
+            else:  # the last global batch can leave a rank without positions; it still joins the reductions
+                _all_reduce_(torch.zeros((), device=device))
+            if world > 1:
+                grads = [p.grad if p.grad is not None else torch.zeros_like(p) for p in params]
+                flat = _all_reduce_(torch.cat([g.reshape(-1) for g in grads]))
+                offset = 0
+                for p, g in zip(params, grads):
+                    p.grad = flat[offset:offset + g.numel()].view_as(g).clone()
+                    offset += g.numel()
             opt.step()
             step += 1
-            n_loop += len(sel)
+            n_loop += len(sel) * world
             state["step"] = step
             if step % eval_steps == 0 or step == total_steps:
                 if use_inner and evaluate(step):
@@ -248,6 +344,8 @@ def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_met
     if use_inner:
         best = state["best"]
         heads.load_state_dict(best["heads"])
+        if train_trunk:
+            model.load_state_dict(best["model"])
         best_epoch, nll_init, nll_best = best["step"] / steps_per_epoch, state["history"][0][1], best["nll"]
         by_rank, present = best["by_rank"], best["ranks_present"]
     else:
@@ -261,9 +359,13 @@ def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_met
             "best_epoch": best_epoch, "stopped_early": bool(state["stopped_early"]),
             "inner_ranks_present": present, "history": [(float(e), float(v)) for e, v in state["history"]],
             "steps_per_epoch": steps_per_epoch, "steps_run": int(state["step"]), "resumed_from_step": int(resumed_from),
+            "world_size": int(world), "global_batch": int(global_batch), "trunk_trained": bool(train_trunk),
+            "n_trunk_params": int(sum(p.numel() for p in trunk_params)),
             "wall_seconds": time.time() - t_start, "cache_dir": str(cache_dir), "cache_meta": cache_meta,
             "head_init": "humanv0_policy_head", **(extra_meta or {})}
-    meta = save_heads(heads, out_pt, meta)
+    if me == 0:
+        meta = save_heads(heads, out_pt, meta, model_state=model.state_dict() if train_trunk else None)
+    _barrier()
     return heads, meta
 
 
