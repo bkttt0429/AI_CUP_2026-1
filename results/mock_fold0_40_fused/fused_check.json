@@ -1,0 +1,11 @@
+{
+ "n_questions": 40,
+ "max_abs_diff": 0.00039238807308028534,
+ "question": "priv_q_0009",
+ "decisions_differ": [],
+ "non_finite_questions": [],
+ "submission": "results/mock_fold0_40_fused/submission_rank.csv",
+ "against": "offline fused_avg (results/l1b/fold0_fused_proba.csv)",
+ "tol": 0.001,
+ "pass": true
+}
