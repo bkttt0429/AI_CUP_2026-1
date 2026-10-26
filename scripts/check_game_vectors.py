@@ -123,11 +123,16 @@ def compare_probs(P, qids, out, tol):
             "decisions_differ": differ, "tol": tol, "pass": bool((len(diff) == 0 or diff.max() <= tol) and not differ)}
 
 
-def compare_l1b(fold_dir, shard_models, l1b_per_task, ref, match, tol):
+def compare_l1b(fold_dir, shard_models, l1b_per_task, ref, match, tol, bias_tol):
     """One l1b_score.py fold directory against the shards' L1b sums of the same games: (model name, row). The directory's
     meta_s*.json names the heads (state and trunk sha256); it must match exactly one shard model. A directory scored
     before l1b_score.py recorded the trunk (no trunk_sha256 key at all) is matched by the state sha256 alone, which
-    identifies one training run; the row's trunk_checked says which. Games the table lacks count as missing (and fail)."""
+    identifies one training run; the row's trunk_checked says which. Games the table lacks count as missing (and fail).
+
+    Two criteria, both per head, on d = pipeline sum - table sum: |d| / n_moves <= tol for every game (the trunk runs
+    in bf16 and a game's positions fall into other batches offline than in the shards: most games agree to the bit,
+    a few differ by up to ~0.007 nats per move, PR #10), and |mean over games of d / n_moves| <= bias_tol (a wrong
+    trunk, heads or metadata shifts every game the same way; the noise averages to ~1e-5)."""
     import glob
 
     from aicup.scoring import read_scored_games
@@ -148,22 +153,26 @@ def compare_l1b(fold_dir, shard_models, l1b_per_task, ref, match, tol):
     name = shard_models[j].get("name") or f"model{j}"
     table = read_scored_games(fold_dir).set_index("game_key")
     cols = [f"sum_{lv}" for lv in LEVELS]
-    diffs, tasks, missing = [], [], 0
+    signed, n_moves, tasks, missing = [], [], [], 0
     for k in range(len(match)):
         gk = str(ref["game_key"][match[k]])
         if gk not in table.index:
             missing += 1
             continue
-        diffs.append(np.abs(table.loc[gk, cols].to_numpy(dtype=np.float64) - l1b_per_task[k][j]))
+        signed.append(l1b_per_task[k][j] - table.loc[gk, cols].to_numpy(dtype=np.float64))  # pipeline minus offline table
+        n_moves.append(max(int(table.loc[gk, "n_moves"]), 1))
         tasks.append(k)
-    if diffs:
-        d = np.stack(diffs)
-        at = np.unravel_index(int(np.argmax(d)), d.shape)
-        row = {"dir": str(fold_dir), "max_abs_diff": float(d.max()), "task": int(tasks[at[0]]), "level": LEVELS[at[1]]}
-    else:
-        row = {"dir": str(fold_dir), "max_abs_diff": 0.0, "task": None, "level": None}
-    row.update({"matched": len(tasks), "missing": missing, "tol": tol, "trunk_checked": trunk_checked,
-                "pass": bool(missing == 0 and row["max_abs_diff"] <= tol)})
+    row = {"dir": str(fold_dir), "max_abs_diff": 0.0, "max_per_move_diff": 0.0, "task": None, "level": None,
+           "bias_per_move": [0.0] * len(LEVELS), "max_abs_bias": 0.0}
+    if signed:
+        d = np.stack(signed)
+        per_move = d / np.asarray(n_moves, dtype=np.float64)[:, None]
+        at = np.unravel_index(int(np.argmax(np.abs(per_move))), d.shape)
+        bias = per_move.mean(axis=0)
+        row.update({"max_abs_diff": float(np.abs(d).max()), "max_per_move_diff": float(np.abs(per_move).max()), "task": int(tasks[at[0]]),
+                    "level": LEVELS[at[1]], "bias_per_move": [float(b) for b in bias], "max_abs_bias": float(np.abs(bias).max())})
+    row.update({"matched": len(tasks), "missing": missing, "tol": tol, "bias_tol": bias_tol, "trunk_checked": trunk_checked,
+                "pass": bool(missing == 0 and row["max_per_move_diff"] <= tol and row["max_abs_bias"] <= bias_tol)})
     return name, row
 
 
@@ -183,7 +192,10 @@ def main(argv=None):
     ap.add_argument("--l1b-scores", nargs="*", default=[], metavar="FOLD_DIR",
                     help="l1b_score.py fold directories (e.g. results/l1b/scores3/fold0): the shards' per-game L1b sums are compared "
                          "with their tables, each directory matched to a shard model by the sha256 in its meta_s*.json")
-    ap.add_argument("--l1b-tol", type=float, default=0.05, help="max |Δ sum| allowed per game and head")
+    ap.add_argument("--l1b-tol", type=float, default=0.02,
+                    help="max |Δ sum| / n_moves allowed per game and head (bf16 batching noise reaches ~0.007 nats per move)")
+    ap.add_argument("--l1b-bias-tol", type=float, default=1e-3,
+                    help="max |mean over games of Δ sum / n_moves| allowed per head (a wrong model shifts every game; noise averages to ~1e-5)")
     ap.add_argument("--report", default=None, help="write the result as JSON here too")
     a = ap.parse_args(argv)
     if a.set_models and not a.set_base:
@@ -214,7 +226,7 @@ def main(argv=None):
             l1b_models, l1b_per_task, _ = ps.load_shards_l1b(Path(a.out), a.nshards)
             for d in a.l1b_scores:
                 try:
-                    name, row = compare_l1b(d, l1b_models, l1b_per_task, ref, match, a.l1b_tol)
+                    name, row = compare_l1b(d, l1b_models, l1b_per_task, ref, match, a.l1b_tol, a.l1b_bias_tol)
                 except ValueError as e:
                     print(f"  l1b {d}: {e}")
                     result["pass"] = False
@@ -228,8 +240,9 @@ def main(argv=None):
                     bad_groups.append(f"l1b.{name}")
                     result["pass"] = False
                 where = "" if row["task"] is None else f"  (task {row['task']}, {row['level']})"
-                print(f"  {'l1b.' + name:22s} max |Δ sum| {row['max_abs_diff']:.3e}  {'ok' if row['pass'] else 'FAIL'}{where}  "
-                      f"({row['matched']} games, {row['missing']} missing from {d})")
+                print(f"  {'l1b.' + name:22s} max |Δ sum|/move {row['max_per_move_diff']:.3e}  bias {row['max_abs_bias']:.3e}  "
+                      f"{'ok' if row['pass'] else 'FAIL'}{where}  ({row['matched']} games, {row['missing']} missing from {d}; "
+                      f"max |Δ sum| {row['max_abs_diff']:.3e})")
     if a.set_models:
         if unmatched or ambiguous:
             print("  set models: not checked (unmatched or ambiguous tasks)")

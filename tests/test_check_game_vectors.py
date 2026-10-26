@@ -201,6 +201,7 @@ def test_l1b_sums_compared_per_game(tmp_path, distinct_scorer, capsys):
     res = json.loads(report.read_text())
     # the tables went through CSV (pandas' float parser is within an ulp): equal up to 1e-9, every game matched
     assert set(res["l1b"]) == {"heads3_A", "heads3_B"} and all(v["max_abs_diff"] <= 1e-9 and v["matched"] == len(tasks) and v["pass"] for v in res["l1b"].values())
+    assert all(v["max_per_move_diff"] <= 1e-9 and v["max_abs_bias"] <= 1e-9 and len(v["bias_per_move"]) == 10 for v in res["l1b"].values())
     assert "l1b.heads3_A" in capsys.readouterr().out
     # a directory scored before l1b_score.py recorded the trunk (no trunk_sha256 key) is matched by state_sha256 alone, with a warning
     (Path(dirs[0]) / "meta_s0.json").write_text(json.dumps({"fold": 0, "heads": {"state_sha256": sides[0]["state_sha256"]}}))
@@ -209,10 +210,20 @@ def test_l1b_sums_compared_per_game(tmp_path, distinct_scorer, capsys):
     res = json.loads(report.read_text())
     assert "WARNING" in captured.err and "trunk_sha256" in captured.err and "heads3_A" in captured.err
     assert res["pass"] and res["l1b"]["heads3_A"]["trunk_checked"] is False and res["l1b"]["heads3_B"]["trunk_checked"] is True
-    # a perturbed table fails and names the model; an unknown directory (no sha256 in the shards) fails too
+    # one game off by 0.05 nats per move fails the per-move tolerance (0.02) and names the model
     table = pd.read_csv(Path(dirs[1]) / "games_s0_p000.csv")
-    table.loc[0, "sum_1D"] += 0.2
+    table.loc[0, "sum_1D"] += 0.05 * table.loc[0, "n_moves"]
     table.to_csv(Path(dirs[1]) / "games_s0_p000.csv", index=False)
     assert cgv.main(args) == 1 and "l1b.heads3_B" in capsys.readouterr().out.split("FAIL:")[-1]
+    res = json.loads(report.read_text())["l1b"]["heads3_B"]
+    assert abs(res["max_per_move_diff"] - 0.05) < 1e-9 and res["level"] == "1D" and not res["pass"]
+    # a systematic 0.005 nats per move on one head passes the per-move tolerance but fails the bias check (1e-3)
+    table.loc[0, "sum_1D"] -= 0.05 * table.loc[0, "n_moves"]
+    table["sum_D"] += 0.005 * table["n_moves"]
+    table.to_csv(Path(dirs[1]) / "games_s0_p000.csv", index=False)
+    assert cgv.main(args) == 1 and "l1b.heads3_B" in capsys.readouterr().out.split("FAIL:")[-1]
+    res = json.loads(report.read_text())["l1b"]["heads3_B"]
+    assert res["max_per_move_diff"] <= 0.02 and abs(res["max_abs_bias"] - 0.005) < 1e-9 and abs(res["bias_per_move"][0] + 0.005) < 1e-9 and not res["pass"]
+    # an unknown directory (no sha256 in the shards) fails too
     (Path(dirs[1]) / "meta_s0.json").write_text(json.dumps({"fold": 0, "heads": {"state_sha256": "0" * 64}}))
     assert cgv.main(args) == 1 and "no shard model" in capsys.readouterr().out

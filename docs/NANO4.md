@@ -310,7 +310,7 @@ sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J mockf4m scripts/na
 
 分片時的 CPU：`shards.sh` 把每個分片的 `OMP_NUM_THREADS`／`MKL_NUM_THREADS` 設成 2（`SHARD_THREADS=k` 可改）。PR #10 實測 4 卡時每個分片主行程開了 44 條 torch 執行緒在 48 核上空轉，worker 搶不到 CPU，65 秒的評分拖成 8 分鐘；模型在 GPU 上，主行程只搬批次、加總 log p，2 條就夠。每個分片 log 的開頭印 `torch CPU threads: 2` 代表設定生效。單卡直接跑的工作不受影響。
 
-**3. 每局 L1b 總和對帳**（CPU；`check_game_vectors.py` 原有的向量檢查加 `--l1b-scores`：局對回 fold 0 後，分片的 A、B 每局 10 維總和逐局比 `l1b_score.py` 的表，目錄靠 `meta_s*.json` 的 sha256 對到模型；容差 `--l1b-tol` 0.05）。PR #10 之前的 `l1b_score.py` 沒把 `trunk_sha256` 寫進 `meta_s*.json`，這種目錄只靠 `state_sha256` 對模型並印 WARNING（state 的 sha256 已能唯一識別一次訓練）；之後評分的目錄兩個都比：
+**3. 每局 L1b 總和對帳**（CPU；`check_game_vectors.py` 原有的向量檢查加 `--l1b-scores`：局對回 fold 0 後，分片的 A、B 每局 10 維總和逐局比 `l1b_score.py` 的表，目錄靠 `meta_s*.json` 的 sha256 對到模型）。容差兩條、都按 head：每局 |Δ sum| / n_moves ≤ `--l1b-tol` 0.02，且跨局的平均有號差 |mean(Δ sum / n_moves)| ≤ `--l1b-bias-tol` 1e-3。前者放過 bf16 的批次雜訊（trunk 在 bf16 autocast 下跑，同一局的局面離線和分片落在不同批次：PR #10 實測 375 局大多數逐位元相同，少數每手差到 0.007、每局總和差到 0.57，HSL 分片間每手 4e-3 同量級，對機率的影響就是第 4 步的 ≤ 3.9e-4），後者抓用錯模型或 metadata 那種整體偏移（雜訊的平均只有 1e-5）。PR #10 之前的 `l1b_score.py` 沒把 `trunk_sha256` 寫進 `meta_s*.json`，這種目錄只靠 `state_sha256` 對模型並印 WARNING（state 的 sha256 已能唯一識別一次訓練）；之後評分的目錄兩個都比：
 
 ```bash
 sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J vecl1b scripts/nano4/run.sbatch python -I scripts/check_game_vectors.py --inputs tests/fixtures/mock_fold0_40/rank_prediction_test_public.csv tests/fixtures/mock_fold0_40/rank_prediction_test_private.csv --out results/mock_fold0_40_fused/submission_rank.csv --nshards 1 --vectors results/ladder/vectors/fold0.npz --l1b-scores results/l1b/scores3/fold0 results/l1b/scores3_B/fold0 --report results/mock_fold0_40_fused/game_vectors_check.json
