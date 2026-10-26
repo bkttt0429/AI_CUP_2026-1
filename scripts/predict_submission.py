@@ -164,6 +164,7 @@ def score_tasks(tasks, workers, log=print, l1b_heads=()):
     from aicup.l1b import load_heads, score_positions as l1b_score
     from aicup.scoring import init_worker, score_stream
     config = torch.load(CKPT, map_location="cpu", weights_only=True)["config"]
+    log(f"torch CPU threads: {torch.get_num_threads()} (scripts/nano4/shards.sh caps them per shard)")
     pool = mp.get_context("fork").Pool(workers, initializer=init_worker, initargs=(config,))
     try:
         model, _ = load_humansl(str(CKPT), "cuda")

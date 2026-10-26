@@ -15,7 +15,7 @@ scores, and the mean of the models' probabilities -- and the numbers go into the
 to stdout; with --reference they are compared with results/l1b/fold0_check.json. --fold0-proba writes the
 per-question fold-0 probabilities (the offline side of scripts/check_fused_submission.py).
 
-  python -I scripts/fit_fused_model.py --l1b A:results/l1b/scores3_A:results/l1b/heads3_A.json \\
+  python -I scripts/fit_fused_model.py --l1b A:results/l1b/scores3:results/l1b/heads3_A.json \\
       B:results/l1b/scores3_B:results/l1b/heads3_B.json --out results/models/rank_model_fused.json \\
       --fold0-proba results/l1b/fold0_fused_proba.csv --reference results/l1b/fold0_check.json --reference-run disc
 """

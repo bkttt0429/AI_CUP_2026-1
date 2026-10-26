@@ -202,6 +202,13 @@ def test_l1b_sums_compared_per_game(tmp_path, distinct_scorer, capsys):
     # the tables went through CSV (pandas' float parser is within an ulp): equal up to 1e-9, every game matched
     assert set(res["l1b"]) == {"heads3_A", "heads3_B"} and all(v["max_abs_diff"] <= 1e-9 and v["matched"] == len(tasks) and v["pass"] for v in res["l1b"].values())
     assert "l1b.heads3_A" in capsys.readouterr().out
+    # a directory scored before l1b_score.py recorded the trunk (no trunk_sha256 key) is matched by state_sha256 alone, with a warning
+    (Path(dirs[0]) / "meta_s0.json").write_text(json.dumps({"fold": 0, "heads": {"state_sha256": sides[0]["state_sha256"]}}))
+    assert cgv.main(args) == 0
+    captured = capsys.readouterr()
+    res = json.loads(report.read_text())
+    assert "WARNING" in captured.err and "trunk_sha256" in captured.err and "heads3_A" in captured.err
+    assert res["pass"] and res["l1b"]["heads3_A"]["trunk_checked"] is False and res["l1b"]["heads3_B"]["trunk_checked"] is True
     # a perturbed table fails and names the model; an unknown directory (no sha256 in the shards) fails too
     table = pd.read_csv(Path(dirs[1]) / "games_s0_p000.csv")
     table.loc[0, "sum_1D"] += 0.2

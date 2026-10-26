@@ -125,8 +125,9 @@ def compare_probs(P, qids, out, tol):
 
 def compare_l1b(fold_dir, shard_models, l1b_per_task, ref, match, tol):
     """One l1b_score.py fold directory against the shards' L1b sums of the same games: (model name, row). The directory's
-    meta_s*.json names the heads (state and trunk sha256); it must match exactly one shard model. Games the table
-    lacks count as missing (and fail)."""
+    meta_s*.json names the heads (state and trunk sha256); it must match exactly one shard model. A directory scored
+    before l1b_score.py recorded the trunk (no trunk_sha256 key at all) is matched by the state sha256 alone, which
+    identifies one training run; the row's trunk_checked says which. Games the table lacks count as missing (and fail)."""
     import glob
 
     from aicup.scoring import read_scored_games
@@ -134,10 +135,15 @@ def compare_l1b(fold_dir, shard_models, l1b_per_task, ref, match, tol):
     if not metas:
         raise ValueError("no meta_s*.json (not an l1b_score.py fold directory)")
     heads = metas[0].get("heads", {})
-    key = (heads.get("state_sha256"), heads.get("trunk_sha256"))
-    hits = [j for j, m in enumerate(shard_models) if (m.get("state_sha256"), m.get("trunk_sha256")) == key]
+    state = heads.get("state_sha256")
+    if not state:
+        raise ValueError("its meta_s*.json records no heads.state_sha256")
+    trunk_checked = "trunk_sha256" in heads  # present (None for stage-1 heads without a trunk file) => must agree exactly
+    hits = [j for j, m in enumerate(shard_models)
+            if m.get("state_sha256") == state and (not trunk_checked or m.get("trunk_sha256") == heads["trunk_sha256"])]
     if len(hits) != 1:
-        raise ValueError(f"no shard model matches its heads sha256 {str(key[0])[:12]} ({len(hits)} matches)")
+        what = f"heads sha256 {state[:12]}" + (f" + trunk {str(heads['trunk_sha256'])[:12]}" if trunk_checked else "")
+        raise ValueError(f"no shard model matches its {what}" if not hits else f"{len(hits)} shard models match its {what} (ambiguous)")
     j = hits[0]
     name = shard_models[j].get("name") or f"model{j}"
     table = read_scored_games(fold_dir).set_index("game_key")
@@ -156,7 +162,8 @@ def compare_l1b(fold_dir, shard_models, l1b_per_task, ref, match, tol):
         row = {"dir": str(fold_dir), "max_abs_diff": float(d.max()), "task": int(tasks[at[0]]), "level": LEVELS[at[1]]}
     else:
         row = {"dir": str(fold_dir), "max_abs_diff": 0.0, "task": None, "level": None}
-    row.update({"matched": len(tasks), "missing": missing, "tol": tol, "pass": bool(missing == 0 and row["max_abs_diff"] <= tol)})
+    row.update({"matched": len(tasks), "missing": missing, "tol": tol, "trunk_checked": trunk_checked,
+                "pass": bool(missing == 0 and row["max_abs_diff"] <= tol)})
     return name, row
 
 
@@ -174,7 +181,7 @@ def main(argv=None):
     ap.add_argument("--set-device", default="cpu")
     ap.add_argument("--proba-tol", type=float, default=1e-3, help="max |Δp| allowed per question")
     ap.add_argument("--l1b-scores", nargs="*", default=[], metavar="FOLD_DIR",
-                    help="l1b_score.py fold directories (e.g. results/l1b/scores3_A/fold0): the shards' per-game L1b sums are compared "
+                    help="l1b_score.py fold directories (e.g. results/l1b/scores3/fold0): the shards' per-game L1b sums are compared "
                          "with their tables, each directory matched to a shard model by the sha256 in its meta_s*.json")
     ap.add_argument("--l1b-tol", type=float, default=0.05, help="max |Δ sum| allowed per game and head")
     ap.add_argument("--report", default=None, help="write the result as JSON here too")
@@ -214,6 +221,9 @@ def main(argv=None):
                     bad_groups.append(f"l1b.{Path(d).parent.name}")
                     continue
                 result["l1b"][name] = row
+                if not row["trunk_checked"]:
+                    print(f"WARNING: l1b {d}: its meta_s*.json records no trunk_sha256 (scored before l1b_score.py wrote it); "
+                          f"matched to {name} by state_sha256 alone", file=sys.stderr, flush=True)
                 if not row["pass"]:
                     bad_groups.append(f"l1b.{name}")
                     result["pass"] = False

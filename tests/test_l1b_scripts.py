@@ -148,6 +148,8 @@ def test_score_cli_matches_score_folds_layout(tmp_path, monkeypatch, capsys):
             assert len(z["logp"]) == len(z["game_row"]) == len(z["t"])
     meta = json.loads((out / "fold1" / "meta_s0.json").read_text())
     assert meta["heads"]["train_folds"] == [3, 4] and meta["heads"]["best_epoch"] == 0.5 and meta["fold"] == 1 and "code_sha256" in meta
+    # the trunk keys are always written (None for stage-1 heads without a trunk file): check_game_vectors.py --l1b-scores matches on them
+    assert "trunk_sha256" in meta["heads"] and meta["heads"]["trunk_sha256"] is None and meta["heads"]["trunk_file"] is None
     assert meta["games"] == 6 and meta["positions"] > 0 and meta["levels"] == LEVELS
     # the same command again scores nothing new
     assert ls.main(args) == 0 and "0 to score" in capsys.readouterr().out
