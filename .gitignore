@@ -37,3 +37,6 @@ results/l1b/**/*.ckpt
 results/l1b/**/*.tmp
 # fused submission (issue #9): the weights tar + SHA256SUMS from scripts/pack_weights.py are uploaded as a release asset, not committed
 release/
+results/quality/**/quality_s*_p*.csv
+results/quality_smoke/
+results/l1b/**/games_s*_p*.csv
