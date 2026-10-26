@@ -1,0 +1,216 @@
+{
+ "format": 1,
+ "n_ranks": 10,
+ "levels": [
+  "D",
+  "C",
+  "B",
+  "A",
+  "1D",
+  "2D",
+  "3D",
+  "4D",
+  "5D",
+  "6D"
+ ],
+ "n_params": 450240,
+ "state_sha256": "3dc3e67bbc8192601bbfd66d23dbd60cf6409cf56ad59b21f2f652792a88a48a",
+ "trunk_file": "heads2_B.trunk.pt",
+ "trunk_sha256": "8db5f5d0b9588378bb4f20770dad5f9cd2ce8fa7195fb3c3694b7720b6fac4de",
+ "git_head": "7a568ce",
+ "git_dirty": false,
+ "code_sha256": "2991f69d8953ae6e21b4c87cc870df5b60be18a4242b2eaadaa9009dd6218536",
+ "code_files": [
+  "src/aicup/gamevec.py",
+  "src/aicup/ladder_data.py",
+  "src/aicup/aggregators.py",
+  "src/aicup/settrain.py",
+  "src/aicup/rankmodel.py",
+  "src/aicup/qfeatures.py",
+  "src/aicup/metric.py"
+ ],
+ "torch_version": "2.14.1+cu126",
+ "device_name": "NVIDIA H200",
+ "train_cfg": {
+  "epochs": 3,
+  "batch": 128,
+  "lr": 0.0001,
+  "eval_every": 0.25,
+  "patience": 4,
+  "inner_frac": 0.1,
+  "inner_max_positions": 400000,
+  "seed": 0,
+  "device": "cuda:0",
+  "trunk_lr": 1e-05
+ },
+ "train_folds": [
+  3,
+  4
+ ],
+ "max_games": 40,
+ "n_train_positions": 10135177,
+ "n_inner_positions": 400000,
+ "per_rank_positions": {
+  "D": 1133635,
+  "C": 1016339,
+  "B": 1208695,
+  "A": 1621552,
+  "1D": 646502,
+  "2D": 876844,
+  "3D": 868803,
+  "4D": 860901,
+  "5D": 921187,
+  "6D": 980719
+ },
+ "inner_nll_init": 1.4726611606022242,
+ "inner_nll_best": 1.4188957723983493,
+ "inner_nll_best_by_rank": [
+  1.5733155758263333,
+  1.5170120364387973,
+  1.4584072638688097,
+  1.4368784411983224,
+  1.367437402094794,
+  1.398866714775771,
+  1.3378567213896184,
+  1.3925242449639192,
+  1.3593772312537968,
+  1.3472820921733297
+ ],
+ "best_epoch": 2.999393816932714,
+ "stopped_early": false,
+ "inner_ranks_present": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9
+ ],
+ "history": [
+  [
+   0.0,
+   1.4726611606022242
+  ],
+  [
+   0.2499494847443928,
+   1.4335647118216477
+  ],
+  [
+   0.4998989694887856,
+   1.4307450383704186
+  ],
+  [
+   0.7498484542331785,
+   1.4274723712891586
+  ],
+  [
+   0.9997979389775712,
+   1.4255212274762656
+  ],
+  [
+   1.2497474237219641,
+   1.4244633521012156
+  ],
+  [
+   1.499696908466357,
+   1.4230116696504982
+  ],
+  [
+   1.7496463932107496,
+   1.421664585921874
+  ],
+  [
+   1.9995958779551424,
+   1.4203421777342848
+  ],
+  [
+   2.249545362699535,
+   1.4209275181681098
+  ],
+  [
+   2.4994948474439282,
+   1.4205728246935867
+  ],
+  [
+   2.749444332188321,
+   1.4195328637115125
+  ],
+  [
+   2.999393816932714,
+   1.4188957723983493
+  ],
+  [
+   3.0,
+   1.4191357886545946
+  ]
+ ],
+ "steps_per_epoch": 9898,
+ "steps_run": 29694,
+ "resumed_from_step": 0,
+ "world_size": 8,
+ "global_batch": 1024,
+ "trunk_trained": true,
+ "n_trunk_params": 26613504,
+ "wall_seconds": 3510.3807220458984,
+ "cache_dir": "results/l1b/cache_B",
+ "cache_meta": {
+  "folds": [
+   3,
+   4
+  ],
+  "max_games": 40,
+  "min_games": 1,
+  "nshards": 8,
+  "shards": [
+   0,
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7
+  ],
+  "players": 3196,
+  "games_selected": 101711,
+  "games": 101711,
+  "positions": 11297811,
+  "per_rank_positions": {
+   "D": 1279208,
+   "C": 1126341,
+   "B": 1348352,
+   "A": 1789290,
+   "1D": 726889,
+   "2D": 978762,
+   "3D": 969014,
+   "4D": 965111,
+   "5D": 1025995,
+   "6D": 1088849
+  },
+  "games_sha256": "a6253da1b4d21ddb43cee71f0e74deb9b26a8657fe04d6183e2db7dca4ad186a",
+  "model_input_config": "b18c384nbt",
+  "git_head": "10d3543",
+  "git_dirty": false,
+  "code_sha256": "2991f69d8953ae6e21b4c87cc870df5b60be18a4242b2eaadaa9009dd6218536",
+  "code_files": [
+   "src/aicup/gamevec.py",
+   "src/aicup/ladder_data.py",
+   "src/aicup/aggregators.py",
+   "src/aicup/settrain.py",
+   "src/aicup/rankmodel.py",
+   "src/aicup/qfeatures.py",
+   "src/aicup/metric.py"
+  ],
+  "torch_version": "2.14.1+cu126",
+  "device_name": "cpu"
+ },
+ "head_init": "results/l1b/heads_B.pt",
+ "model_source": "/home/u2507115/BK_AICUP_2026-1/models/katago/b18c384nbt-humanv0.ckpt",
+ "humanv0_sha256": "00e608f3e6458ba8cb0e3ad8b775a447e051ad935303e73e153a12dd16e48d09",
+ "head_init_sha256": "3abfe0cdee416bedd3554f971057c88bf003ac7fab047ac4b16e7e6c3eca5b87",
+ "head_init_inner_nll_best": 1.472633431111535
+}
