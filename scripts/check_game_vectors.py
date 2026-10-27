@@ -223,7 +223,7 @@ def main(argv=None):
             print("  l1b sums: not checked (unmatched or ambiguous tasks)")
             result["pass"] = False
         else:
-            l1b_models, l1b_per_task, _ = ps.load_shards_l1b(Path(a.out), a.nshards)
+            l1b_models, l1b_per_task, _, _ = ps.load_shards_l1b(Path(a.out), a.nshards)
             for d in a.l1b_scores:
                 try:
                     name, row = compare_l1b(d, l1b_models, l1b_per_task, ref, match, a.l1b_tol, a.l1b_bias_tol)

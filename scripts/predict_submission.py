@@ -44,6 +44,14 @@ document's (state and trunk sha256), the fused MLP runs once per model on that m
 fused probabilities are not finite gets --model's and is listed (fused_fallback_questions). --fused-model
 and --set-models exclude each other; shards scored without --l1b-heads cannot feed a fused decision (exit 2).
 
+With --l1b-heads the shard step also scores each game's *opponent* (issue #12): a second pass of the same CPU
+pool over (k, sgf, the other colour) -- as l1b_score.py --opponent -- under the L1b heads only (the 18 profiles
+see the target's moves only), giving the shard file l1b_opp_sums [n, K, 10] and l1b_opp_n_moves [n] (the
+opponent's move counts, which the features use) and the meta l1b_opponent / opp_positions; --no-l1b-opponent
+skips it. A fused_opp document (rank_model_fused_opp.json, 56 features, scripts/fit_fused_model.py --opp)
+decides from the target's and the opponent's sums; shards without the opponent's scores cannot feed it
+(exit 2), while the 40-feature rank_model_fused.json ignores them, so one set of shard files serves both.
+
 --expect-rows / --expect-public / --expect-private (defaults: the official 800 = 400 + 400; 0 disables
 one) are checked against the questions read, so a truncated input fails validation; a mock test passes
 its own counts. A malformed input (a question whose num_games disagrees with its filled sgf columns)
@@ -154,11 +162,13 @@ def l1b_models_meta(paths):
     return out
 
 
-def score_tasks(tasks, workers, log=print, l1b_heads=()):
+def score_tasks(tasks, workers, log=print, l1b_heads=(), opponent=True):
     """Score (k, sgf, colour) tasks on this GPU under the 18 profiles and, per L1b heads file, under its 10 rank
     heads: ({k: (n_moves, sums[18 + 10K])}, (move_logp [M, 18 + 10K], move_task [M], move_t [M]) or None, positions,
-    wall seconds). Each heads file gets its own model instance (load_heads restores a fine-tuned trunk in place);
-    the positions' features are computed once for every model."""
+    wall seconds, opp). Each heads file gets its own model instance (load_heads restores a fine-tuned trunk in place);
+    the positions' features are computed once for every model. opp is None, or with l1b_heads and opponent
+    ({k: (the opponent's n_moves, sums[10K])}, positions, wall seconds): a second pass over the same games with the
+    colours swapped (l1b_score.py --opponent), under the L1b heads only."""
     import torch
     from aicup.humansl import load_humansl, meta_rows, score_positions as hsl_score
     from aicup.l1b import load_heads, score_positions as l1b_score
@@ -182,16 +192,28 @@ def score_tasks(tasks, workers, log=print, l1b_heads=()):
             parts += [l1b_score(m, h, bins, globs, legal, target, colors) for m, h in l1b]
             return np.concatenate(parts, axis=1)
 
-        return score_stream(pool, model, tasks, rows, log_every=500, log=log, scorer=scorer if l1b else None)
+        per_task, moves, n_pos, wall = score_stream(pool, model, tasks, rows, log_every=500, log=log, scorer=scorer if l1b else None)
+        opp = None
+        if l1b and opponent:
+            def opp_scorer(bins, globs, legal, target, colors, rows_):
+                return np.concatenate([l1b_score(m, h, bins, globs, legal, target, colors) for m, h in l1b], axis=1)
+
+            opp_tasks = [(k, sgf, "W" if colour == "B" else "B") for k, sgf, colour in tasks]
+            log(f"scoring the opponents' moves of {len(opp_tasks)} games under the {len(l1b)} L1b models", flush=True)
+            o_per_task, _, o_pos, o_wall = score_stream(pool, None, opp_tasks, None, log_every=500, log=log, scorer=opp_scorer)
+            opp = (o_per_task, o_pos, o_wall)
+        return per_task, moves, n_pos, wall, opp
     finally:
         pool.close()
 
 
-def save_shard(path, shard, nshards, tasks, per_task, moves, n_pos, wall, inputs, sha, n_tasks_total, l1b_models=()):
+def save_shard(path, shard, nshards, tasks, per_task, moves, n_pos, wall, inputs, sha, n_tasks_total, l1b_models=(), opp=None):
     """Write a shard file atomically: task (the global indices scored), n_moves, sums [n, 18] (float64),
     move_logp [M, 18], move_task [M], move_t [M] and __meta__ (JSON). With l1b_models (K heads files, scored as
     columns 18.. of the sums and per-move log p) also l1b_sums [n, K, 10] (float64) and l1b_move_logp [M, K, 10]
-    (float32), and the meta lists the models. Returns the meta."""
+    (float32), and the meta lists the models; with opp (score_tasks' opponent pass: ({k: (n, sums[10K])}, positions,
+    wall)) also l1b_opp_sums [n, K, 10] (float64) and l1b_opp_n_moves [n], and the meta's l1b_opponent is true.
+    Returns the meta."""
     P, L, K = len(PROFILES), len(LEVELS), len(l1b_models)
     idx = np.array([k for k, _, _ in tasks], dtype=np.int64)
     n_moves = np.array([per_task[k][0] for k in idx], dtype=np.int64)
@@ -200,14 +222,26 @@ def save_shard(path, shard, nshards, tasks, per_task, moves, n_pos, wall, inputs
         raise ValueError(f"scored {all_sums.shape[1]} columns per game, expected {P} profiles + {K} x {L} L1b heads")
     if moves is None:
         moves = (np.zeros((0, P + L * K), dtype=np.float32), np.zeros(0, dtype=np.int32), np.zeros(0, dtype=np.int32))
+    with_opp = bool(K and opp is not None)
     meta = {"shard": shard, "nshards": nshards, "n_tasks_total": n_tasks_total, "n_tasks": int(len(idx)),
             "inputs": [str(p) for p in inputs], "questions_sha256": sha, "positions": int(n_pos), "scoring_wall_s": float(wall),
             "profiles": list(PROFILES), "ckpt": CKPT.name, "l1b_models": [dict(m) for m in l1b_models], "levels": list(LEVELS),
+            "l1b_opponent": with_opp, "opp_positions": int(opp[1]) if with_opp else 0, "opp_scoring_wall_s": float(opp[2]) if with_opp else 0.0,
             "written": datetime.now().isoformat(timespec="seconds")}
     arrays = {"task": idx, "n_moves": n_moves, "sums": all_sums[:, :P], "move_logp": moves[0][:, :P], "move_task": moves[1], "move_t": moves[2]}
     if K:
         arrays["l1b_sums"] = all_sums[:, P:].reshape(len(idx), K, L)
         arrays["l1b_move_logp"] = moves[0][:, P:].reshape(len(moves[1]), K, L).astype(np.float32)
+    if with_opp:
+        o_per_task = opp[0]
+        missing = [int(k) for k in idx if k not in o_per_task]
+        if missing:
+            raise ValueError(f"{len(missing)} tasks have no opponent scores (e.g. {missing[:3]})")
+        o_sums = np.stack([o_per_task[k][1] for k in idx]).astype(np.float64) if len(idx) else np.zeros((0, L * K))
+        if o_sums.shape[1] != L * K:
+            raise ValueError(f"the opponent pass scored {o_sums.shape[1]} columns per game, expected {K} x {L} L1b heads")
+        arrays["l1b_opp_sums"] = o_sums.reshape(len(idx), K, L)
+        arrays["l1b_opp_n_moves"] = np.array([o_per_task[k][0] for k in idx], dtype=np.int64)
     path = Path(path)
     tmp = path.with_name(path.stem + ".tmp.npz")
     np.savez_compressed(tmp, __meta__=np.asarray(json.dumps(meta)), **arrays)
@@ -216,23 +250,31 @@ def save_shard(path, shard, nshards, tasks, per_task, moves, n_pos, wall, inputs
 
 
 def load_shards_l1b(out, nshards, with_moves=False):
-    """([L1b model records], {k: l1b sums [K, 10]}, moves) from the shard files: the models (name, state and trunk
-    sha256) must be the same in every shard; shards without L1b scores give ([], {}, None). moves is None, or with
-    with_moves {k: (logp [n_moves, K, 10], t [n_moves])}."""
-    models, per_task, moves = None, {}, {} if with_moves else None
+    """([L1b model records], {k: l1b sums [K, 10]}, moves, opp) from the shard files: the models (name, state and trunk
+    sha256) must be the same in every shard, and every shard must carry the opponent's scores or none; shards without
+    L1b scores give ([], {}, None, None). moves is None, or with with_moves {k: (logp [n_moves, K, 10], t [n_moves])};
+    opp is None, or {k: (the opponent's n_moves, sums [K, 10])} when the shards were scored with the opponent pass."""
+    models, per_task, moves, opp, opponent = None, {}, {} if with_moves else None, {}, None
     for i in range(nshards):
         path = shard_path(out, i, nshards)
         with np.load(path, allow_pickle=False) as z:
             meta = json.loads(str(z["__meta__"]))
             here = [(m.get("name"), m.get("state_sha256"), m.get("trunk_sha256")) for m in meta.get("l1b_models", [])]
+            has_opp = bool(meta.get("l1b_opponent"))
             if models is None:
-                models, key = meta.get("l1b_models", []), here
+                models, key, opponent = meta.get("l1b_models", []), here, has_opp
             elif here != key:
                 raise ValueError(f"{path}: L1b models {here} differ from shard 0's {key}; every shard must be scored with the same heads")
+            elif has_opp != opponent:
+                raise ValueError(f"{path}: {'carries' if has_opp else 'lacks'} the opponents' L1b scores while shard 0 "
+                                 f"{'carries' if opponent else 'lacks'} them; every shard must be scored alike (--no-l1b-opponent or not)")
             if not here:
                 continue
             for k, s in zip(z["task"].tolist(), z["l1b_sums"]):
                 per_task[k] = s.astype(np.float64)
+            if has_opp:
+                for k, n, s in zip(z["task"].tolist(), z["l1b_opp_n_moves"].tolist(), z["l1b_opp_sums"]):
+                    opp[k] = (int(n), s.astype(np.float64))
             if with_moves:
                 mt, logp, t = z["move_task"].astype(np.int64), z["l1b_move_logp"].astype(np.float64), z["move_t"].astype(np.int64)
                 order = np.argsort(mt, kind="stable")
@@ -241,13 +283,18 @@ def load_shards_l1b(out, nshards, with_moves=False):
                 ends = np.append(starts[1:], len(mt))
                 for k, a, b in zip(tasks_here.tolist(), starts.tolist(), ends.tolist()):
                     moves[k] = (logp[a:b], t[a:b])
-    return models or [], per_task, moves
+    return models or [], per_task, moves, (opp if opponent else None)
 
 
-def fused_probs(questions, owner, per_task, l1b_per_task, mlp, order, rank_model):
+def fused_probs(questions, owner, per_task, l1b_per_task, mlp, order, rank_model, opp_per_task=None, opponent=False):
     """({question index: probabilities [10]} for every question with a usable game, info): the fused MLP on each
     L1b model's fused features (shard columns `order`), averaged; a question whose averaged probabilities are not
-    finite gets rank_model's (q24) probabilities and is listed in info["fused_fallback_questions"]."""
+    finite gets rank_model's (q24) probabilities and is listed in info["fused_fallback_questions"]. With opponent (a
+    fused_opp document) the opponent's sums and move counts opp_per_task {k: (n, [K, 10])} join the features;
+    ValueError when the shards carry none."""
+    if opponent and opp_per_task is None:
+        raise ValueError("the fused model takes the opponent's L1b features but the shards carry no opponent scores: score them "
+                         "again with --l1b-heads (without --no-l1b-opponent), or decide with the 40-feature rank_model_fused.json")
     by_q = {}
     for k, qi in enumerate(owner):
         by_q.setdefault(qi, []).append(k)
@@ -255,10 +302,15 @@ def fused_probs(questions, owner, per_task, l1b_per_task, mlp, order, rank_model
     for qi, ks in by_q.items():
         hsl = np.stack([per_task[k][1] for k in ks])
         n = np.array([per_task[k][0] for k in ks])
-        missing = [k for k in ks if k not in l1b_per_task]
+        missing = [k for k in ks if k not in l1b_per_task] + ([k for k in ks if k not in opp_per_task] if opponent else [])
         if missing:
             raise ValueError(f"question {questions[qi]['question_id']}: {len(missing)} games have no L1b scores in the shards")
-        p = fused_predict(mlp, hsl, np.stack([l1b_per_task[k] for k in ks]), n, order)
+        l1b = np.stack([l1b_per_task[k] for k in ks])
+        if opponent:
+            p = fused_predict(mlp, hsl, l1b, n, order, opp_sums=np.stack([opp_per_task[k][1] for k in ks]),
+                              opp_n_moves=np.array([opp_per_task[k][0] for k in ks]))
+        else:
+            p = fused_predict(mlp, hsl, l1b, n, order)
         if not np.isfinite(p).all():
             p = rank_model.predict_proba(question_features(hsl, n)[None, :])[0]
             fallback.append(questions[qi]["question_id"])
@@ -453,8 +505,10 @@ def main(argv=None):
                     help="L1b heads files (.pt + .json, with a fine-tuned trunk when the sidecar names one) scored alongside the "
                          "18 profiles at the shard step; their sums go into the shard files for a fused decision")
     ap.add_argument("--fused-model", default=None,
-                    help="rank_model_fused.json (scripts/fit_fused_model.py): decide with the fused MLP averaged over its L1b models, "
-                         "which must be exactly the models the shards were scored with")
+                    help="rank_model_fused.json or rank_model_fused_opp.json (scripts/fit_fused_model.py): decide with the fused MLP "
+                         "averaged over its L1b models, which must be exactly the models the shards were scored with")
+    ap.add_argument("--no-l1b-opponent", dest="l1b_opponent", action="store_false",
+                    help="with --l1b-heads: do not score the opponents' moves (the shards then cannot feed a fused_opp decision)")
     a = ap.parse_args(argv)
     if a.set_models and not a.set_base:
         ap.error("--set-models needs --set-base, the paired base they were trained on")
@@ -491,12 +545,14 @@ def main(argv=None):
         except ValueError as e:
             print(e, file=sys.stderr)
             return EXIT_INPUTS
-        print(f"scoring shard {shard} of {a.nshards}: {len(mine)} games" + (f", L1b heads {[m['name'] for m in l1b_models]}" if l1b_models else ""), flush=True)
-        per_task, moves, n_pos, wall = score_tasks(mine, a.workers, l1b_heads=a.l1b_heads)
+        print(f"scoring shard {shard} of {a.nshards}: {len(mine)} games"
+              + (f", L1b heads {[m['name'] for m in l1b_models]}" + (" on the target's and the opponents' moves" if a.l1b_opponent else "") if l1b_models else ""), flush=True)
+        per_task, moves, n_pos, wall, opp = score_tasks(mine, a.workers, l1b_heads=a.l1b_heads, opponent=a.l1b_opponent)
         path = shard_path(out, shard, a.nshards)
         out.parent.mkdir(parents=True, exist_ok=True)
-        save_shard(path, shard, a.nshards, mine, per_task, moves, n_pos, wall, a.inputs, sha, len(tasks), l1b_models)
-        print(f"wrote {path}: {len(mine)} games, {n_pos} positions, {wall:.0f} s", flush=True)
+        save_shard(path, shard, a.nshards, mine, per_task, moves, n_pos, wall, a.inputs, sha, len(tasks), l1b_models, opp)
+        print(f"wrote {path}: {len(mine)} games, {n_pos} positions, {wall:.0f} s"
+              + (f"; opponents {opp[1]} positions, {opp[2]:.0f} s" if opp else ""), flush=True)
         if a.shard is not None:
             return EXIT_OK  # one shard of a multi-GPU run; the merge is a separate invocation
 
@@ -505,7 +561,7 @@ def main(argv=None):
     try:
         per_task, shard_metas, moves = load_shards(out, a.nshards, len(tasks), sha, with_moves=bool(a.set_models))
         saved, rank_model = load_rank_model(a.model)
-        l1b_models, l1b_per_task, _ = load_shards_l1b(out, a.nshards)
+        l1b_models, l1b_per_task, _, opp_per_task = load_shards_l1b(out, a.nshards)
         if a.set_models:
             set_models, set_warnings = load_set_models(a.set_models, a.set_device)
             base_doc, set_base = load_rank_model(a.set_base)
@@ -514,7 +570,8 @@ def main(argv=None):
         if a.fused_model:
             fused_doc, fused_mlp = load_fused_model(a.fused_model)
             order = pairing_order(fused_doc, l1b_models)
-            set_probs, fused_info = fused_probs(questions, owner, per_task, l1b_per_task, fused_mlp, order, rank_model)
+            set_probs, fused_info = fused_probs(questions, owner, per_task, l1b_per_task, fused_mlp, order, rank_model,
+                                                opp_per_task, fused_doc["opponent"])
     except (FileNotFoundError, ValueError) as e:
         print(e, file=sys.stderr)
         return EXIT_INPUTS
@@ -535,15 +592,18 @@ def main(argv=None):
               "games_used": len(tasks), "games_dropped": dropped, "passes": passes,
               "positions": int(sum(m["positions"] for m in shard_metas)),
               "scoring_wall_s": float(sum(m["scoring_wall_s"] for m in shard_metas)), "total_wall_s": time.time() - t0,
+              "l1b_opponent": bool(l1b_models) and all(m.get("l1b_opponent") for m in shard_metas),
+              "opp_positions": int(sum(m.get("opp_positions", 0) for m in shard_metas)),
+              "opp_scoring_wall_s": float(sum(m.get("opp_scoring_wall_s", 0.0) for m in shard_metas)),
               "expectations": {"rows": a.expect_rows, "pub_": a.expect_public, "priv_": a.expect_private},
               "fallback_questions": fallback, "allow_fallback": a.allow_fallback,
               "lenient_inputs": a.lenient_inputs, "input_warnings": input_warnings, "allow_input_warnings": a.allow_input_warnings,
-              "decision_model": "fused" if a.fused_model else "set_models" if a.set_models else "rank_model",
+              "decision_model": ("fused_opp" if fused_doc["opponent"] else "fused") if a.fused_model else "set_models" if a.set_models else "rank_model",
               "set_models": [{"path": path, **set_model_summary(meta)} for _, meta, path in set_models], "set_base": a.set_base,
               "set_rungs": set_info["rungs"], "set_model_warnings": set_warnings,
               "set_model_fallback_questions": set_info["set_model_fallback_questions"],
               "l1b_models": l1b_models,
-              "fused_model": ({"path": a.fused_model, **{k: fused_doc.get(k) for k in ("name", "file_sha256", "train_folds", "per_player",
+              "fused_model": ({"path": a.fused_model, **{k: fused_doc.get(k) for k in ("name", "opponent", "file_sha256", "train_folds", "per_player",
                                                                                          "questions_sha256", "l1b_models", "git_head")},
                                "n_models": len(fused_doc["l1b_models"])} if fused_doc else None),
               "fused_fallback_questions": fused_info["fused_fallback_questions"],

@@ -14,16 +14,16 @@ from aicup.metric import LEVELS
 from tests.test_predict_submission import MODEL, _args, _fake_score, _small_inputs, _tiny_set_models
 
 
-def _distinct_score(tasks, workers, log=print, l1b_heads=()):
+def _distinct_score(tasks, workers, log=print, l1b_heads=(), opponent=True):
     """_fake_score plus a per-game constant from the SGF hash: its 126 curves collide on games of equal
     length (two of the 30 small-input games), which real log p never does; vectors must stay consistent."""
-    per_task, (logp, mt, tt), positions, secs = _fake_score(tasks, workers, log, l1b_heads)
+    per_task, (logp, mt, tt), positions, secs, opp = _fake_score(tasks, workers, log, l1b_heads, opponent)
     logp = logp.astype(np.float64)
     for k, sgf, _ in tasks:
         rows = mt == k
         logp[rows] -= 1e-3 * (int(hashlib.sha256(sgf.encode()).hexdigest()[8:16], 16) % 1009)
         per_task[k] = (per_task[k][0], logp[rows].sum(axis=0))
-    return per_task, (logp.astype(np.float32), mt, tt), positions, secs
+    return per_task, (logp.astype(np.float32), mt, tt), positions, secs, opp
 
 
 @pytest.fixture
@@ -174,7 +174,7 @@ def test_l1b_sums_compared_per_game(tmp_path, distinct_scorer, capsys):
     questions, _ = ps.load_questions(inputs)
     tasks, _, _, _ = ps.build_tasks(questions)
     per_task, _, moves = ps.load_shards(out, 1, len(tasks), ps.questions_sha(inputs, questions), with_moves=True)
-    _, l1b_per_task, _ = ps.load_shards_l1b(out, 1)
+    _, l1b_per_task, _, _ = ps.load_shards_l1b(out, 1)
     rng = np.random.RandomState(7)
     vec = ps.game_vectors(per_task, moves)
     ref = _ref_from(vec, rng)
