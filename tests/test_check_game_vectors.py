@@ -174,7 +174,7 @@ def test_l1b_sums_compared_per_game(tmp_path, distinct_scorer, capsys):
     questions, _ = ps.load_questions(inputs)
     tasks, _, _, _ = ps.build_tasks(questions)
     per_task, _, moves = ps.load_shards(out, 1, len(tasks), ps.questions_sha(inputs, questions), with_moves=True)
-    _, l1b_per_task, _, _ = ps.load_shards_l1b(out, 1)
+    _, l1b_per_task, _, opp_per_task = ps.load_shards_l1b(out, 1)
     rng = np.random.RandomState(7)
     vec = ps.game_vectors(per_task, moves)
     ref = _ref_from(vec, rng)
@@ -210,6 +210,47 @@ def test_l1b_sums_compared_per_game(tmp_path, distinct_scorer, capsys):
     res = json.loads(report.read_text())
     assert "WARNING" in captured.err and "trunk_sha256" in captured.err and "heads3_A" in captured.err
     assert res["pass"] and res["l1b"]["heads3_A"]["trunk_checked"] is False and res["l1b"]["heads3_B"]["trunk_checked"] is True
+    assert all(v["side"] == "target" and v["n_moves_mismatch"] == 0 for v in res["l1b"].values()) and "l1b_opp" not in res
+    # --l1b-opp-scores (issue #12): l1b_score.py --opponent directories (meta side "opponent") against the shards' opponent sums;
+    # the opponents' move counts must agree game by game
+    opp_dirs = []
+    for j, (name, side) in enumerate(zip(("heads3_A", "heads3_B"), sides)):
+        d = tmp_path / f"scores_{name}_opp" / "fold0"
+        d.mkdir(parents=True)
+        rows = [{"game_key": ref["game_key"][match[k]], "player_id": "p", "rank": "D", "color": "W", "n_moves": int(opp_per_task[k][0]),
+                 **{f"sum_{lv}": float(opp_per_task[k][1][j, i]) for i, lv in enumerate(LEVELS)}} for k in range(len(tasks))]
+        csv_path, npz_path = part_paths(d, 0, 0)
+        pd.DataFrame(rows).to_csv(csv_path, index=False)
+        np.savez_compressed(npz_path, logp=np.zeros((0, 10), np.float32), game_row=np.zeros(0, np.int32), t=np.zeros(0, np.int16))
+        (d / "meta_s0.json").write_text(json.dumps({"fold": 0, "side": "opponent", "heads": {"state_sha256": side["state_sha256"], "trunk_sha256": side.get("trunk_sha256")}}))
+        opp_dirs.append(str(d))
+    args_opp = [*args, "--l1b-opp-scores", *opp_dirs]
+    assert cgv.main(args_opp) == 0
+    printed = capsys.readouterr().out
+    res = json.loads(report.read_text())
+    assert "l1b_opp.heads3_A" in printed and "l1b_opp.heads3_B" in printed and "0 games with other move counts" in printed
+    assert set(res["l1b_opp"]) == {"heads3_A", "heads3_B"} and res["pass"]
+    assert all(v["side"] == "opponent" and v["max_per_move_diff"] <= 1e-9 and v["n_moves_mismatch"] == 0 and v["matched"] == len(tasks) and v["pass"]
+               for v in res["l1b_opp"].values())
+    # an opponent directory given to --l1b-scores, or a target directory to --l1b-opp-scores, is refused by its meta's side
+    base = ["--inputs", *inputs, "--out", str(out), "--nshards", "1", "--vectors", str(vectors), "--report", str(report)]
+    assert cgv.main([*base, "--l1b-scores", opp_dirs[0]]) == 1 and "opponent's moves" in capsys.readouterr().out
+    assert cgv.main([*base, "--l1b-opp-scores", dirs[1]]) == 1 and "target's moves" in capsys.readouterr().out
+    # an opponent table whose move count differs for one game fails that model
+    table = pd.read_csv(Path(opp_dirs[1]) / "games_s0_p000.csv")
+    table.loc[0, "n_moves"] += 1
+    table.to_csv(Path(opp_dirs[1]) / "games_s0_p000.csv", index=False)
+    assert cgv.main(args_opp) == 1
+    res = json.loads(report.read_text())
+    assert res["l1b_opp"]["heads3_B"]["n_moves_mismatch"] == 1 and not res["l1b_opp"]["heads3_B"]["pass"] and res["l1b_opp"]["heads3_A"]["pass"]
+    assert "l1b_opp.heads3_B" in capsys.readouterr().out.split("FAIL:")[-1]
+    table.loc[0, "n_moves"] -= 1
+    table.to_csv(Path(opp_dirs[1]) / "games_s0_p000.csv", index=False)
+    # shards scored without the opponent pass cannot be checked against opponent tables
+    out2 = tmp_path / "run2" / "submission_rank.csv"
+    assert ps.main(_args(inputs, out2, 5, 3, 2, "--l1b-heads", *map(str, paths), "--no-l1b-opponent")) == ps.EXIT_OK
+    assert cgv.main(["--inputs", *inputs, "--out", str(out2), "--nshards", "1", "--vectors", str(vectors), "--l1b-opp-scores", *opp_dirs]) == 1
+    assert "no opponent scores" in capsys.readouterr().out
     # one game off by 0.05 nats per move fails the per-move tolerance (0.02) and names the model
     table = pd.read_csv(Path(dirs[1]) / "games_s0_p000.csv")
     table.loc[0, "sum_1D"] += 0.05 * table.loc[0, "n_moves"]
