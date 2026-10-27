@@ -1,0 +1,219 @@
+{
+ "tasks": 375,
+ "matched": 375,
+ "unmatched": [],
+ "ambiguous": [],
+ "tol": 0.05,
+ "sum_tol": 0.5,
+ "groups": {
+  "staged.mean": {
+   "max_abs_diff": 0.0010582804679870605,
+   "task": 153,
+   "column": "s4_mean_6k",
+   "count": false
+  },
+  "staged.std": {
+   "max_abs_diff": 0.0010544061660766602,
+   "task": 153,
+   "column": "s4_std_6k",
+   "count": false
+  },
+  "staged.q10": {
+   "max_abs_diff": 0.004126310348510742,
+   "task": 220,
+   "column": "s1_q10_6d",
+   "count": false
+  },
+  "staged.q90": {
+   "max_abs_diff": 0.0026091337203979492,
+   "task": 35,
+   "column": "s3_q90_5d",
+   "count": false
+  },
+  "staged.n_eff": {
+   "max_abs_diff": 0.0,
+   "task": 0,
+   "column": "s1_n_eff",
+   "count": true
+  },
+  "staged.mean_surprisal": {
+   "max_abs_diff": 0.00017762184143066406,
+   "task": 98,
+   "column": "s4_mean_surprisal",
+   "count": false
+  },
+  "staged.present": {
+   "max_abs_diff": 0.0,
+   "task": 0,
+   "column": "s1_present",
+   "count": true
+  },
+  "whole.mean": {
+   "max_abs_diff": 0.00020386278629302979,
+   "task": 148,
+   "column": "w_mean_6d",
+   "count": false
+  },
+  "whole.std": {
+   "max_abs_diff": 0.0002753734588623047,
+   "task": 57,
+   "column": "w_std_6d",
+   "count": false
+  },
+  "whole.q10": {
+   "max_abs_diff": 0.0026192665100097656,
+   "task": 275,
+   "column": "w_q10_5d",
+   "count": false
+  },
+  "whole.q90": {
+   "max_abs_diff": 0.0022375285625457764,
+   "task": 81,
+   "column": "w_q90_1d",
+   "count": false
+  },
+  "whole.n_eff": {
+   "max_abs_diff": 0.0,
+   "task": 0,
+   "column": "w_n_eff",
+   "count": true
+  },
+  "whole.mean_surprisal": {
+   "max_abs_diff": 5.1021575927734375e-05,
+   "task": 98,
+   "column": "w_mean_surprisal",
+   "count": false
+  },
+  "whole.present": {
+   "max_abs_diff": 0.0,
+   "task": 0,
+   "column": "w_present",
+   "count": true
+  },
+  "log1p_n_moves": {
+   "max_abs_diff": 0.0,
+   "task": null,
+   "column": null,
+   "count": true
+  }
+ },
+ "failed_groups": [],
+ "proba": null,
+ "pass": true,
+ "l1b": {
+  "heads3_A": {
+   "dir": "results/l1b/scores3/fold0",
+   "side": "target",
+   "max_abs_diff": 0.326171875,
+   "max_per_move_diff": 0.003584997994559152,
+   "task": 57,
+   "level": "D",
+   "bias_per_move": [
+    2.3436847688349533e-06,
+    2.5372136700464092e-06,
+    -7.175020195302957e-06,
+    -1.1601451208294507e-05,
+    -1.0073719258489597e-05,
+    -5.626997818922704e-06,
+    -4.528634597460769e-06,
+    -2.1425099158121143e-06,
+    -7.063875178560799e-06,
+    -1.6031050871225516e-05
+   ],
+   "max_abs_bias": 1.6031050871225516e-05,
+   "matched": 375,
+   "missing": 0,
+   "n_moves_mismatch": 0,
+   "tol": 0.02,
+   "bias_tol": 0.001,
+   "trunk_checked": false,
+   "pass": true
+  },
+  "heads3_B": {
+   "dir": "results/l1b/scores3_B/fold0",
+   "side": "target",
+   "max_abs_diff": 0.5682525634765625,
+   "max_per_move_diff": 0.007015463746624228,
+   "task": 8,
+   "level": "6D",
+   "bias_per_move": [
+    -7.758638487225102e-06,
+    -3.775408919635338e-06,
+    -3.632565286740816e-06,
+    -2.9752123670853335e-06,
+    -7.432929949953506e-06,
+    -8.347951535225116e-06,
+    -8.110728597746362e-06,
+    6.836016433710748e-06,
+    3.3361135844077274e-05,
+    3.114804342608311e-05
+   ],
+   "max_abs_bias": 3.3361135844077274e-05,
+   "matched": 375,
+   "missing": 0,
+   "n_moves_mismatch": 0,
+   "tol": 0.02,
+   "bias_tol": 0.001,
+   "trunk_checked": false,
+   "pass": true
+  }
+ },
+ "l1b_opp": {
+  "heads3_A": {
+   "dir": "results/l1b/scores3_opp/fold0",
+   "side": "opponent",
+   "max_abs_diff": 0.3878173828125,
+   "max_per_move_diff": 0.00341649209299441,
+   "task": 158,
+   "level": "B",
+   "bias_per_move": [
+    6.556418733939938e-06,
+    2.4161862391153092e-05,
+    1.0026910122349357e-05,
+    1.216892003293472e-06,
+    3.3655177709935024e-06,
+    -1.0342443162058659e-05,
+    -1.6091183404668025e-05,
+    -1.771554571573299e-05,
+    -1.3667652978708695e-05,
+    -6.267108847876091e-06
+   ],
+   "max_abs_bias": 2.4161862391153092e-05,
+   "matched": 375,
+   "missing": 0,
+   "n_moves_mismatch": 0,
+   "tol": 0.02,
+   "bias_tol": 0.001,
+   "trunk_checked": true,
+   "pass": true
+  },
+  "heads3_B": {
+   "dir": "results/l1b/scores3_B_opp/fold0",
+   "side": "opponent",
+   "max_abs_diff": 0.6015625,
+   "max_per_move_diff": 0.004890752032520325,
+   "task": 356,
+   "level": "6D",
+   "bias_per_move": [
+    -1.5918778295217996e-05,
+    -1.793140540695158e-05,
+    -2.097152384544304e-05,
+    -7.856396865753584e-06,
+    -1.5823549274335146e-05,
+    -1.0956481932871118e-05,
+    -2.4141268329410413e-05,
+    -3.9196341942152194e-05,
+    -3.779877813746795e-05,
+    -4.1436860434229604e-05
+   ],
+   "max_abs_bias": 4.1436860434229604e-05,
+   "matched": 375,
+   "missing": 0,
+   "n_moves_mismatch": 0,
+   "tol": 0.02,
+   "bias_tol": 0.001,
+   "trunk_checked": true,
+   "pass": true
+  }
+ }
+}
