@@ -74,6 +74,85 @@ def test_fit_fused_model_cli(tmp_path, capsys):
     assert ffm.main(args[:-2] + ["--out", str(out)]) == 2 and "exists" in capsys.readouterr().err  # no --overwrite
 
 
+def _opponent_scores(tmp_path, name="opp_all"):
+    """An l1b_score.py --opponent layout of the synthetic games: the same game keys, other sums and move counts."""
+    opp_dir, _, _ = _synthetic_scores(tmp_path, folds=(0, 1, 2, 3, 4), l1b_name=name)
+    for csv in sorted(opp_dir.glob("fold*/games_s*_p*.csv")):
+        t = pd.read_csv(csv, dtype=str, keep_default_na=False)
+        cols = [f"sum_{lv}" for lv in LEVELS]
+        t[cols] = t[cols].astype(float) * 0.9 - 0.3
+        t["n_moves"] = t["n_moves"].astype(int) + 1
+        t["color"] = t["color"].map({"B": "W", "W": "B"})
+        t.to_csv(csv, index=False)
+    return opp_dir
+
+
+def test_fit_fused_model_cli_with_opponent(tmp_path, capsys):
+    import l1b_opp_check as oc
+    from aicup.scoring import read_scored_games
+
+    l1b_dir, hsl_dir, _ = _synthetic_scores(tmp_path, folds=(0, 1, 2, 3, 4), l1b_name="l1b_all")
+    opp_dir = _opponent_scores(tmp_path)
+    side_a = _sidecar(tmp_path / "heads3_A.json", "a" * 64, "1" * 64, [1, 2])
+    side_b = _sidecar(tmp_path / "heads3_B.json", "b" * 64, "2" * 64, [3, 4])
+    folds_csv = _folds_csv(tmp_path)
+    out, proba = tmp_path / "models" / "rank_model_fused_opp.json", tmp_path / "fold0_fused_opp_proba.csv"
+    l1b_args = ["--l1b", f"A:{l1b_dir}:{side_a}", f"B:{l1b_dir}:{side_b}"]
+    rest = ["--hsl", str(hsl_dir), "--per-player", "2", "--folds-csv", str(folds_csv), "--out", str(out), "--fold0-proba", str(proba)]
+    args = [*l1b_args, "--opp", f"A:{opp_dir}", f"B:{opp_dir}", *rest]
+    assert ffm.main(args) == 0
+    printed = capsys.readouterr().out
+    assert "fused_opp_avg" in printed and "fused_opp_avg vs fused_avg" in printed and "opponent moves" in printed
+    doc, mlp = fused.load_fused_model(out)
+    assert doc["name"] == fused.NAME_OPP and doc["opponent"] is True and len(doc["features"]) == 56 and doc["per_player"] == 2
+    assert doc["opp_scores_dirs"] == {"A": str(opp_dir), "B": str(opp_dir)} and [m["name"] for m in doc["l1b_models"]] == ["A", "B"]
+    assert doc["l1b_models"][0]["feature_folds"] == [3, 4] and doc["feature_source_by_fold"] == {"1": "B", "2": "B", "3": "A", "4": "A"}
+    assert len(doc["fused_state"]["params"]["0.weight"][0]) == 40 and len(doc["state"]["params"]["0.weight"][0]) == 56
+    f0 = doc["fold0_check"]
+    assert set(f0["scores"]) == {"hsl", "fused_A", "fused_B", "fused_avg", "fused_opp_A", "fused_opp_B", "fused_opp_avg"}
+    assert "ci95" in f0["vs_hsl"]["fused_opp_avg"] and "ci95" in f0["fused_opp_avg_vs_fused_avg"]
+    # the training reproduces l1b_opp_fold0_check.py's fit: the same questions, oc.features and MLP give the same model
+    folds_df = pd.read_csv(folds_csv, dtype={"player_id": str})
+    data = {}
+    for f in (1, 2, 3, 4):
+        hsl, l1b = l1b_cv.load_fold(hsl_dir, l1b_dir, f)
+        data[f] = {"hsl": hsl, "l1b": l1b, "opp": read_scored_games(opp_dir / f"fold{f}"), "players": l1b_cv.players_from_scores(hsl, folds_df)}
+    rng = np.random.RandomState(l1b_cv.TRAIN_SEED)
+    train_q = pd.concat([l1b_cv.sample_questions(data[f]["players"], 2, rng) for f in (1, 2, 3, 4)], ignore_index=True)
+    cat = lambda key: pd.concat([data[f][key] for f in (1, 2, 3, 4)], ignore_index=True)  # noqa: E731
+    X_tr, y_tr, _ = oc.features(cat("hsl"), cat("l1b"), cat("opp"), train_q)
+    ref = ffm.MLPModel(hidden=32).fit(X_tr["fused_opp"], y_tr)
+    np.testing.assert_array_equal(from_state(doc["state"]).predict_proba(X_tr["fused_opp"][:5]), ref.predict_proba(X_tr["fused_opp"][:5]))
+    ref_f = ffm.MLPModel(hidden=32).fit(X_tr["fused"], y_tr)
+    np.testing.assert_array_equal(from_state(doc["fused_state"]).predict_proba(X_tr["fused"][:5]), ref_f.predict_proba(X_tr["fused"][:5]))
+    # the fold-0 table carries all seven sets; the averages are the means of the two models' probabilities
+    table = pd.read_csv(proba)
+    cols = lambda s: [f"{s}_p_{lv}" for lv in LEVELS]  # noqa: E731
+    assert all(c in table.columns for s in ("hsl", "fused_avg", "fused_opp_A", "fused_opp_B", "fused_opp_avg") for c in cols(s))
+    np.testing.assert_allclose(table[cols("fused_opp_avg")].to_numpy(), (table[cols("fused_opp_A")].to_numpy() + table[cols("fused_opp_B")].to_numpy()) / 2, atol=1e-12)
+    # --reference in opp_fold0_check.json's layout (scores at the top level): the numbers agree with themselves
+    ref_json = tmp_path / "opp_fold0_check.json"
+    ref_json.write_text(json.dumps({"scores": {k: {"balanced_mean_over_n": v["balanced_mean_over_n"]} for k, v in f0["scores"].items()}}))
+    assert ffm.main([*args, "--reference", str(ref_json), "--overwrite"]) == 0
+    printed = capsys.readouterr().out
+    assert "fused_opp_avg: +0.00e+00" in printed and "WARNING" not in printed
+    # --opp must name every --l1b model exactly once, and only models that exist
+    assert ffm.main([*l1b_args, "--opp", f"A:{opp_dir}", *rest, "--overwrite"]) == 2 and "every --l1b model" in capsys.readouterr().err
+    assert ffm.main([*l1b_args, "--opp", f"A:{opp_dir}", f"C:{opp_dir}", *rest, "--overwrite"]) == 2 and "no --l1b model" in capsys.readouterr().err
+    # an opponent table covering other games than the Human SL scores is refused
+    bad = tmp_path / "opp_bad"
+    import shutil
+    shutil.copytree(opp_dir, bad)
+    csv = sorted(bad.glob("fold1/games_s*_p*.csv"))[0]
+    t = pd.read_csv(csv, dtype=str, keep_default_na=False)
+    t.iloc[1:].to_csv(csv, index=False)
+    assert ffm.main([*l1b_args, "--opp", f"A:{opp_dir}", f"B:{bad}", *rest, "--overwrite"]) == 2 and "other games" in capsys.readouterr().err
+    # without --opp the plain fused document is still written (the default output name differs)
+    plain = tmp_path / "models" / "plain.json"
+    assert ffm.main([*l1b_args, *rest[:-4], "--out", str(plain)]) == 0
+    assert fused.load_fused_model(plain)[0]["opponent"] is False
+
+
 def _proba_frame(ids, P, prefix="p"):
     return pd.DataFrame({**{f"{prefix}_{lv}": P[:, j] for j, lv in enumerate(LEVELS)}, "question_id": ids})
 
