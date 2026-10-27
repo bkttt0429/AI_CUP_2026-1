@@ -331,7 +331,54 @@ sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J fusedchk4 scripts/
 sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J pack scripts/nano4/run.sbatch python -I scripts/pack_weights.py --l1b-heads results/l1b/heads3_A.pt results/l1b/heads3_B.pt --models results/models/rank_model.json results/models/rank_model_f01234.json results/models/rank_model_fused.json --set-dir results/models/set --out release/weights-2026-11.tar
 ```
 
-**11/04 正式流程**：8 卡 `shards.sh 8 … --l1b-heads results/l1b/heads3_A.pt results/l1b/heads3_B.pt`（§4 的 `sub8` 指令加這個旗標；`shards.sh` 自動限制每分片 2 條 CPU 執行緒）→ `--merge --nshards 8 --fused-model results/models/rank_model_fused.json`。退路：同一組分片檔 `--merge` 改給 `--set-models …`（`ens_top3`）或什麼都不給（`rank_model.json`），不用重新評分。
+**11/04 正式流程**：提交已再換成 fused_opp，見 §4.4 最後一段；`rank_model_fused.json`（本節的模型）留作退路，同一組分片檔 `--merge` 換旗標即可。
+
+### 4.4 提交改用 fused_opp（加入對手落子的 L1b 特徵；2026-10-27，issue #12）
+
+PR #11（nano4）發現對手的落子是第二份證據：線上對局配對實力相近，所以用同一組 L1b 模型評**對手**的落子、再做 16 維題目特徵，接在 fused 的 40 維之後成 56 維。CV 0.6735（fused 0.6545）、fold 0 0.6716（fused 0.6535，+0.0181 [+0.0094, +0.0266]）。使用者決定提交改用 fused_opp。權重檔不變（`heads3_{A,B}.pt` 加 trunk），多的是對手的評分目錄：A 是 `results/l1b/scores3_opp`（folds 3、4、0），B 是 `results/l1b/scores3_B_opp`（folds 1、2、0），都已在 nano4。五步和 §4.3 相同、順序固定：
+
+**1. 擬合 fused_opp MLP**（CPU；訓練完全照 `l1b_opp_fold0_check.py`：`--opp` 給每個模型的對手評分目錄，特徵由 `l1b_opp_check.features` 算，fold 的目標與對手特徵來自同一個模型）。順便在 fold 0 重算七組（`hsl`、`fused_A/B/avg`、`fused_opp_A/B/avg`），`--reference` 對 `opp_fold0_check.json`（差應全為 0：fused_opp_A 0.6684、fused_opp_B 0.6684、fused_opp_avg 0.6716），並存 fold 0 每題七組機率給第 4 步：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J fitopp scripts/nano4/run.sbatch python -I scripts/fit_fused_model.py --l1b A:results/l1b/scores3:results/l1b/heads3_A.json B:results/l1b/scores3_B:results/l1b/heads3_B.json --opp A:results/l1b/scores3_opp B:results/l1b/scores3_B_opp --out results/models/rank_model_fused_opp.json --fold0-proba results/l1b/fold0_fused_opp_proba.csv --reference results/l1b/opp_fold0_check.json
+```
+
+`rank_model_fused_opp.json` 與 `fold0_fused_opp_proba.csv` 進 git。文件的 `opponent: true`、56 個 features；`l1b_models` 同 §4.3（配對檢查不變）；`fused_state` 是同一批題目上 40 維 fused MLP 的參數，當參考。
+
+**2. mock test 分片評分加對手**：`--l1b-heads` 現在**預設**多跑一趟對手的落子（同一個 CPU pool，任務換成另一色，只過 K 個 L1b trunk，不過 18 個 HSL profile；`--no-l1b-opponent` 關掉）。分片檔多 `l1b_opp_sums [n, K, 10]`、`l1b_opp_n_moves [n]`（對手手數，特徵用它），meta 多 `l1b_opponent`、`opp_positions`、`opp_scoring_wall_s`；既有欄位不變。單卡一次（評分 + merge 同工作）、4 卡一次：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 02:00:00 -J mocko1 scripts/nano4/run.sbatch python -I scripts/predict_submission.py --inputs tests/fixtures/mock_fold0_40/rank_prediction_test_public.csv tests/fixtures/mock_fold0_40/rank_prediction_test_private.csv --expect-rows 40 --expect-public 20 --expect-private 20 --out results/mock_fold0_40_opp/submission_rank.csv --l1b-heads results/l1b/heads3_A.pt results/l1b/heads3_B.pt --fused-model results/models/rank_model_fused_opp.json
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -p 8gpus --gres=gpu:4 -c 48 -t 02:00:00 -J mocko4 scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 4 python -I scripts/predict_submission.py --inputs tests/fixtures/mock_fold0_40/rank_prediction_test_public.csv tests/fixtures/mock_fold0_40/rank_prediction_test_private.csv --expect-rows 40 --expect-public 20 --expect-private 20 --out results/mock_fold0_40_opp4/submission_rank.csv --l1b-heads results/l1b/heads3_A.pt results/l1b/heads3_B.pt
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J mocko4m scripts/nano4/run.sbatch python -I scripts/predict_submission.py --merge --nshards 4 --inputs tests/fixtures/mock_fold0_40/rank_prediction_test_public.csv tests/fixtures/mock_fold0_40/rank_prediction_test_private.csv --expect-rows 40 --expect-public 20 --expect-private 20 --out results/mock_fold0_40_opp4/submission_rank.csv --fused-model results/models/rank_model_fused_opp.json
+```
+
+預期：兩次 exit 0，報告 `decision_model: fused_opp`、`fused_fallback_questions: []`、`l1b_opponent: true`、`opp_positions` 與 `positions` 相差不多（對手手數至多差一）。請貼單卡的評分秒數（`scoring_wall_s` 與 `opp_scoring_wall_s`）和 PR #10 的 250 s 比：GPU 多 2 次對手 trunk 前向（約 +10%），CPU 特徵約加倍，哪個是瓶頸就看這個數字。分片沒有對手分數卻給 `rank_model_fused_opp.json` → exit 2；給 `rank_model_fused.json` 則照舊可用。
+
+**3. 每局 L1b 總和對帳，目標與對手兩邊**（CPU；對手那邊多一條：分片的 `l1b_opp_n_moves` 必須逐局等於表的 `n_moves`；目錄放錯邊會被 meta 的 `side` 拒絕）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J vecopp scripts/nano4/run.sbatch python -I scripts/check_game_vectors.py --inputs tests/fixtures/mock_fold0_40/rank_prediction_test_public.csv tests/fixtures/mock_fold0_40/rank_prediction_test_private.csv --out results/mock_fold0_40_opp/submission_rank.csv --nshards 1 --vectors results/ladder/vectors/fold0.npz --l1b-scores results/l1b/scores3/fold0 results/l1b/scores3_B/fold0 --l1b-opp-scores results/l1b/scores3_opp/fold0 results/l1b/scores3_B_opp/fold0 --report results/mock_fold0_40_opp/game_vectors_check.json
+```
+
+預期：375/375、HSL PASS、`l1b.heads3_A/B` 與 `l1b_opp.heads3_A/B` 每手 ≤ 0.02、bias ≤ 1e-3、`0 games with other move counts`；目標那兩個目錄是舊 meta，照舊印 WARNING，對手那兩個是 PR #10 之後評的，有 `trunk_sha256` 和 `side`，不會。
+
+**4. 機率與決策對帳**（`--set fused_opp_avg` 取第 1 步表裡的 fused_opp 平均；再比單卡 vs 4 卡）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J oppchk scripts/nano4/run.sbatch python -I scripts/check_fused_submission.py --submission results/mock_fold0_40_opp/submission_rank.csv --offline results/l1b/fold0_fused_opp_proba.csv --set fused_opp_avg --answers tests/fixtures/mock_fold0_40/answers.csv --report results/mock_fold0_40_opp/fused_check.json
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J oppchk4 scripts/nano4/run.sbatch python -I scripts/check_fused_submission.py --submission results/mock_fold0_40_opp/submission_rank.csv --other results/mock_fold0_40_opp4/submission_rank.csv --report results/mock_fold0_40_opp4/fused_check.json
+```
+
+預期：40/40 決策相同、max |Δp| ≤ 1e-3（對手特徵多兩組 bf16 雜訊來源，PR #10 的 3.9e-4 可能略增）。兩份 `fused_check.json` 與 `game_vectors_check.json` 進 git。
+
+**5. 權重封存**（多帶新文件）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,062] -t 01:00:00 -J packopp scripts/nano4/run.sbatch python -I scripts/pack_weights.py --l1b-heads results/l1b/heads3_A.pt results/l1b/heads3_B.pt --models results/models/rank_model.json results/models/rank_model_f01234.json results/models/rank_model_fused.json results/models/rank_model_fused_opp.json --set-dir results/models/set --out release/weights-2026-11.tar
+```
+
+**11/04 正式流程**：8 卡 `shards.sh 8 … --l1b-heads results/l1b/heads3_A.pt results/l1b/heads3_B.pt`（§4 的 `sub8` 指令加這個旗標；對手自動評，`shards.sh` 限每分片 2 條 CPU 執行緒）→ `--merge --nshards 8 --fused-model results/models/rank_model_fused_opp.json`。退路依序：同一組分片檔 `--merge` 改給 `--fused-model results/models/rank_model_fused.json`（fused）、`--set-models …`（`ens_top3`）或什麼都不給（`rank_model.json`），都不用重新評分。
 
 ## 5. 同步程式碼、取回結果
 
