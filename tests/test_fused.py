@@ -36,6 +36,31 @@ def test_fused_features_match_l1b_cv_feature_sets():
     assert got.shape == (3, 40)
 
 
+def test_fused_opp_features_match_l1b_opp_check():
+    import l1b_opp_check as oc
+
+    rng = np.random.RandomState(3)
+    hsl, l1b, questions = _tables(rng)
+    # the opponent's table: the same games, the opponent's own move counts (differ by up to one) and sums
+    opp = pd.DataFrame({"game_key": hsl["game_key"], "n_moves": hsl["n_moves"].to_numpy() + rng.randint(-1, 2, size=len(hsl)),
+                        **{f"sum_{lv}": -rng.rand(len(hsl)) * 300 for lv in LEVELS}})
+    assert len(fused.FUSED_OPP_FEATURE_NAMES) == 56 and fused.FUSED_OPP_FEATURE_NAMES[:40] == fused.FUSED_FEATURE_NAMES
+    assert fused.FUSED_OPP_FEATURE_NAMES[40:] == [f"opp_{n}" for n in feature_names(LEVELS)] == fused.OPP_FEATURE_NAMES
+    assert fused.feature_names_for(True) == fused.FUSED_OPP_FEATURE_NAMES and fused.feature_names_for(False) == fused.FUSED_FEATURE_NAMES
+    want = oc.features(hsl, l1b, opp, questions)[0]["fused_opp"]
+    h, l, o = hsl.set_index("game_key"), l1b.set_index("game_key"), opp.set_index("game_key")
+    lv_cols = [f"sum_{lv}" for lv in LEVELS]
+    got = np.stack([fused.fused_opp_features(h.loc[ks, [f"sum_{p}" for p in PROFILES]].to_numpy(), l.loc[ks, lv_cols].to_numpy(), h.loc[ks, "n_moves"].to_numpy(),
+                                             o.loc[ks, lv_cols].to_numpy(), o.loc[ks, "n_moves"].to_numpy()) for ks in questions["game_keys"]])
+    np.testing.assert_array_equal(got, want)
+    assert got.shape == (3, 56)
+    # the first 40 columns are the fused features; the opponent's move counts matter for the last 16
+    np.testing.assert_array_equal(got[:, :40], oc.features(hsl, l1b, opp, questions)[0]["fused"])
+    other = np.stack([fused.fused_opp_features(h.loc[ks, [f"sum_{p}" for p in PROFILES]].to_numpy(), l.loc[ks, lv_cols].to_numpy(), h.loc[ks, "n_moves"].to_numpy(),
+                                               o.loc[ks, lv_cols].to_numpy(), h.loc[ks, "n_moves"].to_numpy()) for ks in questions["game_keys"]])
+    assert not np.array_equal(other[:, 40:], got[:, 40:])
+
+
 def _models():
     return [{"name": "A", "heads_file": "heads3_A.pt", "state_sha256": "a" * 64, "trunk_file": "heads3_A.trunk.pt", "trunk_sha256": "1" * 64,
              "train_folds": [1, 2], "feature_folds": [3, 4]},
@@ -67,6 +92,39 @@ def test_document_round_trip_and_checks(tmp_path):
     (tmp_path / "bad2.json").write_text(json.dumps(broken))
     with pytest.raises(ValueError, match="l1b_models"):
         fused.load_fused_model(tmp_path / "bad2.json")
+    assert doc["opponent"] is False and doc2["opponent"] is False
+
+
+def test_opponent_document_round_trip_and_checks(tmp_path):
+    rng = np.random.RandomState(4)
+    X, y = rng.randn(80, 56), np.arange(80) % 10
+    mlp = MLPModel(hidden=4, epochs=5).fit(X, y)
+    doc = fused.fused_document(mlp, _models(), train_folds=[1, 2, 3, 4], per_player=32, n_train=80, questions_sha256="c" * 64, opponent=True)
+    assert doc["name"] == fused.NAME_OPP and doc["features"] == fused.FUSED_OPP_FEATURE_NAMES and doc["opponent"] is True
+    assert "opponent" in doc["role"] and doc["l1b_models"] == _models()
+    path = tmp_path / "rank_model_fused_opp.json"
+    fused.save_fused_model(doc, path)
+    doc2, mlp2 = fused.load_fused_model(path)
+    assert doc2["opponent"] is True and doc2["name"] == fused.NAME_OPP
+    np.testing.assert_array_equal(mlp2.predict_proba(X[:7]), mlp.predict_proba(X[:7]))
+    # a document whose own flag disagrees with its features is refused, as is one with neither feature list
+    broken = json.loads(path.read_text())
+    broken["opponent"] = False
+    (tmp_path / "bad.json").write_text(json.dumps(broken))
+    with pytest.raises(ValueError, match="opponent flag"):
+        fused.load_fused_model(tmp_path / "bad.json")
+    broken = json.loads(path.read_text())
+    broken["features"] = broken["features"][:50]
+    (tmp_path / "bad2.json").write_text(json.dumps(broken))
+    with pytest.raises(ValueError, match="neither"):
+        fused.load_fused_model(tmp_path / "bad2.json")
+    # an old 40-feature document without the flag loads as opponent False
+    old = json.loads(path.read_text())
+    old.pop("opponent")
+    old["features"], old["name"] = fused.FUSED_FEATURE_NAMES, fused.NAME
+    old["state"] = MLPModel(hidden=4, epochs=5).fit(X[:, :40], y).state_dict()
+    (tmp_path / "old.json").write_text(json.dumps(old))
+    assert fused.load_fused_model(tmp_path / "old.json")[0]["opponent"] is False
 
 
 def test_pairing_order_and_mismatch():
@@ -95,3 +153,18 @@ def test_fused_predict_averages_the_models():
     np.testing.assert_allclose(p, want, rtol=0, atol=1e-15)
     assert p.shape == (10,) and abs(p.sum() - 1) < 1e-9
     assert not np.allclose(p, mlp.predict_proba(fused.fused_features(hsl, l1b[:, 0], n)[None])[0])
+
+
+def test_fused_predict_with_the_opponent_features():
+    rng = np.random.RandomState(6)
+    mlp = MLPModel(hidden=4, epochs=5).fit(rng.randn(60, 56), np.arange(60) % 10)
+    m = 5
+    hsl, l1b, opp = -rng.rand(m, 18) * 200, -rng.rand(m, 2, 10) * 200, -rng.rand(m, 2, 10) * 200
+    n, n_opp = rng.randint(50, 150, size=m), rng.randint(50, 150, size=m)
+    p = fused.fused_predict(mlp, hsl, l1b, n, order=[1, 0], opp_sums=opp, opp_n_moves=n_opp)
+    want = np.mean([mlp.predict_proba(fused.fused_opp_features(hsl, l1b[:, k], n, opp[:, k], n_opp)[None])[0] for k in (1, 0)], axis=0)
+    np.testing.assert_allclose(p, want, rtol=0, atol=1e-15)
+    assert p.shape == (10,) and abs(p.sum() - 1) < 1e-9
+    # each model's opponent column goes with its own L1b column: swapping the opponent columns changes the result
+    swapped = fused.fused_predict(mlp, hsl, l1b, n, order=[1, 0], opp_sums=opp[:, ::-1], opp_n_moves=n_opp)
+    assert not np.allclose(swapped, p)

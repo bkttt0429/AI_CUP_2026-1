@@ -123,11 +123,14 @@ def compare_probs(P, qids, out, tol):
             "decisions_differ": differ, "tol": tol, "pass": bool((len(diff) == 0 or diff.max() <= tol) and not differ)}
 
 
-def compare_l1b(fold_dir, shard_models, l1b_per_task, ref, match, tol, bias_tol):
-    """One l1b_score.py fold directory against the shards' L1b sums of the same games: (model name, row). The directory's
-    meta_s*.json names the heads (state and trunk sha256); it must match exactly one shard model. A directory scored
-    before l1b_score.py recorded the trunk (no trunk_sha256 key at all) is matched by the state sha256 alone, which
-    identifies one training run; the row's trunk_checked says which. Games the table lacks count as missing (and fail).
+def compare_l1b(fold_dir, shard_models, sums_per_task, ref, match, tol, bias_tol, side="target", n_moves_per_task=None):
+    """One l1b_score.py fold directory against the shards' L1b sums {k: [K, 10]} of the same games: (model name, row).
+    The directory's meta_s*.json names the heads (state and trunk sha256); it must match exactly one shard model. A
+    directory scored before l1b_score.py recorded the trunk (no trunk_sha256 key at all) is matched by the state
+    sha256 alone, which identifies one training run; the row's trunk_checked says which. Its meta must also say it
+    scored `side` ("target", the default and what metas written before l1b_score.py --opponent mean; or "opponent"),
+    and with n_moves_per_task {k: the shards' move counts} (the opponent pass, issue #12) the table's n_moves must
+    equal them game by game. Games the table lacks count as missing (and fail).
 
     Two criteria, both per head, on d = pipeline sum - table sum: |d| / n_moves <= tol for every game (the trunk runs
     in bf16 and a game's positions fall into other batches offline than in the shards: most games agree to the bit,
@@ -139,6 +142,10 @@ def compare_l1b(fold_dir, shard_models, l1b_per_task, ref, match, tol, bias_tol)
     metas = [json.loads(Path(p).read_text()) for p in sorted(glob.glob(str(Path(fold_dir) / "meta_s*.json")))]
     if not metas:
         raise ValueError("no meta_s*.json (not an l1b_score.py fold directory)")
+    meta_side = metas[0].get("side", "target")
+    if meta_side != side:
+        raise ValueError(f"its meta_s*.json says it scored the {meta_side}'s moves; give it to "
+                         + ("--l1b-opp-scores" if meta_side == "opponent" else "--l1b-scores"))
     heads = metas[0].get("heads", {})
     state = heads.get("state_sha256")
     if not state:
@@ -153,16 +160,19 @@ def compare_l1b(fold_dir, shard_models, l1b_per_task, ref, match, tol, bias_tol)
     name = shard_models[j].get("name") or f"model{j}"
     table = read_scored_games(fold_dir).set_index("game_key")
     cols = [f"sum_{lv}" for lv in LEVELS]
-    signed, n_moves, tasks, missing = [], [], [], 0
+    signed, n_moves, tasks, missing, n_mismatch = [], [], [], 0, 0
     for k in range(len(match)):
         gk = str(ref["game_key"][match[k]])
         if gk not in table.index:
             missing += 1
             continue
-        signed.append(l1b_per_task[k][j] - table.loc[gk, cols].to_numpy(dtype=np.float64))  # pipeline minus offline table
-        n_moves.append(max(int(table.loc[gk, "n_moves"]), 1))
+        signed.append(sums_per_task[k][j] - table.loc[gk, cols].to_numpy(dtype=np.float64))  # pipeline minus offline table
+        n_tab = int(table.loc[gk, "n_moves"])
+        n_moves.append(max(n_tab, 1))
+        if n_moves_per_task is not None and n_tab != int(n_moves_per_task[k]):
+            n_mismatch += 1
         tasks.append(k)
-    row = {"dir": str(fold_dir), "max_abs_diff": 0.0, "max_per_move_diff": 0.0, "task": None, "level": None,
+    row = {"dir": str(fold_dir), "side": side, "max_abs_diff": 0.0, "max_per_move_diff": 0.0, "task": None, "level": None,
            "bias_per_move": [0.0] * len(LEVELS), "max_abs_bias": 0.0}
     if signed:
         d = np.stack(signed)
@@ -171,8 +181,9 @@ def compare_l1b(fold_dir, shard_models, l1b_per_task, ref, match, tol, bias_tol)
         bias = per_move.mean(axis=0)
         row.update({"max_abs_diff": float(np.abs(d).max()), "max_per_move_diff": float(np.abs(per_move).max()), "task": int(tasks[at[0]]),
                     "level": LEVELS[at[1]], "bias_per_move": [float(b) for b in bias], "max_abs_bias": float(np.abs(bias).max())})
-    row.update({"matched": len(tasks), "missing": missing, "tol": tol, "bias_tol": bias_tol, "trunk_checked": trunk_checked,
-                "pass": bool(missing == 0 and row["max_per_move_diff"] <= tol and row["max_abs_bias"] <= bias_tol)})
+    row.update({"matched": len(tasks), "missing": missing, "n_moves_mismatch": n_mismatch, "tol": tol, "bias_tol": bias_tol,
+                "trunk_checked": trunk_checked,
+                "pass": bool(missing == 0 and n_mismatch == 0 and row["max_per_move_diff"] <= tol and row["max_abs_bias"] <= bias_tol)})
     return name, row
 
 
@@ -196,6 +207,9 @@ def main(argv=None):
                     help="max |Δ sum| / n_moves allowed per game and head (bf16 batching noise reaches ~0.007 nats per move)")
     ap.add_argument("--l1b-bias-tol", type=float, default=1e-3,
                     help="max |mean over games of Δ sum / n_moves| allowed per head (a wrong model shifts every game; noise averages to ~1e-5)")
+    ap.add_argument("--l1b-opp-scores", nargs="*", default=[], metavar="FOLD_DIR",
+                    help="l1b_score.py --opponent fold directories (e.g. results/l1b/scores3_opp/fold0): the shards' per-game L1b sums over the "
+                         "opponents' moves are compared with their tables with the same tolerances, and the opponents' move counts must agree")
     ap.add_argument("--report", default=None, help="write the result as JSON here too")
     a = ap.parse_args(argv)
     if a.set_models and not a.set_base:
@@ -217,32 +231,44 @@ def main(argv=None):
         where = "" if r["task"] is None else f"  (task {r['task']}, {r['column']})"
         flag = "FAIL" if g in bad_groups else "ok"
         print(f"  {g:22s} max |Δ| {r['max_abs_diff']:.3e}  {flag}{where}")
-    if a.l1b_scores:
-        result["l1b"] = {}
+    if a.l1b_scores or a.l1b_opp_scores:
+        for key, dirs in (("l1b", a.l1b_scores), ("l1b_opp", a.l1b_opp_scores)):
+            if dirs:
+                result[key] = {}
         if unmatched or ambiguous:
             print("  l1b sums: not checked (unmatched or ambiguous tasks)")
             result["pass"] = False
         else:
-            l1b_models, l1b_per_task, _ = ps.load_shards_l1b(Path(a.out), a.nshards)
-            for d in a.l1b_scores:
-                try:
-                    name, row = compare_l1b(d, l1b_models, l1b_per_task, ref, match, a.l1b_tol, a.l1b_bias_tol)
-                except ValueError as e:
-                    print(f"  l1b {d}: {e}")
+            l1b_models, l1b_per_task, _, opp = ps.load_shards_l1b(Path(a.out), a.nshards)
+            jobs = [("l1b", a.l1b_scores, "target", l1b_per_task, None)] if a.l1b_scores else []
+            if a.l1b_opp_scores:
+                if opp is None:
+                    print("  l1b_opp sums: the shards carry no opponent scores (scored without --l1b-heads, or with --no-l1b-opponent)")
                     result["pass"] = False
-                    bad_groups.append(f"l1b.{Path(d).parent.name}")
-                    continue
-                result["l1b"][name] = row
-                if not row["trunk_checked"]:
-                    print(f"WARNING: l1b {d}: its meta_s*.json records no trunk_sha256 (scored before l1b_score.py wrote it); "
-                          f"matched to {name} by state_sha256 alone", file=sys.stderr, flush=True)
-                if not row["pass"]:
-                    bad_groups.append(f"l1b.{name}")
-                    result["pass"] = False
-                where = "" if row["task"] is None else f"  (task {row['task']}, {row['level']})"
-                print(f"  {'l1b.' + name:22s} max |Δ sum|/move {row['max_per_move_diff']:.3e}  bias {row['max_abs_bias']:.3e}  "
-                      f"{'ok' if row['pass'] else 'FAIL'}{where}  ({row['matched']} games, {row['missing']} missing from {d}; "
-                      f"max |Δ sum| {row['max_abs_diff']:.3e})")
+                    bad_groups.append("l1b_opp")
+                else:
+                    jobs.append(("l1b_opp", a.l1b_opp_scores, "opponent", {k: v[1] for k, v in opp.items()}, {k: v[0] for k, v in opp.items()}))
+            for key, dirs, side, sums, n_moves in jobs:
+                for d in dirs:
+                    try:
+                        name, row = compare_l1b(d, l1b_models, sums, ref, match, a.l1b_tol, a.l1b_bias_tol, side=side, n_moves_per_task=n_moves)
+                    except ValueError as e:
+                        print(f"  {key} {d}: {e}")
+                        result["pass"] = False
+                        bad_groups.append(f"{key}.{Path(d).parent.name}")
+                        continue
+                    result[key][name] = row
+                    if not row["trunk_checked"]:
+                        print(f"WARNING: {key} {d}: its meta_s*.json records no trunk_sha256 (scored before l1b_score.py wrote it); "
+                              f"matched to {name} by state_sha256 alone", file=sys.stderr, flush=True)
+                    if not row["pass"]:
+                        bad_groups.append(f"{key}.{name}")
+                        result["pass"] = False
+                    where = "" if row["task"] is None else f"  (task {row['task']}, {row['level']})"
+                    counts = f"; {row['n_moves_mismatch']} games with other move counts" if n_moves is not None else ""
+                    print(f"  {key + '.' + name:22s} max |Δ sum|/move {row['max_per_move_diff']:.3e}  bias {row['max_abs_bias']:.3e}  "
+                          f"{'ok' if row['pass'] else 'FAIL'}{where}  ({row['matched']} games, {row['missing']} missing from {d}; "
+                          f"max |Δ sum| {row['max_abs_diff']:.3e}{counts})")
     if a.set_models:
         if unmatched or ambiguous:
             print("  set models: not checked (unmatched or ambiguous tasks)")

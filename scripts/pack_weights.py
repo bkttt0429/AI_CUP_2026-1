@@ -11,8 +11,8 @@ Release assets may be up to 2 GB each; no quota, no precision change. Upload: Gi
 release -> attach the tar.
 
   python -I scripts/pack_weights.py --l1b-heads results/l1b/heads3_A.pt results/l1b/heads3_B.pt \\
-      --models results/models/rank_model.json results/models/rank_model_fused.json --set-dir results/models/set \\
-      --out release/weights-2026-11-24.tar
+      --models results/models/rank_model.json results/models/rank_model_fused.json results/models/rank_model_fused_opp.json \\
+      --set-dir results/models/set --out release/weights-2026-11-24.tar
 """
 import argparse
 import hashlib
