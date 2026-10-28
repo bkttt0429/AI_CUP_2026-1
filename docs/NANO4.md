@@ -380,6 +380,16 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 01:00:00 -J packopp script
 
 **11/04 正式流程**：8 卡 `shards.sh 8 … --l1b-heads results/l1b/heads3_A.pt results/l1b/heads3_B.pt`（§4 的 `sub8` 指令加這個旗標；對手自動評，`shards.sh` 限每分片 2 條 CPU 執行緒）→ `--merge --nshards 8 --fused-model results/models/rank_model_fused_opp.json`。退路依序：同一組分片檔 `--merge` 改給 `--fused-model results/models/rank_model_fused.json`（fused）、`--set-models …`（`ens_top3`）或什麼都不給（`rank_model.json`），都不用重新評分。
 
+### 4.5 棋力標量對照實驗 a）：有序最後一層（2026-10-28，issue #14）
+
+提交管線不動。`scripts/ordinal_check.py` 在既有 56 維 fused_opp 特徵上比三個最後一層：`mlp`（現在的 10 類 MLP，必須重現 `opp_check.json` 的 0.6735）、`coral`（CORAL 有序 MLP：共用標量加 9 個遞減門檻）、`bt`（題目層的成對 Bradley–Terry 強度分數，再用累積 logit 鏈結給機率）。協定同 `l1b_opp_check.py`（folds 1–4、pilot 驗證題、每人 32 題、`RandomState(42+v)`），預先指定 `coral vs mlp`、`bt vs mlp` 三條件。CPU，幾分鐘：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 01:00:00 -J ordchk scripts/nano4/run.sbatch python -I scripts/ordinal_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --out results/l1b/ordinal_check.json
+```
+
+預期：`mlp` 0.6735（差 0）；把三列數字與兩條比較貼回 issue #14，`ordinal_check.json` 進 git。不碰 fold 0。決策：任一有序版本三條件全過才另開 issue 討論換最後一層；都沒過就記進 METHOD_NOTES，b）照做。b）的 BT 強度 head（訓練、評分、特徵、CV）規格在 issue #14，程式在下一個 PR。
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：
