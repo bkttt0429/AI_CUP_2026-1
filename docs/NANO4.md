@@ -432,21 +432,24 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 01:00:00 -J sechk scripts/
 
 提交管線不動。五個鑑別式 L1b 模型 f0…f4，f_k 用 folds {0,1,2,3,4} ∖ {k} 訓練、只評 fold k；配方與 heads3 完全相同（第一階段凍結 trunk → 第二階段 `--trunk-lr 1e-5` → 鑑別式 `--disc-weight 1`），只改資料。`l1b_train.py` 現在可以吃多個 `--cache` 並以 `--exclude-folds k` 丟掉 fold k 玩家的局（`splits/player_folds.csv`），側檔 `train_folds` = 三包快取的聯集 − {k}，所以 `l1b_score.py` 的 OOF 檢查只准 f_k 評 fold k。五條鏈互相獨立，可以同時排。
 
-**0. fold 0 的快取**（CPU；和 `cache_A`／`cache_B` 同一支腳本，`--max-games 40` 預設，單行程自己寫 `meta.json`）：
+**0. fold 0 的快取**（CPU；和 `cache_A`／`cache_B` 同一支腳本，`--max-games 40` 預設。`run.sbatch` 預設 1 張 GPU 配 `-c 48` 會撞每張 GPU 12 核的上限，所以照 cache_A 當時的做法用 8 卡節點分 8 片、每片 12 個 worker，最後合併 meta）：
 
 ```bash
-sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 48 -t 02:00:00 -J cache0 scripts/nano4/run.sbatch python -I scripts/l1b_build_cache.py --folds 0 --out results/l1b/cache_0 --workers 48
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 02:00:00 -J cache0 scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 8 python -I scripts/l1b_build_cache.py --folds 0 --out results/l1b/cache_0 --workers 12
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 00:10:00 -J cache0m scripts/nano4/run.sbatch python -I scripts/l1b_build_cache.py --out results/l1b/cache_0 --merge-meta
 ```
 
-**1. 五條訓練鏈**（k = 0…4；下面以 k = 0 為例，其餘把 `f0`／`--exclude-folds 0` 換掉）。第一階段用 2 卡 `--batch 128`（全域 batch 256 = `heads_A` 的），第二、三階段用 8 卡 `--batch 128`（全域 1,024 = `heads2`／`heads3` 的）；epoch 數不改，讓 inner 早停決定：
+預期（nano4 2026-10-29）：1,605 人、5,701,594 個位置。
+
+**1. 五條訓練鏈**（k = 0…4；下面以 k = 0 為例，其餘把 `f0`／`--exclude-folds 0` 換掉）。第一階段用 8 卡 `--batch 32`（全域 batch 256 = `heads_A` 的；使用者決定，2026-10-29），第二、三階段用 8 卡 `--batch 128`（全域 1,024 = `heads2`／`heads3` 的）；epoch 數不改，讓 inner 早停決定。五條鏈同時排（`afterok` 串三段與評分）；每人同時最多送 20 個工作（`QOSMaxSubmitJobPerUserLimit`），整條流程 29 個工作，超過的由 login node 上只做 `squeue`／`sbatch` 的小迴圈等空位補送：
 
 ```bash
-sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:2 -c 24 -t 06:00:00 -J x5s1f0 scripts/nano4/run.sbatch torchrun --standalone --nproc_per_node 2 scripts/l1b_train.py --cache results/l1b/cache_A results/l1b/cache_B results/l1b/cache_0 --exclude-folds 0 --out results/l1b/heads5s1_f0.pt --batch 128
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 06:00:00 -J x5s1f0 scripts/nano4/run.sbatch torchrun --standalone --nproc_per_node 8 scripts/l1b_train.py --cache results/l1b/cache_A results/l1b/cache_B results/l1b/cache_0 --exclude-folds 0 --out results/l1b/heads5s1_f0.pt --batch 32
 sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 06:00:00 -J x5s2f0 scripts/nano4/run.sbatch torchrun --standalone --nproc_per_node 8 scripts/l1b_train.py --cache results/l1b/cache_A results/l1b/cache_B results/l1b/cache_0 --exclude-folds 0 --out results/l1b/heads5s2_f0.pt --trunk-lr 1e-5 --init-heads results/l1b/heads5s1_f0.pt --batch 128
 sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 06:00:00 -J x5f0 scripts/nano4/run.sbatch torchrun --standalone --nproc_per_node 8 scripts/l1b_train.py --cache results/l1b/cache_A results/l1b/cache_B results/l1b/cache_0 --exclude-folds 0 --out results/l1b/heads5_f0.pt --trunk-lr 1e-5 --init-heads results/l1b/heads5s2_f0.pt --disc-weight 1 --epochs 2 --batch 128
 ```
 
-每個 rank 各自把三包快取讀進 RAM（約 2,030 萬個位置 × 1.1 KB ≈ 23 GB；8 個 rank 約 180 GB／節點）。節點不夠就改 4 卡 `--batch 256`（全域 batch 不變，RAM 減半）。log 第一行會印「caches […]: folds [1, 2, 3, 4] after leaving out [0] (N players)」，確認 `train_folds`。側檔 `heads5*_f{k}.json`（15 個）進 git，`.pt` 不進；要貼的是五個 `heads5_f{k}.json` 的 `inner_nll_init/best`、`inner_disc_init/best`、`best_epoch`、`wall_seconds`，和 heads3_A／B（NLL 1.434 → 1.516／1.419 → 1.493，rank CE 見側檔）擺在一起。
+每個 rank 各自把三包快取讀進 RAM（約 2,260 萬個位置 × 1.1 KB ≈ 25 GB；8 個 rank 約 200 GB／節點；8gpus 節點 1.9 TB、`DefMemPerGPU=200G`，夠）。五條鏈同時起跑時 40 個 rank 一起從共享檔案系統讀快取，單一 rank 讀完可能要 6–9 分鐘，先到的 rank 會在第一次集體通訊等人：NCCL 預設 10 分鐘逾時會讓 all-reduce 回傳壞資料（印出 `inner NLL nan` 後中止），所以 `l1b_train.py` 的 `init_process_group` 現在用 60 分鐘逾時（nano4 `95d4382`）。log 第一行會印「caches […]: folds [1, 2, 3, 4] after leaving out [0] (N players)」，確認 `train_folds`；第 0 步的 inner NLL 應在 1.61–1.63（heads_A 1.6164）。側檔 `heads5*_f{k}.json`（15 個）進 git，`.pt` 不進；要貼的是五個 `heads5_f{k}.json` 的 `inner_nll_init/best`、`inner_disc_init/best`、`best_epoch`、`wall_seconds`，和 heads3_A／B（NLL 1.434 → 1.516／1.419 → 1.493，rank CE 見側檔）擺在一起。
 
 **2. 評分**（f_k 只評 fold k，目標與對手各一次，五個模型寫進同一組目錄；OOF 檢查會拒絕評到自己訓練的 fold）：
 
