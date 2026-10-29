@@ -93,7 +93,10 @@ def main(argv=None):
         import torch.distributed as dist
         local = int(os.environ["LOCAL_RANK"])
         torch.cuda.set_device(local)
-        dist.init_process_group("nccl")
+        from datetime import timedelta
+        # 60 min, not NCCL's 10: with several 8-GPU jobs reading the caches from the shared filesystem at once, the
+        # last rank can reach the first collective > 10 min after the first (issue #16, f2 stage 1)
+        dist.init_process_group("nccl", timeout=timedelta(minutes=60))
         a.device = f"cuda:{local}"
     me = int(os.environ.get("RANK", "0"))
     try:
