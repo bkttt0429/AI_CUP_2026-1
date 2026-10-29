@@ -380,6 +380,54 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 01:00:00 -J packopp script
 
 **11/04 正式流程**：8 卡 `shards.sh 8 … --l1b-heads results/l1b/heads3_A.pt results/l1b/heads3_B.pt`（§4 的 `sub8` 指令加這個旗標；對手自動評，`shards.sh` 限每分片 2 條 CPU 執行緒）→ `--merge --nshards 8 --fused-model results/models/rank_model_fused_opp.json`。退路依序：同一組分片檔 `--merge` 改給 `--fused-model results/models/rank_model_fused.json`（fused）、`--set-models …`（`ens_top3`）或什麼都不給（`rank_model.json`），都不用重新評分。
 
+### 4.5 棋力標量對照實驗 a）：有序最後一層（2026-10-28，issue #14）
+
+提交管線不動。`scripts/ordinal_check.py` 在既有 56 維 fused_opp 特徵上比三個最後一層：`mlp`（現在的 10 類 MLP，必須重現 `opp_check.json` 的 0.6735）、`coral`（CORAL 有序 MLP：共用標量加 9 個遞減門檻）、`bt`（題目層的成對 Bradley–Terry 強度分數，再用累積 logit 鏈結給機率）。協定同 `l1b_opp_check.py`（folds 1–4、pilot 驗證題、每人 32 題、`RandomState(42+v)`），預先指定 `coral vs mlp`、`bt vs mlp` 三條件。CPU，幾分鐘：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 01:00:00 -J ordchk scripts/nano4/run.sbatch python -I scripts/ordinal_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --out results/l1b/ordinal_check.json
+```
+
+預期：`mlp` 0.6735（差 0）；把三列數字與兩條比較貼回 issue #14，`ordinal_check.json` 進 git。不碰 fold 0。決策：任一有序版本三條件全過才另開 issue 討論換最後一層；都沒過就記進 METHOD_NOTES，b）照做。
+
+**結果（2026-10-29，job 638248，3 分 56 秒）**：`mlp` 0.6735（差 0）、`coral` 0.6472、`bt` 0.6761；coral vs mlp −0.0263 [−0.0309, −0.0217]、bt vs mlp +0.0025 [−0.0012, +0.0063]（四折全正但 CI 含 0、未達 0.005），都沒過，最後一層維持 10 類 MLP（`results/l1b/ordinal_check.json`，METHOD_NOTES §2.12）。
+
+### 4.6 棋力標量對照實驗 b）：humanv0 trunk 上的 BT 強度 head（2026-10-28，issue #14）
+
+a）的結果不影響 b）要不要跑（b 測的是特徵，不是最後一層）。提交管線不動。強度 head 是 humanv0 `PolicyHead` 的一份拷貝，通道 0 在落子處的輸出當每手的棋力分數 s（第 0 步就是中性 metadata 下的 policy logit）；訓練目標是 Bradley–Terry：同一批次內等級不同的位置對，−log σ(sign(r_i − r_j)·(s_i − s_j))，權重 √(w_i w_j)，inner 用同一個損失選模，另印成對準確率。沿用 L1b 的快取與 A／B out-of-fold。四步：
+
+**1. 訓練 A、B 兩個強度 head**（第一階段，凍結 trunk；`cache_A` 是 folds 1、2，`cache_B` 是 3、4。單卡用預設 batch 256；8 卡 torchrun 每卡 128。log 看 `inner BT loss` 與 `pair accuracy` 從第 0 步到最佳的變化）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 06:00:00 -J seA scripts/nano4/run.sbatch torchrun --standalone --nproc_per_node 8 scripts/se_train.py --cache results/l1b/cache_A --out results/l1b/se_A.pt --batch 128
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 06:00:00 -J seB scripts/nano4/run.sbatch torchrun --standalone --nproc_per_node 8 scripts/se_train.py --cache results/l1b/cache_B --out results/l1b/se_B.pt --batch 128
+```
+
+側檔 `se_{A,B}.json` 進 git（`kind: strength`，記 `inner_bt_init/best`、`inner_pair_accuracy_*`、`inner_mean_by_rank_best`：十個等級的平均分數應該大致遞增）；`.pt` 不進 git。
+
+**2. 評分**（`se_score.py`，`l1b_score.py` 的佈局與 out-of-fold 檢查；A 評 folds 3、4、0，B 評 1、2、0；目標與對手各一次）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 03:00:00 -J seScA scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 8 python -I scripts/se_score.py --head results/l1b/se_A.pt --folds 3 4 0 --out results/l1b/se_A_scores --workers 10
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 03:00:00 -J seScAo scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 8 python -I scripts/se_score.py --head results/l1b/se_A.pt --folds 3 4 0 --out results/l1b/se_A_opp --opponent --workers 10
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 03:00:00 -J seScB scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 8 python -I scripts/se_score.py --head results/l1b/se_B.pt --folds 1 2 0 --out results/l1b/se_B_scores --workers 10
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 03:00:00 -J seScBo scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 8 python -I scripts/se_score.py --head results/l1b/se_B.pt --folds 1 2 0 --out results/l1b/se_B_opp --opponent --workers 10
+```
+
+每局一列：`n_moves` 與 `se_mean`、`se_std`、`se_q10`、`se_q50`、`se_q90`、三段均值（t < 40、40–99、≥ 100）；每手 s 在 npz（不進 git，`games_s*_p*.csv` 也不進，`meta_s*.json` 進）。
+
+**3. CV**（CPU，幾分鐘）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 01:00:00 -J sechk scripts/nano4/run.sbatch python -I scripts/se_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --se results/l1b/se_A_scores results/l1b/se_B_scores --se-opp results/l1b/se_A_opp results/l1b/se_B_opp --out results/l1b/se_check.json
+```
+
+預期：`fused_opp` 0.6735（重現）；`se` 單獨、`hsl_se`、`fused_opp_se`（+ 目標 9 維）、`fused_opp_se2`（+ 對手 9 維）；預先指定 `fused_opp_se vs fused_opp`、`fused_opp_se2 vs fused_opp` 三條件。六列與五條比較貼回 issue #14，`se_check.json` 進 git。**不碰 fold 0**：通過才在 issue 上談第三次 fold 0 檢查。
+
+**4. 決策**：預先指定的比較通過 → 另開 issue 談接進提交（分片評分多一次強度 head 前向、分片檔多每局統計、fused 文件多 9 或 18 維）；沒過 → 記進 METHOD_NOTES §2.12，結束。
+
+**結果（2026-10-29）**：se_A／se_B 成對準確率 0.52 → 0.74／0.75、十個等級的平均分數嚴格遞增，各約 25 分鐘（`se_{A,B}.json`）；四個評分目錄每 fold 約 8 分鐘；`se_check.py`（job 638316）：`fused_opp` 0.6735（差 0）、`fused_opp_se` 0.6694、`fused_opp_se2` 0.6720，兩條預先指定都沒過（−0.0041 [−0.0073, −0.0009]、−0.0015 [−0.0050, +0.0019]），強度特徵不接進提交、不碰 fold 0（`results/l1b/se_check.json`，METHOD_NOTES §2.12）。
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：
