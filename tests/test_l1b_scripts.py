@@ -347,3 +347,26 @@ def test_cv_cli(tmp_path, capsys):
     # a fold in two --l1b directories, or in none, is refused
     assert cv.main(["--l1b", str(l1b_a), str(l1b_a), *base]) == 2 and "more than one" in capsys.readouterr().err
     assert cv.main(["--l1b", str(l1b_a), *base]) == 2 and "3" in capsys.readouterr().err
+
+
+def test_train_cli_with_several_caches_and_an_excluded_fold(tmp_path, capsys):
+    import l1b_score as ls
+    import pytest
+    from tests.test_l1btrain import _two_caches
+    c1, c2, csv = _two_caches(tmp_path)
+    out = tmp_path / "heads5_f2.pt"
+    base = ["--cache", str(c1), str(c2), "--folds-csv", str(csv), "--model-config", "b2c16", "--device", "cpu", "--epochs", "1", "--batch", "8"]
+    assert lt.main([*base, "--exclude-folds", "2", "--out", str(out), "--check-init"]) == 0
+    assert lt.main([*base, "--exclude-folds", "2", "--out", str(out)]) == 0
+    meta = json.loads(out.with_suffix(".json").read_text())
+    assert meta["train_folds"] == [0, 1] and meta["excluded_folds"] == [2] and meta["cache_dirs"] == [str(c1), str(c2)]
+    assert "train_folds [0, 1]" in capsys.readouterr().out
+    # l1b_score's out-of-fold rule reads the sidecar: fold 2 may be scored, fold 1 may not
+    ls.check_unseen(meta, [2], False, tmp_path / "scores5")
+    with pytest.raises(ValueError, match="include"):
+        ls.check_unseen(meta, [1], False, tmp_path / "scores5")
+    # an excluded fold outside the caches, or two caches sharing a fold: exit 2 with the reason
+    assert lt.main([*base, "--exclude-folds", "7", "--out", str(tmp_path / "x.pt")]) == 2
+    assert "not in the caches" in capsys.readouterr().err
+    assert lt.main(["--cache", str(c1), str(c1), *base[3:], "--out", str(tmp_path / "y.pt")]) == 2
+    assert "more than one" in capsys.readouterr().err

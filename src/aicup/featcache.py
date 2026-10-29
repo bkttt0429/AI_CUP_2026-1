@@ -6,7 +6,8 @@ bytes), the target move, the move index and the colour to move. Positions are st
 games table (game_key, player_id, rank, color, n_moves) and an npz of concatenated arrays with game_row
 pointing at the table; parts are written to .tmp names and renamed (npz first), so a part counts as done
 only when both files exist. read_cache concatenates every finished part with global game rows and the
-rank index of each position; plan_parts lists the parts a shard still has to write.
+rank index of each position (read_caches: several directories as one cache, optionally without the games
+of given players); plan_parts lists the parts a shard still has to write.
 """
 import re
 from pathlib import Path
@@ -100,22 +101,41 @@ def plan_parts(keys, part_size, cache_dir, shard):
     return [(k, keys[k * part_size:(k + 1) * part_size]) for k in range(-(-len(keys) // part_size)) if k not in done]
 
 
-def read_cache(cache_dir):
+def read_cache(cache_dir, drop_players=None):
     """(games, arrays) of every finished part in (shard, k) order; game_row is global, rank_idx int8 per position.
-    FileNotFoundError when the directory has no finished part."""
-    parts = completed_parts(cache_dir)
-    if not parts:
-        raise FileNotFoundError(f"no finished cache parts in {cache_dir}")
+    drop_players: player ids whose games (and positions) are left out, e.g. the players of a held-out fold
+    (issue #16). FileNotFoundError when the directory has no finished part."""
+    return read_caches([cache_dir], drop_players)
+
+
+def read_caches(cache_dirs, drop_players=None):
+    """read_cache over several cache directories in the given order, as one cache: game_row is global over all of
+    them (issue #16: a model trained on folds 0-4 minus one reads cache_A, cache_B and cache_0 together). Every
+    directory must have a finished part."""
+    drop = set(map(str, drop_players)) if drop_players else None
     frames, blocks, offset = [], [], 0
-    for shard, k in parts:
-        npz, csv = part_paths(cache_dir, shard, k)
-        games = pd.read_csv(csv, dtype={"game_key": str, "player_id": str, "rank": str, "color": str}, keep_default_na=False)
-        with np.load(npz, allow_pickle=False) as z:
-            arr = {key: z[key] for key in (*ARRAYS, "game_row")}
-        arr["game_row"] = arr["game_row"].astype(np.int32) + offset
-        offset += len(games)
-        frames.append(games)
-        blocks.append(arr)
+    for cache_dir in cache_dirs:
+        parts = completed_parts(cache_dir)
+        if not parts:
+            raise FileNotFoundError(f"no finished cache parts in {cache_dir}")
+        for shard, k in parts:
+            npz, csv = part_paths(cache_dir, shard, k)
+            games = pd.read_csv(csv, dtype={"game_key": str, "player_id": str, "rank": str, "color": str}, keep_default_na=False)
+            with np.load(npz, allow_pickle=False) as z:
+                arr = {key: z[key] for key in (*ARRAYS, "game_row")}
+            arr["game_row"] = arr["game_row"].astype(np.int32)
+            if drop:
+                keep = ~games["player_id"].isin(drop).to_numpy()
+                if not keep.all():
+                    pos_keep = keep[arr["game_row"]] if len(arr["game_row"]) else np.zeros((0,), dtype=bool)
+                    new_row = np.cumsum(keep) - 1  # new index of every kept game
+                    arr = {key: arr[key][pos_keep] for key in arr}
+                    arr["game_row"] = new_row[arr["game_row"]].astype(np.int32)
+                    games = games[keep].reset_index(drop=True)
+            arr["game_row"] = arr["game_row"] + offset
+            offset += len(games)
+            frames.append(games)
+            blocks.append(arr)
     games = pd.concat(frames, ignore_index=True)
     arrays = {key: np.concatenate([b[key] for b in blocks]) for key in (*ARRAYS, "game_row")}
     rank_of_game = games["rank"].map(RANK_TO_IDX).to_numpy(dtype=np.int8)

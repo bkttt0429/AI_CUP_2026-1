@@ -428,6 +428,45 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 01:00:00 -J sechk scripts/
 
 **結果（2026-10-29）**：se_A／se_B 成對準確率 0.52 → 0.74／0.75、十個等級的平均分數嚴格遞增，各約 25 分鐘（`se_{A,B}.json`）；四個評分目錄每 fold 約 8 分鐘；`se_check.py`（job 638316）：`fused_opp` 0.6735（差 0）、`fused_opp_se` 0.6694、`fused_opp_se2` 0.6720，兩條預先指定都沒過（−0.0041 [−0.0073, −0.0009]、−0.0015 [−0.0050, +0.0019]），強度特徵不接進提交、不碰 fold 0（`results/l1b/se_check.json`，METHOD_NOTES §2.12）。
 
+### 4.7 L1b 五折交叉擬合（每個模型看 80% 的玩家）+ 相鄰級 label smoothing（2026-10-29，issue #16）
+
+提交管線不動。五個鑑別式 L1b 模型 f0…f4，f_k 用 folds {0,1,2,3,4} ∖ {k} 訓練、只評 fold k；配方與 heads3 完全相同（第一階段凍結 trunk → 第二階段 `--trunk-lr 1e-5` → 鑑別式 `--disc-weight 1`），只改資料。`l1b_train.py` 現在可以吃多個 `--cache` 並以 `--exclude-folds k` 丟掉 fold k 玩家的局（`splits/player_folds.csv`），側檔 `train_folds` = 三包快取的聯集 − {k}，所以 `l1b_score.py` 的 OOF 檢查只准 f_k 評 fold k。五條鏈互相獨立，可以同時排。
+
+**0. fold 0 的快取**（CPU；和 `cache_A`／`cache_B` 同一支腳本，`--max-games 40` 預設，單行程自己寫 `meta.json`）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 48 -t 02:00:00 -J cache0 scripts/nano4/run.sbatch python -I scripts/l1b_build_cache.py --folds 0 --out results/l1b/cache_0 --workers 48
+```
+
+**1. 五條訓練鏈**（k = 0…4；下面以 k = 0 為例，其餘把 `f0`／`--exclude-folds 0` 換掉）。第一階段用 2 卡 `--batch 128`（全域 batch 256 = `heads_A` 的），第二、三階段用 8 卡 `--batch 128`（全域 1,024 = `heads2`／`heads3` 的）；epoch 數不改，讓 inner 早停決定：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:2 -c 24 -t 06:00:00 -J x5s1f0 scripts/nano4/run.sbatch torchrun --standalone --nproc_per_node 2 scripts/l1b_train.py --cache results/l1b/cache_A results/l1b/cache_B results/l1b/cache_0 --exclude-folds 0 --out results/l1b/heads5s1_f0.pt --batch 128
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 06:00:00 -J x5s2f0 scripts/nano4/run.sbatch torchrun --standalone --nproc_per_node 8 scripts/l1b_train.py --cache results/l1b/cache_A results/l1b/cache_B results/l1b/cache_0 --exclude-folds 0 --out results/l1b/heads5s2_f0.pt --trunk-lr 1e-5 --init-heads results/l1b/heads5s1_f0.pt --batch 128
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 06:00:00 -J x5f0 scripts/nano4/run.sbatch torchrun --standalone --nproc_per_node 8 scripts/l1b_train.py --cache results/l1b/cache_A results/l1b/cache_B results/l1b/cache_0 --exclude-folds 0 --out results/l1b/heads5_f0.pt --trunk-lr 1e-5 --init-heads results/l1b/heads5s2_f0.pt --disc-weight 1 --epochs 2 --batch 128
+```
+
+每個 rank 各自把三包快取讀進 RAM（約 2,030 萬個位置 × 1.1 KB ≈ 23 GB；8 個 rank 約 180 GB／節點）。節點不夠就改 4 卡 `--batch 256`（全域 batch 不變，RAM 減半）。log 第一行會印「caches […]: folds [1, 2, 3, 4] after leaving out [0] (N players)」，確認 `train_folds`。側檔 `heads5*_f{k}.json`（15 個）進 git，`.pt` 不進；要貼的是五個 `heads5_f{k}.json` 的 `inner_nll_init/best`、`inner_disc_init/best`、`best_epoch`、`wall_seconds`，和 heads3_A／B（NLL 1.434 → 1.516／1.419 → 1.493，rank CE 見側檔）擺在一起。
+
+**2. 評分**（f_k 只評 fold k，目標與對手各一次，五個模型寫進同一組目錄；OOF 檢查會拒絕評到自己訓練的 fold）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 02:00:00 -J x5sc0 scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 8 python -I scripts/l1b_score.py --heads results/l1b/heads5_f0.pt --folds 0 --out results/l1b/scores5 --workers 10
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 02:00:00 -J x5so0 scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 8 python -I scripts/l1b_score.py --heads results/l1b/heads5_f0.pt --folds 0 --out results/l1b/scores5_opp --opponent --workers 10
+```
+
+（k = 1…4 同樣，共 10 個工作。）每個 fold 的 `meta_s*.json` 進 git（csv／npz 不進）。
+
+**3. CV**（CPU，十幾分鐘）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 01:00:00 -J xfit scripts/nano4/run.sbatch python -I scripts/xfit_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --xfit-l1b results/l1b/scores5 --xfit-opp results/l1b/scores5_opp --out results/l1b/xfit_check.json
+```
+
+預期：`fused_opp` 0.6735（重現 `opp_check.json`，差 0）；`fused_opp_x5`、`fused_opp_ls`（ε 0.1）、`fused_opp_ls2`（0.2）、`fused_opp_x5_ls`。預先指定 `fused_opp_x5 vs fused_opp`、`fused_opp_ls vs fused_opp` 三條件；其餘只報告。五列與五條比較貼回 issue #16，`xfit_check.json` 進 git。**不碰 fold 0。**
+
+**4. 決策**：`x5` 通過 → 另開 issue 接進提交：`fit_fused_model.py --l1b f0:results/l1b/scores5:results/l1b/heads5_f0.json … f4:… --opp f0:results/l1b/scores5_opp … --out results/models/rank_model_fused_opp_x5.json`（fold 0 表只用 f0，腳本會印「models [f1…f4] trained on it and are left out」；**5 個模型平均在任何留出資料上都沒有被量過**），分片評分 `--l1b-heads` 給 5 個 `.pt`（多 6 次 trunk 前向），對帳與封存同 §4.4；`ls` 通過 → 同一個 issue 一起談（只是 MLP 的 loss）。都沒過 → 記 METHOD_NOTES §2.13，結束。
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：
