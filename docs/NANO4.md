@@ -390,6 +390,8 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 01:00:00 -J ordchk scripts
 
 預期：`mlp` 0.6735（差 0）；把三列數字與兩條比較貼回 issue #14，`ordinal_check.json` 進 git。不碰 fold 0。決策：任一有序版本三條件全過才另開 issue 討論換最後一層；都沒過就記進 METHOD_NOTES，b）照做。
 
+**結果（2026-10-29，job 638248，3 分 56 秒）**：`mlp` 0.6735（差 0）、`coral` 0.6472、`bt` 0.6761；coral vs mlp −0.0263 [−0.0309, −0.0217]、bt vs mlp +0.0025 [−0.0012, +0.0063]（四折全正但 CI 含 0、未達 0.005），都沒過，最後一層維持 10 類 MLP（`results/l1b/ordinal_check.json`，METHOD_NOTES §2.12）。
+
 ### 4.6 棋力標量對照實驗 b）：humanv0 trunk 上的 BT 強度 head（2026-10-28，issue #14）
 
 a）的結果不影響 b）要不要跑（b 測的是特徵，不是最後一層）。提交管線不動。強度 head 是 humanv0 `PolicyHead` 的一份拷貝，通道 0 在落子處的輸出當每手的棋力分數 s（第 0 步就是中性 metadata 下的 policy logit）；訓練目標是 Bradley–Terry：同一批次內等級不同的位置對，−log σ(sign(r_i − r_j)·(s_i − s_j))，權重 √(w_i w_j)，inner 用同一個損失選模，另印成對準確率。沿用 L1b 的快取與 A／B out-of-fold。四步：
@@ -423,6 +425,8 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 01:00:00 -J sechk scripts/
 預期：`fused_opp` 0.6735（重現）；`se` 單獨、`hsl_se`、`fused_opp_se`（+ 目標 9 維）、`fused_opp_se2`（+ 對手 9 維）；預先指定 `fused_opp_se vs fused_opp`、`fused_opp_se2 vs fused_opp` 三條件。六列與五條比較貼回 issue #14，`se_check.json` 進 git。**不碰 fold 0**：通過才在 issue 上談第三次 fold 0 檢查。
 
 **4. 決策**：預先指定的比較通過 → 另開 issue 談接進提交（分片評分多一次強度 head 前向、分片檔多每局統計、fused 文件多 9 或 18 維）；沒過 → 記進 METHOD_NOTES §2.12，結束。
+
+**結果（2026-10-29）**：se_A／se_B 成對準確率 0.52 → 0.74／0.75、十個等級的平均分數嚴格遞增，各約 25 分鐘（`se_{A,B}.json`）；四個評分目錄每 fold 約 8 分鐘；`se_check.py`（job 638316）：`fused_opp` 0.6735（差 0）、`fused_opp_se` 0.6694、`fused_opp_se2` 0.6720，兩條預先指定都沒過（−0.0041 [−0.0073, −0.0009]、−0.0015 [−0.0050, +0.0019]），強度特徵不接進提交、不碰 fold 0（`results/l1b/se_check.json`，METHOD_NOTES §2.12）。
 
 ## 5. 同步程式碼、取回結果
 
