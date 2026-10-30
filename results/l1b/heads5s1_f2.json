@@ -1,0 +1,301 @@
+{
+ "format": 1,
+ "n_ranks": 10,
+ "levels": [
+  "D",
+  "C",
+  "B",
+  "A",
+  "1D",
+  "2D",
+  "3D",
+  "4D",
+  "5D",
+  "6D"
+ ],
+ "n_params": 450240,
+ "state_sha256": "4635aa4a904dd04799ff8f86f98fcf1cbdd971d81a028367457a4212d3c8cfe9",
+ "git_head": "95d4382",
+ "git_dirty": false,
+ "code_sha256": "8cf8dbbd0a7e9024e4ed529c7a55497b48b8f487944f4fceec2567d9f644a2f7",
+ "code_files": [
+  "src/aicup/gamevec.py",
+  "src/aicup/ladder_data.py",
+  "src/aicup/aggregators.py",
+  "src/aicup/settrain.py",
+  "src/aicup/rankmodel.py",
+  "src/aicup/qfeatures.py",
+  "src/aicup/metric.py"
+ ],
+ "torch_version": "2.14.1+cu126",
+ "device_name": "NVIDIA H200",
+ "train_cfg": {
+  "epochs": 3,
+  "batch": 32,
+  "lr": 0.0001,
+  "eval_every": 0.25,
+  "patience": 4,
+  "inner_frac": 0.1,
+  "inner_max_positions": 400000,
+  "seed": 0,
+  "device": "cuda:0",
+  "trunk_lr": 0.0,
+  "disc_weight": 0.0
+ },
+ "train_folds": [
+  0,
+  1,
+  3,
+  4
+ ],
+ "max_games": 40,
+ "n_train_positions": 20385249,
+ "n_inner_positions": 400000,
+ "per_rank_positions": {
+  "D": 2313343,
+  "C": 2020029,
+  "B": 2429034,
+  "A": 3223173,
+  "1D": 1321388,
+  "2D": 1760403,
+  "3D": 1748558,
+  "4D": 1755749,
+  "5D": 1849699,
+  "6D": 1963873
+ },
+ "inner_nll_init": 1.6178998238569662,
+ "inner_nll_best": 1.4783029788209723,
+ "inner_nll_best_by_rank": [
+  1.6400452763602777,
+  1.5424527327824686,
+  1.5468143568350745,
+  1.484993429631416,
+  1.47366859484596,
+  1.5014339294608392,
+  1.4256907565546533,
+  1.4130031775867187,
+  1.3948751839570603,
+  1.3600523501952535
+ ],
+ "inner_disc_init": 2.3025850929940193,
+ "inner_disc_best": 2.2873064096853932,
+ "inner_objective_init": 1.6178998238569662,
+ "inner_objective_best": 1.4783029788209723,
+ "best_epoch": 3.0,
+ "stopped_early": false,
+ "inner_ranks_present": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9
+ ],
+ "history": [
+  [
+   0.0,
+   1.6178998238569662
+  ],
+  [
+   0.2500062790405626,
+   1.498698803958725
+  ],
+  [
+   0.5000125580811252,
+   1.4933662972697226
+  ],
+  [
+   0.7500188371216878,
+   1.489326377128586
+  ],
+  [
+   1.0000251161622504,
+   1.4862661308436689
+  ],
+  [
+   1.250031395202813,
+   1.4848042525388643
+  ],
+  [
+   1.5000376742433756,
+   1.4838992183470499
+  ],
+  [
+   1.7500439532839382,
+   1.4818767362619256
+  ],
+  [
+   2.000050232324501,
+   1.4813772103760896
+  ],
+  [
+   2.2500565113650635,
+   1.4805000222541507
+  ],
+  [
+   2.500062790405626,
+   1.4799628006095324
+  ],
+  [
+   2.7500690694461887,
+   1.4793990814710196
+  ],
+  [
+   3.0,
+   1.4783029788209723
+  ]
+ ],
+ "steps_per_epoch": 79630,
+ "steps_run": 238890,
+ "resumed_from_step": 0,
+ "world_size": 8,
+ "global_batch": 256,
+ "trunk_trained": false,
+ "selection": "inner NLL",
+ "history_detail": [
+  [
+   0.0,
+   1.6178998238569662,
+   2.3025850929940193
+  ],
+  [
+   0.2500062790405626,
+   1.498698803958725,
+   2.288818210647561
+  ],
+  [
+   0.5000125580811252,
+   1.4933662972697226,
+   2.28806692982545
+  ],
+  [
+   0.7500188371216878,
+   1.489326377128586,
+   2.287400438732365
+  ],
+  [
+   1.0000251161622504,
+   1.4862661308436689,
+   2.2862952656344655
+  ],
+  [
+   1.250031395202813,
+   1.4848042525388643,
+   2.287402646784761
+  ],
+  [
+   1.5000376742433756,
+   1.4838992183470499,
+   2.287764510437148
+  ],
+  [
+   1.7500439532839382,
+   1.4818767362619256,
+   2.286952263002929
+  ],
+  [
+   2.000050232324501,
+   1.4813772103760896,
+   2.2872680414731277
+  ],
+  [
+   2.2500565113650635,
+   1.4805000222541507,
+   2.2876582364821454
+  ],
+  [
+   2.500062790405626,
+   1.4799628006095324,
+   2.287284456873678
+  ],
+  [
+   2.7500690694461887,
+   1.4793990814710196,
+   2.287962512086439
+  ],
+  [
+   3.0,
+   1.4783029788209723,
+   2.2873064096853932
+  ]
+ ],
+ "n_trunk_params": 0,
+ "wall_seconds": 7335.835968017578,
+ "cache_dir": [
+  "results/l1b/cache_A",
+  "results/l1b/cache_B",
+  "results/l1b/cache_0"
+ ],
+ "cache_dirs": [
+  "results/l1b/cache_A",
+  "results/l1b/cache_B",
+  "results/l1b/cache_0"
+ ],
+ "excluded_folds": [
+  2
+ ],
+ "cache_meta": {
+  "folds": [
+   0,
+   1,
+   3,
+   4
+  ],
+  "max_games": 40,
+  "min_games": 1,
+  "excluded_folds": [
+   2
+  ],
+  "cache_dirs": [
+   "results/l1b/cache_A",
+   "results/l1b/cache_B",
+   "results/l1b/cache_0"
+  ],
+  "caches": [
+   {
+    "dir": "results/l1b/cache_A",
+    "folds": [
+     1,
+     2
+    ],
+    "players": 3206,
+    "games": 102019,
+    "positions": 11316535,
+    "games_sha256": "1dc5d65abae69a7e881092c24bf0ec5fc26597c2750aaaafaf95ac15659959d0",
+    "model_input_config": "b18c384nbt"
+   },
+   {
+    "dir": "results/l1b/cache_B",
+    "folds": [
+     3,
+     4
+    ],
+    "players": 3196,
+    "games": 101711,
+    "positions": 11297811,
+    "games_sha256": "a6253da1b4d21ddb43cee71f0e74deb9b26a8657fe04d6183e2db7dca4ad186a",
+    "model_input_config": "b18c384nbt"
+   },
+   {
+    "dir": "results/l1b/cache_0",
+    "folds": [
+     0
+    ],
+    "players": 1605,
+    "games": 51141,
+    "positions": 5701594,
+    "games_sha256": "2bb46a8338b477fa804e40aa6ba10dd6c115669aade0ac94aab468f59098e88b",
+    "model_input_config": "b18c384nbt"
+   }
+  ]
+ },
+ "n_games": 203911,
+ "n_players": 6405,
+ "head_init": "humanv0_policy_head",
+ "model_source": "/home/u2507115/BK_AICUP_2026-1/models/katago/b18c384nbt-humanv0.ckpt",
+ "humanv0_sha256": "00e608f3e6458ba8cb0e3ad8b775a447e051ad935303e73e153a12dd16e48d09"
+}
