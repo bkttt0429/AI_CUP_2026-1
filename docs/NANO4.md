@@ -472,6 +472,16 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 01:00:00 -J xfit scripts/n
 
 **結果（2026-10-30，分支 `db3199f`）**：五條鏈各約 4.5–5.3 小時（第一段 6,400–7,900 s、第二段 6,100–6,400 s、第三段 3,662–5,029 s），inner rank CE 2.100–2.110（heads3 2.137／2.111）；評分每 fold 一側約 8 分鐘；`xfit_check.py`（job 640475）：`fused_opp` 0.6735（差 0）、`fused_opp_x5` 0.6704、`fused_opp_ls` 0.6739、`fused_opp_ls2` 0.6755、`fused_opp_x5_ls` 0.6705；預先指定 x5 vs fused_opp −0.0032 [−0.0071, +0.0007]、ls vs fused_opp +0.0003 [−0.0019, +0.0025]，都沒過，提交維持 A／B 的 fused_opp（`results/l1b/xfit_check.json`，METHOD_NOTES §2.13）。
 
+### 4.8 刻度校正變體：每個 L1b 模型每個 head 的偏移置中（2026-10-30，issue #16 後續）
+
+使用者決定（2026-10-30）跑這個 CPU 變體檢驗 §4.7 結果的刻度假設。`xfit_check.py` 現在多算 `fused_opp_c`、`fused_opp_x5c`：對每個模型（fold 目錄的 `meta_s*.json` 認模型）、每個 head，用它在 folds 1–4 評過的局算每手平均 log p（目標與對手各一組），每局 `sum_<rank>` 減掉 `n_moves ×` 這個偏移後再做 56 維；開頭會印每個模型的偏移表。預先指定 `fused_opp_x5c vs fused_opp`；只報告 `c vs fused_opp`、`x5c vs c` 與第一次跑的五條。同一支指令、換輸出檔名，不碰 fold 0：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 01:00:00 -J xfitc scripts/nano4/run.sbatch python -I scripts/xfit_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --xfit-l1b results/l1b/scores5 --xfit-opp results/l1b/scores5_opp --out results/l1b/xfit_center_check.json
+```
+
+預期：`fused_opp` 0.6735、`fused_opp_x5` 0.6704 等五列與 §4.7 完全相同（校正不碰它們）；偏移表（兩側各五個模型 × 10 個 head）、`fused_opp_c`、`fused_opp_x5c` 與八條比較貼回 issue #16，`xfit_center_check.json` 進 git。決策：`x5c` 過三條件 → 另開 issue 談接進提交（五個模型評分 + 校正步驗，分片評分 8 卡約 1 分 48 秒 → 2 分半，11/04 前時間緊，接不接由使用者決定）；沒過 → 記 METHOD_NOTES §2.14，刻度假設不成立。
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：

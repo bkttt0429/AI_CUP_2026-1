@@ -7,13 +7,24 @@ RandomState(42 + v)), the 56 fused_opp features of l1b_opp_check.features, one M
 and validation fold, player bootstrap. Feature sets: fused_opp (the A/B scores of --l1b/--opp; must reproduce
 opp_check.json's 0.6735), fused_opp_x5 (the cross-fit scores of --xfit-l1b/--xfit-opp: each fold scored by the model that
 left it out), fused_opp_ls and fused_opp_ls2 (A/B features, MLPModel(label_smoothing=0.1 / 0.2)), fused_opp_x5_ls (x5
-features, label smoothing 0.1). Pre-specified (conditions (1) CI lower bound > 0, (3) > 0 in >= 3 of 4 folds, (4) >=
-0.005): fused_opp_x5 vs fused_opp and fused_opp_ls vs fused_opp. Reported only: fused_opp_ls2 vs fused_opp,
-fused_opp_x5_ls vs fused_opp_x5, fused_opp_x5_ls vs fused_opp. Fold 0 is refused.
+features, label smoothing 0.1).
+
+Scale correction (2026-10-30, issue #16's follow-up): fused_opp_c and fused_opp_x5c are fused_opp and fused_opp_x5 with
+every L1b model's sums centred per head -- for each model (the fold directories' meta_s*.json name the heads) and each of
+its 10 heads, the move-weighted mean per-move log p over the games it scored in the CV folds (target and opponent
+tables separately) is subtracted: sum_<rank> := sum_<rank> - n_moves x bias. The MLP of fused_opp_x5 is trained on
+features from three models and validated on a fourth; if their per-head offsets differ (the inner NLL of one rank differs
+by up to 0.10 between the five models), the MLP learns a mixed scale -- centring removes the offsets with 10 numbers per
+model and side, estimated without labels. The bias table is printed and written. Pre-specified (conditions (1) CI lower
+bound > 0, (3) > 0 in >= 3 of 4 folds, (4) >= 0.005): fused_opp_x5c vs fused_opp. Reported only: fused_opp_c vs fused_opp,
+fused_opp_x5c vs fused_opp_c, and the first run's pairs (fused_opp_x5 vs fused_opp, fused_opp_ls vs fused_opp, fused_opp_ls2
+vs fused_opp, fused_opp_x5_ls vs fused_opp_x5, fused_opp_x5_ls vs fused_opp), whose pre-specified verdicts are in
+results/l1b/xfit_check.json. Fold 0 is refused.
 
   python -I scripts/xfit_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp \\
-      --xfit-l1b results/l1b/scores5 --xfit-opp results/l1b/scores5_opp --out results/l1b/xfit_check.json
+      --xfit-l1b results/l1b/scores5 --xfit-opp results/l1b/scores5_opp --out results/l1b/xfit_center_check.json
 """
+import json
 import argparse
 import sys
 from pathlib import Path
@@ -35,17 +46,64 @@ import l1b_cv  # noqa: E402
 import l1b_opp_check as oc  # noqa: E402
 
 LS, LS2 = 0.1, 0.2
-# set name -> (feature source: "base" = --l1b/--opp, "x5" = --xfit-l1b/--xfit-opp; label smoothing of the MLP)
+SUM_COLS = [f"sum_{lv}" for lv in LEVELS]
+# set name -> (feature source: "base" = --l1b/--opp, "x5" = --xfit-l1b/--xfit-opp, "_c" = the same with centred sums;
+# label smoothing of the MLP)
 SETS = {"fused_opp": ("base", 0.0), "fused_opp_x5": ("x5", 0.0), "fused_opp_ls": ("base", LS), "fused_opp_ls2": ("base", LS2),
-        "fused_opp_x5_ls": ("x5", LS)}
-PRE = [("fused_opp_x5", "fused_opp"), ("fused_opp_ls", "fused_opp")]
-REPORT = [("fused_opp_ls2", "fused_opp"), ("fused_opp_x5_ls", "fused_opp_x5"), ("fused_opp_x5_ls", "fused_opp")]
+        "fused_opp_x5_ls": ("x5", LS), "fused_opp_c": ("base_c", 0.0), "fused_opp_x5c": ("x5_c", 0.0)}
+PRE = [("fused_opp_x5c", "fused_opp")]
+REPORT = [("fused_opp_c", "fused_opp"), ("fused_opp_x5c", "fused_opp_c"), ("fused_opp_x5", "fused_opp"), ("fused_opp_ls", "fused_opp"),
+          ("fused_opp_ls2", "fused_opp"), ("fused_opp_x5_ls", "fused_opp_x5"), ("fused_opp_x5_ls", "fused_opp")]
 
 
 def fused_opp_features(hsl, l1b, opp, questions):
     """(X [Q, 56], y, n_games): l1b_opp_check.features' fused_opp set."""
     sets, y, n = oc.features(hsl, l1b, opp, questions)
     return sets["fused_opp"], y, n
+
+
+def model_key(fold_dir):
+    """Which L1b model scored a fold directory: the heads' state sha256 from its meta_s*.json, else the directory itself."""
+    for meta in sorted(Path(fold_dir).glob("meta_s*.json")):
+        try:
+            sha = json.loads(meta.read_text()).get("heads", {}).get("state_sha256")
+        except (OSError, ValueError):
+            sha = None
+        if sha:
+            return f"sha256:{sha}"
+    return f"dir:{Path(fold_dir).parent}"
+
+
+def head_bias(tables):
+    """[10] move-weighted mean per-move log p of each head over the games of `tables` (one model's scored tables)."""
+    sums = sum(t[SUM_COLS].astype(float).sum(axis=0).to_numpy() for t in tables)
+    moves = sum(float(pd.to_numeric(t["n_moves"]).sum()) for t in tables)
+    return sums / max(moves, 1.0)
+
+
+def center_table(table, bias):
+    """The table with sum_<rank> := sum_<rank> - n_moves x bias (bias [10])."""
+    out = table.copy()
+    n = pd.to_numeric(out["n_moves"]).to_numpy(dtype=float)
+    out[SUM_COLS] = out[SUM_COLS].astype(float).to_numpy() - n[:, None] * np.asarray(bias, dtype=float)[None, :]
+    return out
+
+
+def center_source(source, folds):
+    """The centred copy of a load_source result: per model (model_key of the fold directory) and side, the bias over the
+    model's folds among `folds`; returns (centred source, {side: {model key: {"folds": [...], "bias": [10]}}})."""
+    centred, info = {f: dict(source[f]) for f in folds}, {}
+    for side, dir_key in (("l1b", "l1b_dir"), ("opp", "opp_dir")):
+        groups = {}
+        for f in folds:
+            groups.setdefault(model_key(Path(source[f][dir_key]) / f"fold{f}"), []).append(f)
+        info[side] = {}
+        for key, fs in groups.items():
+            bias = head_bias([source[f][side] for f in fs])
+            info[side][key] = {"folds": fs, "bias": bias.tolist()}
+            for f in fs:
+                centred[f][side] = center_table(source[f][side], bias)
+    return centred, info
 
 
 def load_source(hsl_dir, l1b_dirs, opp_dirs, folds, what):
@@ -80,6 +138,12 @@ def main(argv=None):
     try:
         folds_df = pd.read_csv(a.folds_csv, dtype={"player_id": str})
         src = {"base": load_source(a.hsl, a.l1b, a.opp, folds, "A/B"), "x5": load_source(a.hsl, a.xfit_l1b, a.xfit_opp, folds, "cross-fit")}
+        bias = {}
+        for name in ("base", "x5"):
+            src[name + "_c"], bias[name] = center_source(src[name], folds)
+            for side, models in bias[name].items():
+                for key, b in models.items():
+                    print(f"bias {name} {side} folds {b['folds']} ({key[:19]}): " + " ".join(f"{v:+.4f}" for v in b["bias"]), flush=True)
         data = {}
         for f in folds:
             hsl = read_scored_games(Path(a.hsl) / f"fold{f}")
@@ -97,7 +161,7 @@ def main(argv=None):
         val = data[v]["val"]
         cat_hsl = pd.concat([data[f]["hsl"] for f in folds if f != v], ignore_index=True)
         X_tr, X_va, y_tr, y_va, n_va = {}, {}, None, None, None
-        for source in ("base", "x5"):
+        for source in src:
             cat = lambda key: pd.concat([src[source][f][key] for f in folds if f != v], ignore_index=True)  # noqa: E731
             X_tr[source], y, _ = fused_opp_features(cat_hsl, cat("l1b"), cat("opp"), train_q)
             X_va[source], yv, nv = fused_opp_features(data[v]["hsl"], src[source][v]["l1b"], src[source][v]["opp"], val)
@@ -133,8 +197,9 @@ def main(argv=None):
             print(f"[{g}] {k}: {c['diff']:+.4f} [{c['ci95'][0]:+.4f}, {c['ci95'][1]:+.4f}]  folds " + " ".join(f"{x:+.4f}" for x in c["per_fold_diff"])
                   + "  conditions " + " ".join(f"{q} {'✓' if v else '✗'}" for q, v in c["conditions"].items()) + f"  -> {'PASS' if c['pass'] else 'no'}")
     out = {"folds": folds, "questions": int(len(y)), "per_player": a.per_player, "hsl_dir": a.hsl,
-           "dirs": {source: {str(f): {"l1b": src[source][f]["l1b_dir"], "opp": src[source][f]["opp_dir"]} for f in folds} for source in src},
-           "label_smoothing": {"ls": LS, "ls2": LS2}, "scores": head, "comparisons": comps, "min_diff": l1b_cv.MIN_DIFF, **environment("cpu")}
+           "dirs": {source: {str(f): {"l1b": src[source][f]["l1b_dir"], "opp": src[source][f]["opp_dir"]} for f in folds} for source in ("base", "x5")},
+           "label_smoothing": {"ls": LS, "ls2": LS2}, "head_bias": {name: {side: list(models.values()) for side, models in b.items()} for name, b in bias.items()},
+           "scores": head, "comparisons": comps, "min_diff": l1b_cv.MIN_DIFF, **environment("cpu")}
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     Path(a.out).write_text(to_json(out, indent=1) + "\n")
     print(f"wrote {a.out}")
