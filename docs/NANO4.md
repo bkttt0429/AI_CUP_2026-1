@@ -470,6 +470,8 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 01:00:00 -J xfit scripts/n
 
 **4. 決策**：`x5` 通過 → 另開 issue 接進提交：`fit_fused_model.py --l1b f0:results/l1b/scores5:results/l1b/heads5_f0.json … f4:… --opp f0:results/l1b/scores5_opp … --out results/models/rank_model_fused_opp_x5.json`（fold 0 表只用 f0，腳本會印「models [f1…f4] trained on it and are left out」；**5 個模型平均在任何留出資料上都沒有被量過**），分片評分 `--l1b-heads` 給 5 個 `.pt`（多 6 次 trunk 前向），對帳與封存同 §4.4；`ls` 通過 → 同一個 issue 一起談（只是 MLP 的 loss）。都沒過 → 記 METHOD_NOTES §2.13，結束。
 
+**結果（2026-10-30，分支 `db3199f`）**：五條鏈各約 4.5–5.3 小時（第一段 6,400–7,900 s、第二段 6,100–6,400 s、第三段 3,662–5,029 s），inner rank CE 2.100–2.110（heads3 2.137／2.111）；評分每 fold 一側約 8 分鐘；`xfit_check.py`（job 640475）：`fused_opp` 0.6735（差 0）、`fused_opp_x5` 0.6704、`fused_opp_ls` 0.6739、`fused_opp_ls2` 0.6755、`fused_opp_x5_ls` 0.6705；預先指定 x5 vs fused_opp −0.0032 [−0.0071, +0.0007]、ls vs fused_opp +0.0003 [−0.0019, +0.0025]，都沒過，提交維持 A／B 的 fused_opp（`results/l1b/xfit_check.json`，METHOD_NOTES §2.13）。
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：
