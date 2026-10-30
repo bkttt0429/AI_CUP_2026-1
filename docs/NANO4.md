@@ -480,7 +480,9 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 01:00:00 -J xfit scripts/n
 sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 01:00:00 -J xfitc scripts/nano4/run.sbatch python -I scripts/xfit_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --xfit-l1b results/l1b/scores5 --xfit-opp results/l1b/scores5_opp --out results/l1b/xfit_center_check.json
 ```
 
-預期：`fused_opp` 0.6735、`fused_opp_x5` 0.6704 等五列與 §4.7 完全相同（校正不碰它們）；偏移表（兩側各五個模型 × 10 個 head）、`fused_opp_c`、`fused_opp_x5c` 與八條比較貼回 issue #16，`xfit_center_check.json` 進 git。決策：`x5c` 過三條件 → 另開 issue 談接進提交（五個模型評分 + 校正步驗，分片評分 8 卡約 1 分 48 秒 → 2 分半，11/04 前時間緊，接不接由使用者決定）；沒過 → 記 METHOD_NOTES §2.14，刻度假設不成立。
+預期：`fused_opp` 0.6735、`fused_opp_x5` 0.6704 等五列與 §4.7 完全相同（校正不碰它們）；偏移表（兩側各七個模型 × 10 個 head：A、B 與 f0…f4，fold 0 不在 CV 裡所以 f0 沒有列）、`fused_opp_c`、`fused_opp_x5c` 與八條比較貼回 issue #16，`xfit_center_check.json` 進 git。決策：`x5c` 過三條件 → 另開 issue 談接進提交（五個模型評分 + 校正步驗，分片評分 8 卡約 1 分 48 秒 → 2 分半，11/04 前時間緊，接不接由使用者決定）；沒過 → 記 METHOD_NOTES §2.14，刻度假設不成立。
+
+**結果（2026-10-30，`results/l1b/xfit_center_check.json`）**：五列與 §4.7 逐位元相同；偏移在模型間差到 0.3 nats/手，但 `fused_opp_x5c` 0.6704（= `fused_opp_x5`）、`fused_opp_c` 0.6683；預先指定 x5c vs fused_opp −0.0031 [−0.0070, +0.0007] 沒過，c vs fused_opp −0.0052 [−0.0087, −0.0016] 反而變差。刻度假設不成立，這條線結束（METHOD_NOTES §2.14）。
 
 ## 5. 同步程式碼、取回結果
 
