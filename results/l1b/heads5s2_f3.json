@@ -1,0 +1,315 @@
+{
+ "format": 1,
+ "n_ranks": 10,
+ "levels": [
+  "D",
+  "C",
+  "B",
+  "A",
+  "1D",
+  "2D",
+  "3D",
+  "4D",
+  "5D",
+  "6D"
+ ],
+ "n_params": 450240,
+ "state_sha256": "d117d8f4a5cd798d0a49437f07f5e7cd69612ac5c9ac39767cd43c3c67a5e2a2",
+ "trunk_file": "heads5s2_f3.trunk.pt",
+ "trunk_sha256": "b237277757a94d9ab548fdcfcb27500266376326db60137ef54bbbdc34c32839",
+ "git_head": "95d4382",
+ "git_dirty": false,
+ "code_sha256": "8cf8dbbd0a7e9024e4ed529c7a55497b48b8f487944f4fceec2567d9f644a2f7",
+ "code_files": [
+  "src/aicup/gamevec.py",
+  "src/aicup/ladder_data.py",
+  "src/aicup/aggregators.py",
+  "src/aicup/settrain.py",
+  "src/aicup/rankmodel.py",
+  "src/aicup/qfeatures.py",
+  "src/aicup/metric.py"
+ ],
+ "torch_version": "2.14.1+cu126",
+ "device_name": "NVIDIA H200",
+ "train_cfg": {
+  "epochs": 3,
+  "batch": 128,
+  "lr": 0.0001,
+  "eval_every": 0.25,
+  "patience": 4,
+  "inner_frac": 0.1,
+  "inner_max_positions": 400000,
+  "seed": 0,
+  "device": "cuda:0",
+  "trunk_lr": 1e-05,
+  "disc_weight": 0.0
+ },
+ "train_folds": [
+  0,
+  1,
+  2,
+  4
+ ],
+ "max_games": 40,
+ "n_train_positions": 20402795,
+ "n_inner_positions": 400000,
+ "per_rank_positions": {
+  "D": 2314395,
+  "C": 2047378,
+  "B": 2450916,
+  "A": 3228339,
+  "1D": 1319510,
+  "2D": 1737672,
+  "3D": 1744333,
+  "4D": 1744439,
+  "5D": 1860399,
+  "6D": 1955414
+ },
+ "inner_nll_init": 1.483148744454977,
+ "inner_nll_best": 1.421227709985854,
+ "inner_nll_best_by_rank": [
+  1.5683550829959565,
+  1.489124549642664,
+  1.475147438508045,
+  1.4206734397733416,
+  1.4299205929053922,
+  1.4165883856198307,
+  1.3836688799278534,
+  1.3289994141510926,
+  1.370028096360014,
+  1.3297712199743497
+ ],
+ "inner_disc_init": 2.287307957356389,
+ "inner_disc_best": 2.2826033237441057,
+ "inner_objective_init": 1.483148744454977,
+ "inner_objective_best": 1.421227709985854,
+ "best_epoch": 2.9998494353826852,
+ "stopped_early": false,
+ "inner_ranks_present": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9
+ ],
+ "history": [
+  [
+   0.0,
+   1.483148744454977
+  ],
+  [
+   0.2499874529485571,
+   1.4420015145528655
+  ],
+  [
+   0.4999749058971142,
+   1.4370914862054736
+  ],
+  [
+   0.7499623588456713,
+   1.4332779175622101
+  ],
+  [
+   0.9999498117942284,
+   1.4308371052445832
+  ],
+  [
+   1.2499372647427855,
+   1.4294313622065435
+  ],
+  [
+   1.4999247176913426,
+   1.4274327612683453
+  ],
+  [
+   1.7499121706398997,
+   1.4254434611655227
+  ],
+  [
+   1.9998996235884567,
+   1.4240023745874155
+  ],
+  [
+   2.249887076537014,
+   1.4242347657900258
+  ],
+  [
+   2.499874529485571,
+   1.4235932990359317
+  ],
+  [
+   2.749861982434128,
+   1.4217314572929454
+  ],
+  [
+   2.9998494353826852,
+   1.421227709985854
+  ],
+  [
+   3.0,
+   1.421229742781831
+  ]
+ ],
+ "steps_per_epoch": 19925,
+ "steps_run": 59775,
+ "resumed_from_step": 0,
+ "world_size": 8,
+ "global_batch": 1024,
+ "trunk_trained": true,
+ "selection": "inner NLL",
+ "history_detail": [
+  [
+   0.0,
+   1.483148744454977,
+   2.287307957356389
+  ],
+  [
+   0.2499874529485571,
+   1.4420015145528655,
+   2.285346731013365
+  ],
+  [
+   0.4999749058971142,
+   1.4370914862054736,
+   2.284646382865738
+  ],
+  [
+   0.7499623588456713,
+   1.4332779175622101,
+   2.2837363060536466
+  ],
+  [
+   0.9999498117942284,
+   1.4308371052445832,
+   2.2843703538267395
+  ],
+  [
+   1.2499372647427855,
+   1.4294313622065435,
+   2.284175211416627
+  ],
+  [
+   1.4999247176913426,
+   1.4274327612683453,
+   2.2835968609943182
+  ],
+  [
+   1.7499121706398997,
+   1.4254434611655227,
+   2.2837898348653205
+  ],
+  [
+   1.9998996235884567,
+   1.4240023745874155,
+   2.28312896867002
+  ],
+  [
+   2.249887076537014,
+   1.4242347657900258,
+   2.283830132078726
+  ],
+  [
+   2.499874529485571,
+   1.4235932990359317,
+   2.283335936766893
+  ],
+  [
+   2.749861982434128,
+   1.4217314572929454,
+   2.283578264683133
+  ],
+  [
+   2.9998494353826852,
+   1.421227709985854,
+   2.2826033237441057
+  ],
+  [
+   3.0,
+   1.421229742781831,
+   2.2826868334831896
+  ]
+ ],
+ "n_trunk_params": 26613504,
+ "wall_seconds": 6179.040900468826,
+ "cache_dir": [
+  "results/l1b/cache_A",
+  "results/l1b/cache_B",
+  "results/l1b/cache_0"
+ ],
+ "cache_dirs": [
+  "results/l1b/cache_A",
+  "results/l1b/cache_B",
+  "results/l1b/cache_0"
+ ],
+ "excluded_folds": [
+  3
+ ],
+ "cache_meta": {
+  "folds": [
+   0,
+   1,
+   2,
+   4
+  ],
+  "max_games": 40,
+  "min_games": 1,
+  "excluded_folds": [
+   3
+  ],
+  "cache_dirs": [
+   "results/l1b/cache_A",
+   "results/l1b/cache_B",
+   "results/l1b/cache_0"
+  ],
+  "caches": [
+   {
+    "dir": "results/l1b/cache_A",
+    "folds": [
+     1,
+     2
+    ],
+    "players": 3206,
+    "games": 102019,
+    "positions": 11316535,
+    "games_sha256": "1dc5d65abae69a7e881092c24bf0ec5fc26597c2750aaaafaf95ac15659959d0",
+    "model_input_config": "b18c384nbt"
+   },
+   {
+    "dir": "results/l1b/cache_B",
+    "folds": [
+     3,
+     4
+    ],
+    "players": 3196,
+    "games": 101711,
+    "positions": 11297811,
+    "games_sha256": "a6253da1b4d21ddb43cee71f0e74deb9b26a8657fe04d6183e2db7dca4ad186a",
+    "model_input_config": "b18c384nbt"
+   },
+   {
+    "dir": "results/l1b/cache_0",
+    "folds": [
+     0
+    ],
+    "players": 1605,
+    "games": 51141,
+    "positions": 5701594,
+    "games_sha256": "2bb46a8338b477fa804e40aa6ba10dd6c115669aade0ac94aab468f59098e88b",
+    "model_input_config": "b18c384nbt"
+   }
+  ]
+ },
+ "n_games": 203979,
+ "n_players": 6409,
+ "head_init": "results/l1b/heads5s1_f3.pt",
+ "model_source": "/home/u2507115/BK_AICUP_2026-1/models/katago/b18c384nbt-humanv0.ckpt",
+ "humanv0_sha256": "00e608f3e6458ba8cb0e3ad8b775a447e051ad935303e73e153a12dd16e48d09",
+ "head_init_sha256": "f0de3b467ec3ee2c3056ee8782b74b96ca9b7aff8bed95bb3fd9ce9197f9bac3",
+ "head_init_trunk_sha256": null,
+ "head_init_inner_nll_best": 1.4831504577916004
+}

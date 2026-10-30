@@ -18,6 +18,13 @@ named in the sidecar, so l1b_score.py loads it with the heads); --init-heads sta
 
   torchrun --standalone --nproc_per_node 8 scripts/l1b_train.py --cache results/l1b/cache_A \
       --out results/l1b/heads2_A.pt --trunk-lr 1e-5 --init-heads results/l1b/heads_A.pt --batch 128
+
+Cross-fit (issue #16): several --cache directories are read as one, and --exclude-folds K leaves out the games of
+fold K's players (--folds-csv), so the sidecar's train_folds is the caches' folds minus K and l1b_score.py lets
+the heads score fold K only:
+
+  torchrun --standalone --nproc_per_node 8 scripts/l1b_train.py --cache results/l1b/cache_A results/l1b/cache_B \
+      results/l1b/cache_0 --exclude-folds 3 --out results/l1b/heads5_f3.pt --batch 128
 """
 import argparse
 import os
@@ -29,9 +36,10 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
-from aicup.featcache import read_cache  # noqa: E402
+from aicup.featcache import read_caches  # noqa: E402
 from aicup.l1b import RankHeads, load_heads  # noqa: E402
 from aicup.l1btrain import HeadsCfg, check_init, train_heads  # noqa: E402
+from aicup.ladder import FOLDS_CSV  # noqa: E402
 from aicup.setmodel_io import file_sha256  # noqa: E402
 
 CKPT = ROOT / "models" / "katago" / "b18c384nbt-humanv0.ckpt"
@@ -55,7 +63,10 @@ def load_trunk(ckpt, model_config, device):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--cache", required=True)
+    ap.add_argument("--cache", required=True, nargs="+", help="one or more featcache directories, read as one cache")
+    ap.add_argument("--exclude-folds", type=int, nargs="*", default=[],
+                    help="leave out the games of these folds' players (cross-fit, issue #16); train_folds = the caches' folds minus these")
+    ap.add_argument("--folds-csv", default=str(FOLDS_CSV))
     ap.add_argument("--out", required=True, help="heads .pt (the .json sidecar goes next to it)")
     ap.add_argument("--ckpt", default=str(CKPT))
     ap.add_argument("--model-config", default=None, help="random KataGo config instead of --ckpt (tests)")
@@ -82,7 +93,10 @@ def main(argv=None):
         import torch.distributed as dist
         local = int(os.environ["LOCAL_RANK"])
         torch.cuda.set_device(local)
-        dist.init_process_group("nccl")
+        from datetime import timedelta
+        # 60 min, not NCCL's 10: with several 8-GPU jobs reading the caches from the shared filesystem at once, the
+        # last rank can reach the first collective > 10 min after the first (issue #16, f2 stage 1)
+        dist.init_process_group("nccl", timeout=timedelta(minutes=60))
         a.device = f"cuda:{local}"
     me = int(os.environ.get("RANK", "0"))
     try:
@@ -100,7 +114,7 @@ def _run(a, me):
                    disc_weight=a.disc_weight)
     model, source, sha = load_trunk(a.ckpt, a.model_config, a.device)
     if a.check_init:
-        _, arrays = read_cache(a.cache)
+        _, arrays = read_caches(a.cache)
         heads = RankHeads(model.policy_head).to(a.device)
         worst = check_init(model, heads, arrays, np.arange(len(arrays["target"])), n=256)
         print(f"max |Δ log p| between the copied heads and the model's rank-unknown policy on 256 positions: {worst:.3e} "
@@ -123,10 +137,16 @@ def _run(a, me):
         init_state = init.state_dict()
         extra.update({"head_init": str(a.init_heads), "head_init_sha256": init_meta.get("state_sha256"),
                       "head_init_trunk_sha256": init_meta.get("trunk_sha256"), "head_init_inner_nll_best": init_meta.get("inner_nll_best")})
-    heads, meta = train_heads(model, a.cache, cfg, out, extra_meta=extra, init_heads=init_state)
+    try:
+        heads, meta = train_heads(model, a.cache, cfg, out, extra_meta=extra, init_heads=init_state, exclude_folds=a.exclude_folds,
+                                  folds_csv=a.folds_csv)
+    except ValueError as e:
+        if me == 0:
+            print(e, file=sys.stderr)
+        return 2
     if me == 0:
         fmt = lambda v: "-" if v is None else f"{v:.4f}"  # noqa: E731
-        print(f"wrote {out}: inner NLL {fmt(meta['inner_nll_init'])} -> {fmt(meta['inner_nll_best'])} at epoch {meta['best_epoch']:.2f}"
+        print(f"wrote {out} (train_folds {meta['train_folds']}): inner NLL {fmt(meta['inner_nll_init'])} -> {fmt(meta['inner_nll_best'])} at epoch {meta['best_epoch']:.2f}"
               + (f" (objective {fmt(meta['inner_objective_init'])} -> {fmt(meta['inner_objective_best'])}, rank CE "
              f"{fmt(meta['inner_disc_init'])} -> {fmt(meta['inner_disc_best'])})" if cfg.disc_weight > 0 else "")
           + f", {'stopped early' if meta['stopped_early'] else 'ran to the end'}, {meta['steps_run']} steps, {meta['wall_seconds']:.0f} s"

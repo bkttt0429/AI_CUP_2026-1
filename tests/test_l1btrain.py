@@ -28,13 +28,15 @@ def tiny_model():
     return model
 
 
-def _tiny_cache_dir(tmp_path, ranks=("D", "A", "1D", "6D"), players_per_rank=3, games_per_player=2):
-    """A real cache: synthetic games (3-8 moves) for players_per_rank players of each rank; returns the directory."""
+def _tiny_cache_dir(tmp_path, ranks=("D", "A", "1D", "6D"), players_per_rank=3, games_per_player=2, name="cache", folds=(1, 2),
+                    player_offset=0):
+    """A real cache: synthetic games (3-8 moves) for players_per_rank players of each rank; returns the directory.
+    player_offset makes a second cache's player ids and game keys distinct from the first's."""
     features = Features(modelconfigs.config_of_name["b2c16"], 19)
-    rows, parts, g = [], [], 0
+    rows, parts, g = [], [], player_offset
     for rank in ranks:
         for p in range(players_per_rank):
-            pid = f"{RANK_TO_IDX[rank]:04x}{p:04x}"
+            pid = f"{RANK_TO_IDX[rank]:04x}{p + player_offset:04x}"
             for _ in range(games_per_player):
                 color = "BW"[g % 2]
                 sgf = _sgf(3 + g % 6)
@@ -42,10 +44,24 @@ def _tiny_cache_dir(tmp_path, ranks=("D", "A", "1D", "6D"), players_per_rank=3, 
                 rows.append({"game_key": f"{rank}:g{g}", "player_id": pid, "rank": rank, "color": color, "n_moves": len(pos["target"])})
                 parts.append(fc.pack_positions(pos))
                 g += 1
-    out = tmp_path / "cache"
+    out = tmp_path / name
     fc.write_part(out, 0, 0, pd.DataFrame(rows), parts)
-    (out / "meta.json").write_text(json.dumps({"folds": [1, 2], "max_games": 40, "min_games": 1, "games": len(rows)}))
+    (out / "meta.json").write_text(json.dumps({"folds": list(folds), "max_games": 40, "min_games": 1, "games": len(rows)}))
     return out
+
+
+def _two_caches(tmp_path):
+    """Two caches as cache_A (folds 1, 2: its players alternate between the two) and cache_0 (fold 0, other ranks and
+    players), plus a player_folds.csv covering both; returns (cache_12, cache_0, folds csv)."""
+    c1 = _tiny_cache_dir(tmp_path, name="cache_12", folds=(1, 2))
+    c2 = _tiny_cache_dir(tmp_path, name="cache_0", folds=(0,), ranks=("C", "3D"), players_per_rank=2, player_offset=100)
+    g1, g2 = fc.read_cache(c1)[0], fc.read_cache(c2)[0]
+    p1 = g1[["player_id", "rank"]].drop_duplicates().reset_index(drop=True)
+    rows = [{"rank": r.rank, "player_id": r.player_id, "n_games": 2, "fold": 1 + (i % 2)} for i, r in enumerate(p1.itertuples())]
+    rows += [{"rank": r.rank, "player_id": r.player_id, "n_games": 2, "fold": 0} for r in g2[["player_id", "rank"]].drop_duplicates().itertuples()]
+    csv = tmp_path / "folds.csv"
+    pd.DataFrame(rows).to_csv(csv, index=False)
+    return c1, c2, csv
 
 
 @pytest.fixture
@@ -280,3 +296,63 @@ def test_disc_weight_zero_is_the_generative_run(tmp_path, tiny_model, tiny_cache
     assert abs(m1["inner_objective_best"] - (m1["inner_nll_best"] + m1["inner_disc_best"])) < 1e-9
     assert m1["inner_objective_best"] <= m1["inner_objective_init"]
     assert m1["inner_disc_init"] == pytest.approx(math.log(10), abs=1e-6)  # identical heads at step 0: uniform over the ranks
+
+
+def test_read_caches_concatenates_and_drops_the_excluded_players(tmp_path):
+    c1, c2, csv = _two_caches(tmp_path)
+    (g1, a1), (g2, a2) = fc.read_cache(c1), fc.read_cache(c2)
+    games, arrays = fc.read_caches([c1, c2])
+    assert len(games) == len(g1) + len(g2) and len(arrays["target"]) == len(a1["target"]) + len(a2["target"])
+    assert np.array_equal(np.bincount(arrays["game_row"], minlength=len(games)), games["n_moves"].to_numpy())
+    assert games["game_key"].is_unique and games["player_id"].nunique() == g1["player_id"].nunique() + g2["player_id"].nunique()
+    drop = l1btrain.excluded_players([2], csv)
+    assert drop and drop < set(g1["player_id"])
+    kept, arr = fc.read_caches([c1, c2], drop)
+    assert not kept["player_id"].isin(drop).any() and len(kept) == len(games) - int(games["player_id"].isin(drop).sum())
+    assert np.array_equal(np.bincount(arr["game_row"], minlength=len(kept)), kept["n_moves"].to_numpy())
+    assert np.array_equal(arr["rank_idx"], kept["rank"].map(RANK_TO_IDX).to_numpy()[arr["game_row"]])
+    pos_keep = ~games["player_id"].isin(drop).to_numpy()[arrays["game_row"]]  # the kept positions are the same bytes, in order
+    for key in ("bins_packed", "legal_packed", "globs", "target", "t", "color"):
+        assert np.array_equal(arr[key], arrays[key][pos_keep]), key
+    # dropping nobody is the plain concatenation; a single directory is read_cache
+    assert fc.read_caches([c1, c2], set())[0].equals(games)
+    assert fc.read_cache(c1, drop)[0].equals(kept[kept["game_key"].isin(g1["game_key"])].reset_index(drop=True))
+
+
+def test_caches_meta_folds_and_refusals(tmp_path):
+    c1, c2, csv = _two_caches(tmp_path)
+    assert l1btrain.caches_meta([c1]) == json.loads((c1 / "meta.json").read_text())  # one cache, nothing excluded: unchanged
+    m = l1btrain.caches_meta([c1, c2], exclude_folds=[2])
+    assert m["folds"] == [0, 1] and m["excluded_folds"] == [2] and m["max_games"] == 40 and m["cache_dirs"] == [str(c1), str(c2)]
+    assert [c["folds"] for c in m["caches"]] == [[1, 2], [0]]
+    assert l1btrain.caches_meta([c1, c2])["folds"] == [0, 1, 2] and l1btrain.caches_meta(c1, exclude_folds=[1])["folds"] == [2]
+    with pytest.raises(ValueError, match="more than one"):
+        l1btrain.caches_meta([c1, c1])
+    with pytest.raises(ValueError, match="not in the caches"):
+        l1btrain.caches_meta([c1, c2], exclude_folds=[7])
+    with pytest.raises(ValueError, match="every fold"):
+        l1btrain.caches_meta([c1, c2], exclude_folds=[0, 1, 2])
+    with pytest.raises(ValueError, match="no players"):
+        l1btrain.excluded_players([9], csv)
+    assert l1btrain.excluded_players([], csv) == set()
+    (c2 / "meta.json").write_text(json.dumps({"folds": [0], "max_games": 20, "min_games": 1}))
+    with pytest.raises(ValueError, match="max_games"):
+        l1btrain.caches_meta([c1, c2])
+
+
+def test_train_heads_on_two_caches_leaves_out_the_excluded_fold(tmp_path, tiny_model):
+    c1, c2, csv = _two_caches(tmp_path)
+    cfg = l1btrain.HeadsCfg(epochs=1, batch=8, lr=1e-3, device="cpu")
+    out = tmp_path / "heads5_f2.pt"
+    _, meta = l1btrain.train_heads(tiny_model, [c1, c2], cfg, out, log=lambda *a, **k: None, exclude_folds=[2], folds_csv=csv)
+    kept, arr = fc.read_caches([c1, c2], l1btrain.excluded_players([2], csv))
+    assert meta["train_folds"] == [0, 1] and meta["excluded_folds"] == [2] and meta["cache_dirs"] == [str(c1), str(c2)]
+    assert meta["cache_dir"] == [str(c1), str(c2)] and meta["cache_meta"]["folds"] == [0, 1]
+    assert meta["n_games"] == len(kept) and meta["n_train_positions"] + meta["n_inner_positions"] == len(arr["target"])
+    assert set(meta["per_rank_positions"]) == set(LEVELS) and meta["per_rank_positions"]["C"] > 0 and meta["per_rank_positions"]["6D"] > 0
+    # the kept checkpoint belongs to these folds: extending the run with another exclusion is refused
+    with pytest.raises(ValueError, match="folds differ"):
+        l1btrain.train_heads(tiny_model, [c1, c2], replace(cfg, epochs=2), out, log=lambda *a, **k: None, exclude_folds=[1], folds_csv=csv)
+    # one cache, nothing excluded: the sidecar is the old shape
+    _, meta1 = l1btrain.train_heads(tiny_model, c1, cfg, tmp_path / "heads_A.pt", log=lambda *a, **k: None)
+    assert meta1["train_folds"] == [1, 2] and meta1["cache_dir"] == str(c1) and meta1["excluded_folds"] == [] and meta1["cache_meta"]["folds"] == [1, 2]

@@ -50,3 +50,35 @@ def test_state_round_trip_preserves_predictions():
     for m in (SoftmaxModel(l2=1e-3).fit(X, y), MLPModel(hidden=8, epochs=50, seed=0).fit(X, y), ThresholdModel(feature=0).fit(X, y)):
         again = from_state(m.state_dict())
         assert np.allclose(again.predict_proba(X), m.predict_proba(X), atol=1e-6)
+
+
+def test_ordinal_targets_shape_mass_and_edges():
+    from aicup.rankmodel import ordinal_targets
+    T = ordinal_targets([0, 4, 9], 0.2)
+    assert T.shape == (3, 10) and np.allclose(T.sum(axis=1), 1.0)
+    assert T[0, 0] == pytest.approx(0.8) and T[0, 1] == pytest.approx(0.2)  # the edge class gives its whole eps to its one neighbour
+    assert T[1, 4] == pytest.approx(0.8) and T[1, 3] == pytest.approx(0.1) and T[1, 5] == pytest.approx(0.1)
+    assert T[2, 9] == pytest.approx(0.8) and T[2, 8] == pytest.approx(0.2) and T[2, 7] == 0.0
+    assert np.array_equal(ordinal_targets([3, 7], 0.0), np.eye(10)[[3, 7]])
+    with pytest.raises(ValueError):
+        ordinal_targets([1], 1.0)
+    with pytest.raises(ValueError):
+        MLPModel(label_smoothing=-0.1)
+
+
+def test_mlp_label_smoothing_zero_is_bit_identical_and_positive_spreads_mass_to_the_neighbours():
+    X, y = _separable(seed=5)
+    plain = MLPModel(hidden=16, epochs=100, seed=1).fit(X, y)
+    zero = MLPModel(hidden=16, epochs=100, seed=1, label_smoothing=0.0).fit(X, y)
+    assert np.array_equal(plain.predict_proba(X), zero.predict_proba(X))
+    smooth = MLPModel(hidden=16, epochs=100, seed=1, label_smoothing=0.2).fit(X, y)
+    p, q = plain.predict_proba(X), smooth.predict_proba(X)
+    assert (q.argmax(axis=1) == y).mean() >= 0.95
+    rows = np.arange(len(y))
+    neigh = lambda P: np.array([P[i, max(y[i] - 1, 0)] * (y[i] > 0) + P[i, min(y[i] + 1, 9)] * (y[i] < 9) for i in rows])  # noqa: E731
+    assert neigh(q).mean() > neigh(p).mean() and q[rows, y].mean() < p[rows, y].mean()
+    # the state carries the setting; an old document without it is a plain MLP
+    d = smooth.state_dict()
+    assert d["label_smoothing"] == 0.2 and from_state(d).label_smoothing == 0.2 and np.allclose(from_state(d).predict_proba(X), q, atol=1e-6)
+    old = {k: v for k, v in plain.state_dict().items() if k != "label_smoothing"}
+    assert from_state(old).label_smoothing == 0.0 and np.allclose(from_state(old).predict_proba(X), p, atol=1e-6)

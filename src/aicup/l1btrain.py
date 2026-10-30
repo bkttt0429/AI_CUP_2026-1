@@ -19,6 +19,11 @@ takes rank::world of each global batch of cfg.batch x world positions; the loss 
 weight sum and the gradients are summed across ranks, so a step equals one single-process step on the whole
 global batch; the inner NLL is evaluated on rank::world of the inner positions and summed; rank 0 alone
 writes checkpoints and outputs.
+
+Cross-fit (2026-10-29, issue #16): train_heads takes several caches read as one (featcache.read_caches) and
+`exclude_folds`, the folds whose players' games are left out (splits/player_folds.csv), so the five models f_k of
+the five-fold cross-fit each train on cache_A + cache_B + cache_0 minus fold k; the sidecar's train_folds is the
+caches' folds minus the excluded ones (caches_meta), which l1b_score.py's out-of-fold check reads.
 """
 import json
 import math
@@ -30,12 +35,60 @@ import numpy as np
 import pandas as pd
 import torch
 
-from aicup.featcache import read_cache, unpack_bins, unpack_legal
+from aicup.featcache import read_caches, unpack_bins, unpack_legal
 from aicup.l1b import RankHeads, atomic_save, masked_logp, neutral_rows, save_heads, trunk_features
+from aicup.ladder import FOLDS_CSV
 from aicup.metric import LEVELS, RANK_TO_IDX
 from aicup.settrain import INNER_SEED, inner_players
 
 N_RANKS = len(LEVELS)
+
+
+def cache_dirs_of(cache_dir):
+    """[Path, ...] of one directory or a list of them (train_heads takes either)."""
+    return [Path(cache_dir)] if isinstance(cache_dir, (str, Path)) else [Path(d) for d in cache_dir]
+
+
+def excluded_players(exclude_folds, folds_csv=FOLDS_CSV):
+    """The player ids of `exclude_folds` in the folds table (ValueError when a fold has no players there)."""
+    exclude = sorted({int(f) for f in exclude_folds})
+    if not exclude:
+        return set()
+    folds = pd.read_csv(folds_csv, dtype={"player_id": str})
+    missing = [f for f in exclude if not (folds["fold"] == f).any()]
+    if missing:
+        raise ValueError(f"{folds_csv}: no players in fold(s) {missing}")
+    return set(folds.loc[folds["fold"].isin(exclude), "player_id"].astype(str))
+
+
+def caches_meta(cache_dirs, exclude_folds=()):
+    """The meta of the caches read together (issue #16): folds = the union of the caches' folds minus exclude_folds,
+    max_games / min_games shared; ValueError when two caches share a fold, an excluded fold is not in the union,
+    or the caches disagree on max_games. One cache without exclusions returns its own meta unchanged."""
+    dirs = cache_dirs_of(cache_dirs)
+    exclude = sorted({int(f) for f in exclude_folds})
+    metas = [_cache_meta(d) for d in dirs]
+    if len(metas) == 1 and not exclude:
+        return metas[0]
+    seen, dups = set(), set()
+    for m in metas:
+        folds = set(int(f) for f in m["folds"])
+        dups |= seen & folds
+        seen |= folds
+    if dups:
+        raise ValueError(f"fold(s) {sorted(dups)} are in more than one of the caches {[str(d) for d in dirs]}")
+    outside = [f for f in exclude if f not in seen]
+    if outside:
+        raise ValueError(f"--exclude-folds {outside} are not in the caches' folds {sorted(seen)}")
+    if len({json.dumps(m.get("max_games")) for m in metas}) != 1:
+        raise ValueError(f"the caches disagree on max_games: {[m.get('max_games') for m in metas]}")
+    folds = sorted(seen - set(exclude))
+    if not folds:
+        raise ValueError("every fold of the caches is excluded")
+    return {"folds": folds, "max_games": metas[0].get("max_games"), "min_games": metas[0].get("min_games"),
+            "excluded_folds": exclude, "cache_dirs": [str(d) for d in dirs],
+            "caches": [{"dir": str(d), **{k: m.get(k) for k in ("folds", "players", "games", "positions", "games_sha256", "model_input_config")}}
+                       for d, m in zip(dirs, metas)]}
 
 
 @dataclass(frozen=True)
@@ -223,23 +276,31 @@ def _cfg_key(cfg):
     return {k: v for k, v in asdict(cfg).items() if k not in ("epochs", "patience", "device")}
 
 
-def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_meta=None, init_heads=None):
+def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_meta=None, init_heads=None, exclude_folds=(),
+                folds_csv=FOLDS_CSV):
     """Train RankHeads (and, with cfg.trunk_lr > 0, the trunk) on the cache; returns (heads with the best inner NLL,
-    sidecar meta). init_heads: a RankHeads state_dict to start from (default: copies of model.policy_head). See the
-    module docstring; under torch.distributed only rank 0 logs and writes, and every rank returns the same heads."""
+    sidecar meta). init_heads: a RankHeads state_dict to start from (default: copies of model.policy_head). cache_dir may
+    be a list of caches read as one (issue #16), and exclude_folds leaves out the games of those folds' players
+    (folds_csv), so the sidecar's train_folds is the caches' union minus them. See the module docstring; under
+    torch.distributed only rank 0 logs and writes, and every rank returns the same heads."""
     t_start = time.time()
     me, world = _dist()
     if me != 0:
         log = lambda *a, **k: None  # noqa: E731
-    games, arrays = read_cache(cache_dir)
-    cache_meta = _cache_meta(cache_dir)
+    dirs = cache_dirs_of(cache_dir)
+    cache_meta = caches_meta(dirs, exclude_folds)
+    drop = excluded_players(exclude_folds, folds_csv)
+    games, arrays = read_caches(dirs, drop)
+    if exclude_folds:
+        log(f"caches {[str(d) for d in dirs]}: folds {cache_meta['folds']} after leaving out {sorted(set(map(int, exclude_folds)))} "
+            f"({len(drop)} players): {len(games)} games, {len(arrays['target'])} positions", flush=True)
     train_rows, inner_rows = inner_split(games, cfg.inner_frac)
     train_idx = positions_of(arrays, train_rows)
     inner_idx = positions_of(arrays, inner_rows)
     if len(inner_idx) > cfg.inner_max_positions:
         inner_idx = np.sort(np.random.RandomState(INNER_SEED).choice(inner_idx, cfg.inner_max_positions, replace=False))
     if len(train_idx) == 0:
-        raise ValueError(f"{cache_dir}: no training positions")
+        raise ValueError(f"{[str(d) for d in dirs]}: no training positions")
     device = cfg.device
     torch.manual_seed(cfg.seed)
     model.eval()
@@ -282,9 +343,9 @@ def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_met
     resumed_from = 0
     if resume and ckpt_path.exists():
         ck = torch.load(ckpt_path, map_location=device, weights_only=False)
-        if ck["cfg_key"] != _cfg_key(cfg) or ck["steps_per_epoch"] != steps_per_epoch:
-            raise ValueError(f"{ckpt_path}: checkpoint of another run (batch, lr, trunk_lr, seed, world size, inner split or cache "
-                             "differ); delete it or pass --overwrite")
+        if ck["cfg_key"] != _cfg_key(cfg) or ck["steps_per_epoch"] != steps_per_epoch or ck.get("train_folds", cache_meta["folds"]) != cache_meta["folds"]:
+            raise ValueError(f"{ckpt_path}: checkpoint of another run (batch, lr, trunk_lr, seed, world size, inner split, cache or "
+                             "folds differ); delete it or pass --overwrite")
         heads.load_state_dict(ck["heads"])
         if train_trunk:
             model.load_state_dict(ck["model"])
@@ -295,8 +356,8 @@ def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_met
 
     def save_ckpt():
         if me == 0:
-            ck = {"cfg_key": _cfg_key(cfg), "steps_per_epoch": steps_per_epoch, "heads": heads.state_dict(),
-                  "opt": opt.state_dict(), "state": state}
+            ck = {"cfg_key": _cfg_key(cfg), "steps_per_epoch": steps_per_epoch, "train_folds": cache_meta["folds"],
+                  "heads": heads.state_dict(), "opt": opt.state_dict(), "state": state}
             if train_trunk:
                 ck["model"] = model.state_dict()
             atomic_save(ck, ckpt_path)
@@ -395,7 +456,9 @@ def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_met
             "selection": "inner NLL" if cfg.disc_weight <= 0 else f"inner NLL + {cfg.disc_weight:g} x rank CE",
             "history_detail": [(float(e), float(n), float(d)) for e, n, d in state.get("history_detail", [])],
             "n_trunk_params": int(sum(p.numel() for p in trunk_params)),
-            "wall_seconds": time.time() - t_start, "cache_dir": str(cache_dir), "cache_meta": cache_meta,
+            "wall_seconds": time.time() - t_start, "cache_dir": str(dirs[0]) if len(dirs) == 1 else [str(d) for d in dirs],
+            "cache_dirs": [str(d) for d in dirs], "excluded_folds": sorted({int(f) for f in exclude_folds}), "cache_meta": cache_meta,
+            "n_games": int(len(games)), "n_players": int(games["player_id"].nunique()),
             "head_init": "humanv0_policy_head", **(extra_meta or {})}
     if me == 0:
         meta = save_heads(heads, out_pt, meta, model_state=model.state_dict() if train_trunk else None)

@@ -230,3 +230,34 @@ def test_pack_weights(tmp_path, capsys):
     # a heads file that no longer matches its sidecar is refused
     paths[1].write_bytes(paths[1].read_bytes() + b"\0")
     assert pw.main([*args, "--overwrite"]) == 2 and "sha256" in capsys.readouterr().err
+
+
+def test_fit_fused_model_cli_with_five_cross_fit_models(tmp_path, capsys):
+    """Issue #16: f0..f4 each trained on the other four folds share one scores directory (fold k scored by f_k); fold 0's
+    check uses f0 alone and the document says which models were left aside."""
+    l1b_dir, hsl_dir, _ = _synthetic_scores(tmp_path, folds=(0, 1, 2, 3, 4), l1b_name="scores5")
+    opp_dir = _opponent_scores(tmp_path, name="scores5_opp")
+    sides = [_sidecar(tmp_path / f"heads5_f{k}.json", chr(ord("a") + k) * 64, str(k) * 64, [f for f in range(5) if f != k]) for k in range(5)]
+    folds_csv = _folds_csv(tmp_path)
+    out, proba = tmp_path / "models" / "rank_model_fused_opp_x5.json", tmp_path / "fold0_x5_proba.csv"
+    args = ["--l1b", *[f"f{k}:{l1b_dir}:{sides[k]}" for k in range(5)], "--opp", *[f"f{k}:{opp_dir}" for k in range(5)], "--hsl", str(hsl_dir),
+            "--per-player", "2", "--folds-csv", str(folds_csv), "--out", str(out), "--fold0-proba", str(proba)]
+    assert ffm.main(args) == 0
+    printed = capsys.readouterr().out
+    assert "left out of the check" in printed and "['f0']" in printed
+    doc, _ = fused.load_fused_model(out)
+    assert doc["feature_source_by_fold"] == {"1": "f1", "2": "f2", "3": "f3", "4": "f4"}
+    assert [m["name"] for m in doc["l1b_models"]] == [f"f{k}" for k in range(5)]
+    assert [m["feature_folds"] for m in doc["l1b_models"]] == [[], [1], [2], [3], [4]] and doc["l1b_models"][2]["train_folds"] == [0, 1, 3, 4]
+    check = doc["fold0_check"]
+    assert check["fold0_models"] == ["f0"] and check["models_seen_fold0"] == ["f1", "f2", "f3", "f4"]
+    assert set(check["scores"]) == {"hsl", "fused_f0", "fused_avg", "fused_opp_f0", "fused_opp_avg"}
+    assert check["scores"]["fused_opp_avg"] == check["scores"]["fused_opp_f0"]  # the average over the OOF models is f0 alone
+    table = pd.read_csv(proba)
+    assert np.allclose(table[[f"fused_opp_avg_p_{lv}" for lv in LEVELS]].to_numpy(), table[[f"fused_opp_f0_p_{lv}" for lv in LEVELS]].to_numpy())
+    # every model trained on fold 0 (the 60% A'/B' design: folds 0,1,2 and 0,3,4): the fit works, the fold-0 check cannot be made
+    all_seen = [_sidecar(tmp_path / "seenA.json", "c" * 64, "9" * 64, [0, 1, 2]), _sidecar(tmp_path / "seenB.json", "d" * 64, "8" * 64, [0, 3, 4])]
+    args2 = ["--l1b", f"a:{l1b_dir}:{all_seen[0]}", f"b:{l1b_dir}:{all_seen[1]}", "--hsl", str(hsl_dir), "--per-player", "2",
+             "--folds-csv", str(folds_csv), "--out", str(tmp_path / "x.json")]
+    assert ffm.main(args2) == 2
+    assert "out-of-fold for fold 0" in capsys.readouterr().err
