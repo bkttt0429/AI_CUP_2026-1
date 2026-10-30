@@ -40,3 +40,7 @@ release/
 results/quality/**/quality_s*_p*.csv
 results/quality_smoke/
 results/l1b/**/games_s*_p*.csv
+# move-sequence experiment (issue #19): encoders and per-game tables stay on nano4; summary.json, meta_s0.json and the two reports go to git
+results/seq/**/*.pt
+results/seq/**/*.npz
+results/seq/**/games_s*_p*.csv
