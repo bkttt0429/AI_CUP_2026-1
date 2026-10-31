@@ -532,7 +532,7 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 04:00:00 -J shapecheck scr
 
 ### 4.11 80 分路線：測試玩家是否在訓練集裡（2026-10-31，issue #22；程式在 AI_CUP_2026-2，從這裡的根目錄送件）
 
-提交管線不動。設計與判準在 METHOD_NOTES §2.17 與 AI_CUP_2026-2 的 METHOD_NOTES §2.3、docs/NANO4.md §4。AI_CUP_2026-2 的 checkout 要在 `claude/pid-rank-overlap`（PR #4）或合併後的 `main`。
+提交管線不動。設計與判準在 METHOD_NOTES §2.17 與 AI_CUP_2026-2 的 METHOD_NOTES §2.3、docs/NANO4.md §4。AI_CUP_2026-2 的 checkout（nano4 上是 `~/BK_AICUP_2026-2`）要在 `claude/pid-rank-overlap`（PR #4）或合併後的 `main`。
 
 **步 0：SGF 標頭確認**（登入節點一行即可）：
 
@@ -542,15 +542,17 @@ for f in data/training/train_*.csv; do echo "$f RE=$(grep -c 'RE\[' "$f") HA=$(g
 
 全為 0 → 元資料這條關閉（預期如此，mock 測試檔每局只有 `SZ[19]`）。
 
-**步 1：8,007 路辨識可行性**（CPU 一支，讀 100 萬局前 12 手約 10 分鐘、RAM 數 GB；不夠就 `--workers 12`）：
+**步 1：8,007 路辨識可行性**（CPU 一支；`run.sbatch` 預設配 1 張 GPU、每張卡最多 12 核，所以 `-c 12 --workers 12`；nano4 實測 12 核 627 s、RAM 數 GB）：
 
 ```bash
-sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 24 -t 02:00:00 -J rankovl scripts/nano4/run.sbatch python -I ../AICUP_2026-2/scripts/pid_rank_overlap.py --scores results/scores --calib-fold 1 --eval-fold 0 --fused-proba results/l1b/fold0_fused_opp_proba.csv --siblings --workers 24 --out ../AICUP_2026-2/results/rank_overlap.json
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 02:00:00 -J rankovl scripts/nano4/run.sbatch python -I ../BK_AICUP_2026-2/scripts/pid_rank_overlap.py --scores results/scores --calib-fold 1 --eval-fold 0 --fused-proba results/l1b/fold0_fused_opp_proba.csv --siblings --workers 12 --out ../BK_AICUP_2026-2/results/rank_overlap.json
 ```
 
 貼回 issue #22：校準折（fold 1）的 Top-1／Top-5 按 n 與 τ；評估折（fold 0）的 Top-1／Top-5 按 n、`id_rank_score`、margin ≥ τ 的比例與精確率、認對／認錯的 margin 分位數；`combined` vs `fused_opp`（差、CI；`fused_opp` 須重現 0.6716）；`siblings` 每個 n 的 `top1_same_player`。`rank_overlap.json` 進 AI_CUP_2026-2 的 git。
 
 **步 2（11/04）**：官方檔案到手後先跑 `--test-csv`（指令在 AI_CUP_2026-2 docs/NANO4.md §4，τ 取 json 的 `calibration.tau`），貼回 `share_above_tau`（按 n）與 margin 分位數；判準見 METHOD_NOTES §2.17。
+
+**結果（nano4，2026-10-31）**：步 0 全 0（元資料關閉）。步 1 以 fold 1 校準、fold 2 評估試跑（fold 0 沒動）：Top-1 0.425、id_rank 0.6513、margin ≥ τ 的題 15.4%（精確率 0.974）；手算上限約 0.74。**使用者決定暫停這條路線**（`REPORT.md` §2.7），步 2 不跑、fold 0 不評，等主辦單位回覆（METHOD_NOTES §2.17）。
 
 ### 4.12 判錯的原因：OOF 殘差分解、對手通道、模型類別檢查（2026-10-31，issue #23）
 
