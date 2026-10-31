@@ -223,11 +223,23 @@
 - **解讀與未驗證的假設**：每手層級更好（rank CE 低 0.01–0.04）、題目層級卻持平偏差，是這次最值得記的事。nano4 的假設：x5 的每個驗證 fold，MLP 的訓練題特徵來自**三個不同模型**（A／B 時是一或兩個），各模型的 log p 刻度有各自的偏移（五個模型的 inner NLL 整體差 0.008，單一等級跨模型差到 0.10：D 級 1.604–1.707，而題目特徵裡有每手絕對 log p 的項），MLP 學到混合刻度、套到第四個模型的特徵上就偏；若成立，對每個模型的特徵分別標準化（或只用相對曲線）應該能收回那 0.003 以上。另一個可能是 A／B 的 CV 本身略為樂觀：驗證 fold 的特徵模型（例如 A 給 fold 3）在訓練題裡也出現（A 也給 fold 4 的訓練題），x5 則完全沒有這種重疊。兩者都只是解讀，是否開新實驗由使用者決定；它只是 CPU 的 CV 變體（分片檔已有五個模型的評分）。
 - **label smoothing**：ε 0.1 零效果，ε 0.2 四折全正但未達門檻、NLL 也較好（1.1722 vs 1.1790）；是個一致但很小的方向，不夠接進提交。
 
-### 2.14 刻度校正變體：每個 L1b 模型每個 head 的偏移置中（2026-10-30；issue #16 後續；程式完成、待 nano4 跑）
+### 2.14 刻度校正變體：每個 L1b 模型每個 head 的偏移置中（2026-10-30；issue #16 後續；nano4 同日跑完：沒過，刻度假設不成立）
 - **使用者決定（2026-10-30）**：合併 PR #17；跑這個 CPU 變體檢驗 §2.13 的刻度假設（評分檔都在，幾分鐘）。若 `x5c` 過關，接進提交要五個模型評分加校正步驟，11/04 前時間緊，接不接等結果再決定。
 - **做法**（`scripts/xfit_check.py` 的 `fused_opp_c`、`fused_opp_x5c`）：對每個 L1b 模型（fold 目錄的 `meta_s*.json` 以 heads 的 state sha256 認模型；沒有 meta 時以目錄為一個模型）和每個 head，用它在 folds 1–4 評過的局算以手數加權的每手平均 log p（目標表與對手表各一組 10 個數），每局 `sum_<rank>` := `sum_<rank>` − `n_moves` × 偏移，再照原本的 `l1b_opp_check.features` 做 56 維。只用無標籤的評分，10 個數就把各模型各 head 的絕對刻度對齊；相對曲線裡 head 間的差也隨之改變（偏移各 head 不同）。A／B 做同樣的校正當對照（A 用 folds 3、4，B 用 1、2）。測試時若採用：每個模型的偏移從它的 OOF fold 算好存進文件，分片評分後套用。
-- **預先指定**：`fused_opp_x5c vs fused_opp`（條件 (1)(3)(4)）。只報告：`fused_opp_c vs fused_opp`（校正對 A／B 本身有無影響）、`fused_opp_x5c vs fused_opp_c`、以及 §2.13 的五條（數字應與 `xfit_check.json` 完全相同）。偏移表印出並寫進 `xfit_center_check.json`。**結果待 nano4（`docs/NANO4.md` §4.8）。**
-- **讀法**：`x5c` 過 → 刻度假設成立，資料量的訊號能傳到題目層級；`x5c` 與 `x5` 幾乎相同 → 偏移不是原因，§2.13 的另一個解讀（A／B 的 CV 略為樂觀）或 MLP 容量更可能；`c` 也升 → A／B 本身也受益，是獨立的改進候選。
+- **預先指定**：`fused_opp_x5c vs fused_opp`（條件 (1)(3)(4)）。只報告：`fused_opp_c vs fused_opp`（校正對 A／B 本身有無影響）、`fused_opp_x5c vs fused_opp_c`、以及 §2.13 的五條（數字應與 `xfit_check.json` 完全相同）。偏移表印出並寫進 `xfit_center_check.json`。
+- **結果（nano4，2026-10-30，`results/l1b/xfit_center_check.json`，分支 `17bdc49`，PR #17 合併為 `main` `5a3c1b0`）**：§2.13 的五列與 `xfit_check.json` 逐位元相同。偏移表（每手平均 log p，10 個 head）：A（folds 3、4）與 B（1、2）同一 head 差 0.01–0.31（6D head：−2.906 vs −3.213），五個 f_k 之間差到 0.33（D head：−2.533 vs −2.861），目標側與對手側幾乎相同（差 ≤ 0.02）——刻度偏移確實存在。但校正沒有用：`fused_opp_x5c` **0.6704**（= `fused_opp_x5` 0.6704；NLL 1.1877 vs 1.1857），vs `fused_opp` −0.0031 [−0.0070, +0.0007]，折 −0.0013、+0.0003、−0.0116、0.0000，三條件全不過；`fused_opp_c` **0.6683**，vs `fused_opp` **−0.0052** [−0.0087, −0.0016]，四折全負——把 A、B 各自置中反而顯著變差；`x5c vs c` +0.0021 [−0.0015, +0.0056]。**刻度假設不成立**：偏移存在，但 MLP 本來就能處理（A／B 兩個模型的偏移也沒有拖累 fused_opp），把它減掉還拿走了有用的訊息（每手絕對 log p 的水準本身帶等級訊息，各模型的偏移與它糾纏）。x5 比 A／B 低 0.003 的原因因此更可能是 §2.13 的第二個解讀（A／B 的 CV 略為樂觀：驗證 fold 的特徵模型也給了訓練題）或純雜訊；資料量在每手層級的進步（rank CE 低 0.03）在這組 56 維 + h32 MLP 的題目層級看不到。這條線結束，提交維持 A／B 的 fused_opp。
+
+### 2.15 落子序列：每手 L1b log p 的順序有沒有加總看不到的訊號（2026-10-30；issue #19；nano4 待跑）
+- **起因**：使用者質疑「為什麼 CTM 不能一步一步學」，並指出資料理論上是時序訊號。確認：§2.7 的 CTM 是聚合器，輸入是每局 24／40 維的向量、tick 是內部的思考步，從沒看過逐手序列；而今天提交管線的每個特徵都是一局各手 log p 的加總（`sum_<rank>`，§2.9–2.11）。加總是「每手獨立、順序無關」下的充分統計量，只有在那個假設下才無損。可能丟掉的訊號：(a) 局內的起伏與自相關（讀秒、形勢好壞對出手品質的影響是連續的）；(b) 布局／中盤／官子的等級訊號強度不同（加總對每手一視同仁）；(c) 目標手與對手前後手的交互（對手一手好棋後我方的應手）；(d) log p 隨手數的斜率（手數本身已在 n_moves 裡）。§2.13 確認的是**跨局**的 game_id 順序沒有時序；這裡問的是**局內**的順序。
+- **設計**（`aicup.seqdata`、`aicup.seqmodel`、`scripts/seq_diag.py`、`seq_crossfit.py`、`seq_check.py`）：
+  - 步序列：每局依 t 合併目標手與對手手，每步 31 維 = 目標手 18 個 Human SL log p + 10 個 L1b log p、對手手 10 個 L1b log p（其 Human SL 欄為 0）、`is_target`／`is_opponent`、t/300；全部來自現有評分檔的每手 npz（`results/scores`、`scores3`／`scores3_B`、`scores3_opp`／`scores3_B_opp`）。每局 base = 目標手 L1b 的加總，與 csv 的 `sum_<rank>` 核對（容忍 0.05）。
+  - 四個 encoder，輸出都是 **base + Δ**（Δ 的輸出層零初始化，與 §2.7 的 Δ 模型同一招；base 以 float64 傳遞）：`sum`（Δ ≡ 0，就是今天的特徵，管線錨點）、`conv`（兩層 1-D 卷積核 5、masked mean + max 池化；padding 的步在每層卷積前歸零，輸出與 batch 的 padding 無關）、`gru`（GRU 末狀態 + 狀態的 masked mean；**必要的對照**：若順序有訊號，GRU 是最便宜能吃到它的模型）、`ctm_seq`（tick = 落子：每步 synapse 讀 [z, enc(x_t)] 做 Linear → GLU → LayerNorm，NLM 把每個神經元最近 `history` 個 pre-activation 變成活化，輸出讀自 `n_sync` 對神經元同步的遞迴累積 α ← d·α + z_i z_j、β ← d·β + 1、S = α/√β，d = exp(−r) 可學——原版 CTM 的機制，資料改成一手一 tick 餵入而不是 attention；padding 的步不改狀態）。輸入以訓練步的均值／標準差標準化（存進模型）。
+  - 訓練：每局等級的類別平衡交叉熵 + γ‖Δ‖²（γ = 1e-3），Adam 1e-3、weight decay 1e-4、batch 256、至多 10 epoch；inner 早停：每等級 10% 的玩家留出（`settrain.inner_players`，`INNER_SEED`），每 epoch 評 4 次，8 次沒進步停，取 inner CE 最低的權重（含第 0 次評估，即 Δ ≡ 0——encoder 學不到東西就退回加總）。
+  - 交叉擬合：k = 1…4，encoder_k 用其他三折訓、只對 fold k 輸出，寫成 `l1b_score.py` 版面的每局表（`sum_<rank>` := base + Δ），`seq_check.py` 直接用 `l1b_opp_check.features` 把目標的 L1b 表換掉（對手表仍是 A／B 的加總），其餘協定與 `l1b_opp_check` 相同（含 §2.13 提到的「驗證 fold 的特徵模型也給了訓練題」這點輕微樂觀——所有比較的集合一樣，不影響差）。
+  - 第 0 步診斷（`seq_diag.py`，不訓神經網路）：每手 L1b 的後驗平均等級 pmi_t 與 surprisal s_t 兩條標量序列的形狀特徵（std、lag-1／2 自相關、後半−前半、斜率、log 手數），按等級印平均；每局 softmax 回歸「只用平均」vs「平均＋形狀」的平衡準確率／NLL 差 = 加總看不到的訊號有多大。
+- **預先指定**：`fused_opp_seq_gru vs fused_opp`（條件 (1)(3)(4)）。只報告：`fused_opp_seq_sum vs fused_opp`（應為 0 ± float32 捨入）、`conv`、`ctm_seq vs fused_opp`、`ctm_seq vs gru`。**CTM vs GRU 只在 GRU 過關時才有意義**：先確認順序裡有訊號，再問哪個 encoder 吃得最好；GRU 沒過而 ctm_seq 過不算證據，要換 seed 重現。
+- **限制**：輸入是每手壓縮過的 28 個 log p，不是棋盤；若訊號在局面本身隨時間的變化（例如形勢判斷），這一階看不到，下一階才是在 trunk 特徵上做序列模型（要重新評分、成本高得多）。
+- **結果**：待 nano4（指令在 NANO4 §4.9）。
 
 ## 3. 成本：0B 實測（2026-10-16，lab01 單卡 RTX PRO 6000，torch 2.14.1+cu130，`scripts/bench_humansl.py` → `results/bench_0B.json`）
 
@@ -267,3 +279,4 @@ H200 對 RTX PRO 6000 的單卡速度比 r **未實測**。以 0B 的 4,296 評�
 - 1D|2D、3D|4D 為什麼分不開：Human SL 解析度不足，還是本資料這兩對標籤本身重疊？要靠 L1b（用本資料標籤訓練）回答。
 - 測試集是否含虛手／殘局（11/04 後重跑 check_legal）。
 - 測試集每題的棋局順序是否有意義（若為時間序，順序本身帶訊號；聚合器先設計成順序無關，11/04 後測順序敏感度）。
+- 局內落子的順序是否帶加總看不到的等級訊號（§2.15，issue #19，待 nano4）。

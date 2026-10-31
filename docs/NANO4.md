@@ -480,7 +480,41 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 01:00:00 -J xfit scripts/n
 sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 01:00:00 -J xfitc scripts/nano4/run.sbatch python -I scripts/xfit_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --xfit-l1b results/l1b/scores5 --xfit-opp results/l1b/scores5_opp --out results/l1b/xfit_center_check.json
 ```
 
-預期：`fused_opp` 0.6735、`fused_opp_x5` 0.6704 等五列與 §4.7 完全相同（校正不碰它們）；偏移表（兩側各五個模型 × 10 個 head）、`fused_opp_c`、`fused_opp_x5c` 與八條比較貼回 issue #16，`xfit_center_check.json` 進 git。決策：`x5c` 過三條件 → 另開 issue 談接進提交（五個模型評分 + 校正步驗，分片評分 8 卡約 1 分 48 秒 → 2 分半，11/04 前時間緊，接不接由使用者決定）；沒過 → 記 METHOD_NOTES §2.14，刻度假設不成立。
+預期：`fused_opp` 0.6735、`fused_opp_x5` 0.6704 等五列與 §4.7 完全相同（校正不碰它們）；偏移表（兩側各七個模型 × 10 個 head：A、B 與 f0…f4，fold 0 不在 CV 裡所以 f0 沒有列）、`fused_opp_c`、`fused_opp_x5c` 與八條比較貼回 issue #16，`xfit_center_check.json` 進 git。決策：`x5c` 過三條件 → 另開 issue 談接進提交（五個模型評分 + 校正步驗，分片評分 8 卡約 1 分 48 秒 → 2 分半，11/04 前時間緊，接不接由使用者決定）；沒過 → 記 METHOD_NOTES §2.14，刻度假設不成立。
+
+**結果（2026-10-30，`results/l1b/xfit_center_check.json`）**：五列與 §4.7 逐位元相同；偏移在模型間差到 0.3 nats/手，但 `fused_opp_x5c` 0.6704（= `fused_opp_x5`）、`fused_opp_c` 0.6683；預先指定 x5c vs fused_opp −0.0031 [−0.0070, +0.0007] 沒過，c vs fused_opp −0.0052 [−0.0087, −0.0016] 反而變差。刻度假設不成立，這條線結束（METHOD_NOTES §2.14）。
+
+### 4.9 落子序列實驗：每手 L1b log p 的「順序」有沒有加總看不到的訊號（2026-10-30，issue #19）
+
+提交管線不動。今天所有特徵都把一局每手的 log p 加總（`sum_<rank>`），手與手的順序、局內的起伏、與對手落子的交錯全丟掉；使用者（2026-10-30）問 CTM 為什麼不能一步一步學——§2.7 的 CTM 吃的是整局的向量、tick 是「想」的步數，從沒看過逐手序列。這個實驗把逐手序列餵給四個 encoder（`aicup.seqmodel`：sum 錨點、1-D conv、GRU、tick = 落子的 CTM），輸出都是 `base + Δ`（base 是今天的 L1b 加總，Δ 零初始化，所以 sum encoder 就是今天的特徵），以 folds 1–4 四折交叉擬合寫出 `l1b_score.py` 版面的每局表，再用 `l1b_opp_check` 的協定比 `fused_opp`。每步 31 維：目標手的 18 個 Human SL log p + 10 個 L1b log p、對手手的 10 個 L1b log p（Human SL 欄為 0）、兩個旗標、t/300（`aicup.seqdata`）。只需要現有評分檔的每手 npz（`results/scores`、`scores3`／`scores3_B`、`scores3_opp`／`scores3_B_opp`），不碰 fold 0，不用 trunk、不用快取。設計與決策規則在 METHOD_NOTES §2.15。
+
+**0. 診斷（CPU，幾分鐘；可以先跑）**：每局把每手 L1b 的後驗平均等級與 surprisal 做成兩條標量序列，算 std、lag-1／lag-2 自相關、後半減前半、斜率等「形狀」特徵，按等級印平均，並做每局的 softmax 回歸：只用平均（`mean_pmi`、`log_moves`）vs 平均＋形狀，三折訓一折測，差就是加總看不到的訊號有多大。
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 00:30:00 -J seqdiag scripts/nano4/run.sbatch python -I scripts/seq_diag.py --l1b results/l1b/scores3 results/l1b/scores3_B --out results/seq/seq_diag.json
+```
+
+貼回 issue #19：每等級的平均表、四折 mean-only vs mean+shape 的平衡準確率／NLL 與 `shape gain` 那一行；`seq_diag.json` 進 git。
+
+**1. 四個 encoder 各一支工作（1 張 GPU，互相獨立，可同時排）**。每支先讀四個 fold 的序列（每折約 29,500 局、約 656 萬步，RAM 約 8 GB，幾分鐘），再對 k = 1…4 各訓一個模型（訓練集三折約 88,500 局、約 2,000 萬步）：
+
+```bash
+for a in sum conv gru ctm_seq; do
+  sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 08:00:00 -J seq_$a scripts/nano4/run.sbatch python -I scripts/seq_crossfit.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --arch $a --out results/seq/$a
+done
+```
+
+預設 `--epochs 10 --batch 256 --lr 1e-3 --hidden 64`（CTM 另有 `--d-latent 128 --history 8 --n-sync 256`），inner 早停（每等級 10% 的玩家留出、每 epoch 評 4 次、8 次沒進步就停）。sum 幾分鐘（只算標準化與評估）；conv／GRU 每 epoch 約 1 分鐘；CTM 每 tick 一圈 Python 迴圈（每局 200–500 步），每 epoch 約 5–10 分鐘，10 epoch 內結束，8 小時夠。輸出 `results/seq/<arch>/fold{k}/games_s0_p000.csv`（`sum_<rank>` = base + Δ）、`moves_s0_p000.npz`（base、delta）、`meta_s0.json`、`encoder_f{k}.pt`、`summary.json`。`sum` 的表必須與 `scores3`／`scores3_B` 的 `sum_<rank>` 只差 float32 捨入（`mean_abs_delta` 0）。CTM 可以用 `--only-folds k` 拆成每折一支工作（4 張 GPU 同時跑，訓練集仍由 `--folds` 決定，結果定義不變；`summary.json` 從各折的 `meta_s0.json` 重建，最後結束的那支寫齊四折）。進 git 的只有每個 arch 的 `summary.json` 與四個 `meta_s0.json`（`.gitignore` 已排除 .pt／.npz／每局 csv）。貼回：每個 arch 每折的 inner CE init → best、best_epoch、mean |Δ|、wall。
+
+**2. CV（CPU；四個 arch 都寫完後。實測 25 分鐘，慢的節點一折就要 48 分鐘，所以時限給 8 小時）**：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 08:00:00 -J seqcheck scripts/nano4/run.sbatch python -I scripts/seq_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --seq sum:results/seq/sum conv:results/seq/conv gru:results/seq/gru ctm_seq:results/seq/ctm_seq --out results/seq/seq_check.json
+```
+
+預期：`fused_opp` 0.6735（差 0）；`fused_opp_seq_sum` 與它只差 float32 捨入（管線檢查，應在 ±0.001 內）。**預先指定** `fused_opp_seq_gru vs fused_opp`（條件 (1)(3)(4)）；只報告 conv、ctm_seq vs fused_opp 與 `ctm_seq vs gru`。五列、四條比較貼回 issue #19，`seq_check.json` 進 git。
+
+**3. 決策**：GRU 過 → 序列裡有加總看不到的訊號，另開 issue 談接進提交（`predict_submission.py` 的分片已存每手的 L1b 陣列與對手陣列，只要加 encoder 這一步），這時才看 `ctm_seq vs gru` 決定用哪個 encoder；GRU 沒過、診斷的 shape gain 也 ≈ 0 → 在每手 log p 這個層級順序沒有可用訊號，CTM 逐手也不會有，記 METHOD_NOTES §2.15 結束；GRU 沒過但 ctm_seq 過（沒有預先指定）→ 當線索，`--seed 1` 重跑 ctm_seq 與 gru 再說。
 
 ## 5. 同步程式碼、取回結果
 
