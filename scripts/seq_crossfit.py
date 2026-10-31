@@ -15,6 +15,7 @@ tables with the plain sums under the usual CV. Inputs per step: the target's 18 
       --arch gru --out results/seq/gru
 """
 import argparse
+import json
 import sys
 import time
 from dataclasses import fields
@@ -63,14 +64,19 @@ def main(argv=None):
         if f.name == "arch":
             continue
         ap.add_argument(f"--{f.name.replace('_', '-')}", type=type(f.default), default=f.default)
+    ap.add_argument("--only-folds", type=int, nargs="+", default=None,
+                    help="fit and write only these folds of --folds (the training sets still come from --folds), so one arch's folds can run as separate jobs")
     ap.add_argument("--max-games", type=int, default=0, help="smoke tests: only the first N games of every fold")
     ap.add_argument("--overwrite", action="store_true")
     a = ap.parse_args(argv)
     folds = sorted(set(a.folds))
     if 0 in folds:
         ap.error("fold 0 is not a CV fold here")
+    targets = sorted(set(a.only_folds)) if a.only_folds else folds
+    if not set(targets) <= set(folds):
+        ap.error(f"--only-folds {targets} must be among --folds {folds}")
     out = Path(a.out)
-    if out.exists() and any(out.glob("fold*/games_s0_p000.csv")) and not a.overwrite:
+    if any(part_paths(out / f"fold{k}", 0, 0)[0].exists() for k in targets) and not a.overwrite:
         print(f"{out} already has outputs; pass --overwrite", file=sys.stderr)
         return 2
     cfg = SeqCfg(**{f.name: (a.arch if f.name == "arch" else getattr(a, f.name)) for f in fields(SeqCfg)})
@@ -91,8 +97,7 @@ def main(argv=None):
     except (FileNotFoundError, ValueError, KeyError) as e:
         print(e, file=sys.stderr)
         return 2
-    summary = {}
-    for k in folds:
+    for k in targets:
         t0 = time.time()
         train = concat_sequences([seqs[f] for f in folds if f != k])
         print(f"== fold {k}: training {cfg.arch} on folds {[f for f in folds if f != k]} ({len(train['rank_idx'])} games)", flush=True)
@@ -108,9 +113,15 @@ def main(argv=None):
                  "heads": {"path": str(enc_path), "state_sha256": sha, "train_folds": [f for f in folds if f != k]},
                  "mean_abs_delta": float(np.abs(pred - seqs[k]["base"]).mean())}
         write_fold(out, k, seqs[k], pred, extra)
-        summary[str(k)] = {kk: extra[kk] for kk in ("inner_ce_init", "inner_ce_best", "best_epoch", "n_params", "train_wall_seconds", "mean_abs_delta")}
         print(f"fold {k}: inner CE {meta['inner_ce_init']:.4f} -> {meta['inner_ce_best']:.4f} at epoch {meta['best_epoch']:.2f}, "
               f"mean |Δ| {extra['mean_abs_delta']:.4f}, {time.time() - t0:.0f} s", flush=True)
+    # rebuilt from every fold's meta on disk, so the job that finishes last leaves the summary of all of them
+    summary = {}
+    for k in folds:
+        path = out / f"fold{k}" / "meta_s0.json"
+        if path.exists():
+            m = json.loads(path.read_text())
+            summary[str(k)] = {kk: m[kk] for kk in ("inner_ce_init", "inner_ce_best", "best_epoch", "n_params", "train_wall_seconds", "mean_abs_delta")}
     (out / "summary.json").write_text(to_json({"arch": cfg.arch, "cfg": meta["cfg"], "folds": summary, **environment("cpu")}, indent=1) + "\n")
     print(f"wrote {out}/fold*/ and summary.json")
     return 0

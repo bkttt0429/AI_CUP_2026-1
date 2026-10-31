@@ -185,6 +185,18 @@ def test_seq_crossfit_cli_writes_l1b_score_layout(tmp_path, capsys):
     with pytest.raises(SystemExit):
         seq_crossfit.main(common + ["--arch", "sum", "--out", str(tmp_path / "x"), "--folds", "0", "1"])
     assert seq_crossfit.main(common + ["--arch", "sum", "--out", str(tmp_path / "y"), "--l1b", str(tmp_path / "missing")]) == 2
+    # one job per fold (--only-folds) gives the same tables and training sets as one job for all folds
+    args_g = ["--arch", "gru", "--max-games", "60", "--hidden", "8", "--folds", "1", "2", "3"]
+    out_p = tmp_path / "seq_gru_parts"
+    for k in ("1", "2", "3"):
+        assert seq_crossfit.main(common + args_g + ["--out", str(out_p), "--only-folds", k]) == 0
+    assert seq_crossfit.main(common + args_g + ["--out", str(out_p), "--only-folds", "2"]) == 2, "existing outputs need --overwrite"
+    assert sorted(json.loads((out_p / "summary.json").read_text())["folds"]) == ["1", "2", "3"]
+    for k in (1, 2, 3):
+        assert json.loads((out_p / f"fold{k}" / "meta_s0.json").read_text())["train_folds"] == [f for f in (1, 2, 3) if f != k]
+        assert read_scored_games(out_p / f"fold{k}").equals(read_scored_games(out_g / f"fold{k}"))
+    with pytest.raises(SystemExit):
+        seq_crossfit.main(common + args_g + ["--out", str(tmp_path / "z"), "--only-folds", "4"])
 
 
 def test_seq_check_cli(tmp_path, capsys):

@@ -504,7 +504,7 @@ for a in sum conv gru ctm_seq; do
 done
 ```
 
-預設 `--epochs 10 --batch 256 --lr 1e-3 --hidden 64`（CTM 另有 `--d-latent 128 --history 8 --n-sync 256`），inner 早停（每等級 10% 的玩家留出、每 epoch 評 4 次、8 次沒進步就停）。sum 幾分鐘（只算標準化與評估）；conv／GRU 每 epoch 約 1 分鐘；CTM 每 tick 一圈 Python 迴圈（每局 200–500 步），每 epoch 約 5–10 分鐘，10 epoch 內結束，8 小時夠。輸出 `results/seq/<arch>/fold{k}/games_s0_p000.csv`（`sum_<rank>` = base + Δ）、`moves_s0_p000.npz`（base、delta）、`meta_s0.json`、`encoder_f{k}.pt`、`summary.json`。`sum` 的表必須與 `scores3`／`scores3_B` 的 `sum_<rank>` 只差 float32 捨入（`mean_abs_delta` 0）。進 git 的只有每個 arch 的 `summary.json` 與四個 `meta_s0.json`（`.gitignore` 已排除 .pt／.npz／每局 csv）。貼回：每個 arch 每折的 inner CE init → best、best_epoch、mean |Δ|、wall。
+預設 `--epochs 10 --batch 256 --lr 1e-3 --hidden 64`（CTM 另有 `--d-latent 128 --history 8 --n-sync 256`），inner 早停（每等級 10% 的玩家留出、每 epoch 評 4 次、8 次沒進步就停）。sum 幾分鐘（只算標準化與評估）；conv／GRU 每 epoch 約 1 分鐘；CTM 每 tick 一圈 Python 迴圈（每局 200–500 步），每 epoch 約 5–10 分鐘，10 epoch 內結束，8 小時夠。輸出 `results/seq/<arch>/fold{k}/games_s0_p000.csv`（`sum_<rank>` = base + Δ）、`moves_s0_p000.npz`（base、delta）、`meta_s0.json`、`encoder_f{k}.pt`、`summary.json`。`sum` 的表必須與 `scores3`／`scores3_B` 的 `sum_<rank>` 只差 float32 捨入（`mean_abs_delta` 0）。CTM 可以用 `--only-folds k` 拆成每折一支工作（4 張 GPU 同時跑，訓練集仍由 `--folds` 決定，結果定義不變；`summary.json` 從各折的 `meta_s0.json` 重建，最後結束的那支寫齊四折）。進 git 的只有每個 arch 的 `summary.json` 與四個 `meta_s0.json`（`.gitignore` 已排除 .pt／.npz／每局 csv）。貼回：每個 arch 每折的 inner CE init → best、best_epoch、mean |Δ|、wall。
 
 **2. CV（CPU，幾分鐘；四個 arch 都寫完後）**：
 
