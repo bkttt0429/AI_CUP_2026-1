@@ -528,6 +528,8 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 04:00:00 -J shapecheck scr
 
 預期：`fused_opp` 0.6735（差 0；與 `seq_check.json`、`opp_check.json` 的 `fused_opp` 列相同）。**預先指定** `fused_opp_shape vs fused_opp`（條件 (1)(3)(4)）；只報告 `shape2 vs fused_opp`、`shape2 vs shape`。三列（總分、NLL、by n、每折）與三條比較貼回 issue #21，`shape_check.json` 進 git。決策：過 → 另開 issue 接進提交（分片已有每手 L1b 陣列，形狀特徵在分片後算）；沒過 → METHOD_NOTES §2.16，局內順序這條線結束。
 
+**結果（nano4，2026-10-31，`results/seq/shape_check.json`，commit `a02f1b7`；job 662599，實跑約 4.5 分）**：`fused_opp` 0.6735 重現（每折同 `seq_check.json`）；**`fused_opp_shape` 0.6706（預先指定 −0.0029 [−0.0064, +0.0004]，三條件全不過）**、`fused_opp_shape2` 0.6742（+0.0006，不顯著）；兩者 NLL 都變差（1.2007、1.2037 對 1.1790）。局內順序這條線結束，提交維持 fused_opp（METHOD_NOTES §2.16）。
+
 ### 4.11 80 分路線：測試玩家是否在訓練集裡（2026-10-31，issue #22；程式在 AI_CUP_2026-2，從這裡的根目錄送件）
 
 提交管線不動。設計與判準在 METHOD_NOTES §2.17 與 AI_CUP_2026-2 的 METHOD_NOTES §2.3、docs/NANO4.md §4。AI_CUP_2026-2 的 checkout 要在 `claude/pid-rank-overlap`（PR #4）或合併後的 `main`。
