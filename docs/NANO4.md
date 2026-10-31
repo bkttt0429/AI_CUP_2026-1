@@ -516,6 +516,8 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 08:00:00 -J seqcheck scrip
 
 **3. 決策**：GRU 過 → 序列裡有加總看不到的訊號，另開 issue 談接進提交（`predict_submission.py` 的分片已存每手的 L1b 陣列與對手陣列，只要加 encoder 這一步），這時才看 `ctm_seq vs gru` 決定用哪個 encoder；GRU 沒過、診斷的 shape gain 也 ≈ 0 → 在每手 log p 這個層級順序沒有可用訊號，CTM 逐手也不會有，記 METHOD_NOTES §2.15 結束；GRU 沒過但 ctm_seq 過（沒有預先指定）→ 當線索，`--seed 1` 重跑 ctm_seq 與 gru 再說。
 
+**結果（nano4，2026-10-31，`results/seq/seq_check.json`；PR #18 合併為 `main` `914e4e2`）**：`fused_opp` 0.6735 重現；`fused_opp_seq_sum` 0.6730（−0.0005，float32 捨入內）、conv 0.6719、**gru 0.6732（預先指定 −0.0004 [−0.0029, +0.0022]，三條件全不過）**、ctm_seq 0.6705（vs gru −0.0026 [−0.0050, −0.0003]，只報告）。第 0 步的 shape gain 不是 0（每局準確率 +0.0085、NLL +0.0328，四折同向），所以結論是「形狀訊號存在但 base + Δ 這條通道沒有把它變成題目層級的分數」，不是「順序沒有訊號」。實測資源：conv 每折 20 s、gru 2–3 分、ctm_seq 11–28 分（1 卡），`seq_check` 25–48 分。GRU 在 GPU 上需要 `517a5a4` 的修正（inner 評估後回到 train 模式）。這條線結束，提交維持 A／B 的 fused_opp；後續若做獨立通道的變體，見 METHOD_NOTES §2.15 的結論。
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：
