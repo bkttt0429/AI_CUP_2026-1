@@ -516,6 +516,54 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 08:00:00 -J seqcheck scrip
 
 **3. 決策**：GRU 過 → 序列裡有加總看不到的訊號，另開 issue 談接進提交（`predict_submission.py` 的分片已存每手的 L1b 陣列與對手陣列，只要加 encoder 這一步），這時才看 `ctm_seq vs gru` 決定用哪個 encoder；GRU 沒過、診斷的 shape gain 也 ≈ 0 → 在每手 log p 這個層級順序沒有可用訊號，CTM 逐手也不會有，記 METHOD_NOTES §2.15 結束；GRU 沒過但 ctm_seq 過（沒有預先指定）→ 當線索，`--seed 1` 重跑 ctm_seq 與 gru 再說。
 
+**結果（nano4，2026-10-31，`results/seq/seq_check.json`；PR #18 合併為 `main` `914e4e2`）**：`fused_opp` 0.6735 重現；`fused_opp_seq_sum` 0.6730（−0.0005，float32 捨入內）、conv 0.6719、**gru 0.6732（預先指定 −0.0004 [−0.0029, +0.0022]，三條件全不過）**、ctm_seq 0.6705（vs gru −0.0026 [−0.0050, −0.0003]，只報告）。第 0 步的 shape gain 不是 0（每局準確率 +0.0085、NLL +0.0328，四折同向），所以結論是「形狀訊號存在但 base + Δ 這條通道沒有把它變成題目層級的分數」，不是「順序沒有訊號」。實測資源：conv 每折 20 s、gru 2–3 分、ctm_seq 11–28 分（1 卡），`seq_check` 25–48 分。GRU 在 GPU 上需要 `517a5a4` 的修正（inner 評估後回到 train 模式）。這條線結束，提交維持 A／B 的 fused_opp；後續若做獨立通道的變體，見 METHOD_NOTES §2.15 的結論。
+
+### 4.10 獨立通道 fused_opp_shape：每題局內形狀特徵的平均（2026-10-31，issue #21）
+
+提交管線不動。§4.9 的 base + Δ 沒過，但第 0 步的形狀訊號存在；這裡把每局的 9 個形狀特徵（`aicup.seqshape.game_shape`，就是 `seq_diag.py` 算的那些）在每題的局上取平均、去掉 log_moves 後接在 56 維 `fused_opp` 後面：`fused_opp_shape`（+8，目標手）、`fused_opp_shape2`（+16，再加對手手）。CV 協定與 `l1b_opp_check` 相同，只多算形狀表（讀 `scores3`／`scores3_B`、`scores3_opp`／`scores3_B_opp` 的每手 npz，每折兩側約 1 分鐘）。CPU 一支工作；三個特徵集 × 四折的 MLP 擬合，依 §4.9 `seq_check` 的經驗（五個集合 25–48 分）估 15–40 分，時限給 4 小時：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 04:00:00 -J shapecheck scripts/nano4/run.sbatch python -I scripts/shape_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --out results/seq/shape_check.json
+```
+
+預期：`fused_opp` 0.6735（差 0；與 `seq_check.json`、`opp_check.json` 的 `fused_opp` 列相同）。**預先指定** `fused_opp_shape vs fused_opp`（條件 (1)(3)(4)）；只報告 `shape2 vs fused_opp`、`shape2 vs shape`。三列（總分、NLL、by n、每折）與三條比較貼回 issue #21，`shape_check.json` 進 git。決策：過 → 另開 issue 接進提交（分片已有每手 L1b 陣列，形狀特徵在分片後算）；沒過 → METHOD_NOTES §2.16，局內順序這條線結束。
+
+**結果（nano4，2026-10-31，`results/seq/shape_check.json`，commit `a02f1b7`；job 662599，實跑約 4.5 分）**：`fused_opp` 0.6735 重現（每折同 `seq_check.json`）；**`fused_opp_shape` 0.6706（預先指定 −0.0029 [−0.0064, +0.0004]，三條件全不過）**、`fused_opp_shape2` 0.6742（+0.0006，不顯著）；兩者 NLL 都變差（1.2007、1.2037 對 1.1790）。局內順序這條線結束，提交維持 fused_opp（METHOD_NOTES §2.16）。
+
+### 4.11 80 分路線：測試玩家是否在訓練集裡（2026-10-31，issue #22；程式在 AI_CUP_2026-2，從這裡的根目錄送件）
+
+提交管線不動。設計與判準在 METHOD_NOTES §2.17 與 AI_CUP_2026-2 的 METHOD_NOTES §2.3、docs/NANO4.md §4。AI_CUP_2026-2 的 checkout（nano4 上是 `~/BK_AICUP_2026-2`）要在 `claude/pid-rank-overlap`（PR #4）或合併後的 `main`。
+
+**步 0：SGF 標頭確認**（登入節點一行即可）：
+
+```bash
+for f in data/training/train_*.csv; do echo "$f RE=$(grep -c 'RE\[' "$f") HA=$(grep -c 'HA\[' "$f") KM=$(grep -c 'KM\[' "$f") AB=$(grep -c 'AB\[' "$f") DT=$(grep -c 'DT\[' "$f")"; done
+```
+
+全為 0 → 元資料這條關閉（預期如此，mock 測試檔每局只有 `SZ[19]`）。
+
+**步 1：8,007 路辨識可行性**（CPU 一支；`run.sbatch` 預設配 1 張 GPU、每張卡最多 12 核，所以 `-c 12 --workers 12`；nano4 實測 12 核 627 s、RAM 數 GB）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 02:00:00 -J rankovl scripts/nano4/run.sbatch python -I ../BK_AICUP_2026-2/scripts/pid_rank_overlap.py --scores results/scores --calib-fold 1 --eval-fold 0 --fused-proba results/l1b/fold0_fused_opp_proba.csv --siblings --workers 12 --out ../BK_AICUP_2026-2/results/rank_overlap.json
+```
+
+貼回 issue #22：校準折（fold 1）的 Top-1／Top-5 按 n 與 τ；評估折（fold 0）的 Top-1／Top-5 按 n、`id_rank_score`、margin ≥ τ 的比例與精確率、認對／認錯的 margin 分位數；`combined` vs `fused_opp`（差、CI；`fused_opp` 須重現 0.6716）；`siblings` 每個 n 的 `top1_same_player`。`rank_overlap.json` 進 AI_CUP_2026-2 的 git。
+
+**步 2（11/04）**：官方檔案到手後先跑 `--test-csv`（指令在 AI_CUP_2026-2 docs/NANO4.md §4，τ 取 json 的 `calibration.tau`），貼回 `share_above_tau`（按 n）與 margin 分位數；判準見 METHOD_NOTES §2.17。
+
+**結果（nano4，2026-10-31）**：步 0 全 0（元資料關閉）。步 1 以 fold 1 校準、fold 2 評估試跑（fold 0 沒動）：Top-1 0.425、id_rank 0.6513、margin ≥ τ 的題 15.4%（精確率 0.974）；手算上限約 0.74。**使用者決定暫停這條路線**（`REPORT.md` §2.7），步 2 不跑、fold 0 不評，等主辦單位回覆（METHOD_NOTES §2.17）。
+
+### 4.12 判錯的原因：OOF 殘差分解、對手通道、模型類別檢查（2026-10-31，issue #23）
+
+提交管線不動，不碰 fold 0。CPU 一支：四折 × 四個模型（`mlp`、`mlp_diff`、`gbm`、`mlp_h128`），`gbm` 用 `requirements.txt` 既有的 xgboost 2.1.4（沒裝就加 `--no-gbm`）；依 §4.10 的經驗（三個集合 4.5 分）估 15–30 分，`mlp_h128` 與 300 棵樹較慢，時限給 4 小時：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 04:00:00 -J erran scripts/nano4/run.sbatch python -I scripts/error_analysis.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --jobs 12 --out results/l1b/error_analysis.json --proba-out results/l1b/oof_fused_opp_proba.csv
+```
+
+預期：`mlp` 0.6735（差 0；每折同 `opp_check.json`）。**預先指定** `mlp_diff vs mlp`、`gbm vs mlp`；只報告 `mlp_h128 vs mlp`。貼回 issue #23：四列（總分、NLL、by n、每折）、三條比較、殘差分析（玩家間比例、全對／全錯對獨立期望、按局數五分位、按等級、Spearman 表、三群平均）、對手通道的五個 Spearman。`error_analysis.json` 與 `oof_fused_opp_proba.csv`（約 39,000 列）進 git；fold 2 的那段機率給 issue #22 的 combined 用（欄名 `fused_opp_p_<rank>`）。
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：
