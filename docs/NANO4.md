@@ -518,6 +518,16 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 08:00:00 -J seqcheck scrip
 
 **結果（nano4，2026-10-31，`results/seq/seq_check.json`；PR #18 合併為 `main` `914e4e2`）**：`fused_opp` 0.6735 重現；`fused_opp_seq_sum` 0.6730（−0.0005，float32 捨入內）、conv 0.6719、**gru 0.6732（預先指定 −0.0004 [−0.0029, +0.0022]，三條件全不過）**、ctm_seq 0.6705（vs gru −0.0026 [−0.0050, −0.0003]，只報告）。第 0 步的 shape gain 不是 0（每局準確率 +0.0085、NLL +0.0328，四折同向），所以結論是「形狀訊號存在但 base + Δ 這條通道沒有把它變成題目層級的分數」，不是「順序沒有訊號」。實測資源：conv 每折 20 s、gru 2–3 分、ctm_seq 11–28 分（1 卡），`seq_check` 25–48 分。GRU 在 GPU 上需要 `517a5a4` 的修正（inner 評估後回到 train 模式）。這條線結束，提交維持 A／B 的 fused_opp；後續若做獨立通道的變體，見 METHOD_NOTES §2.15 的結論。
 
+### 4.10 獨立通道 fused_opp_shape：每題局內形狀特徵的平均（2026-10-31，issue #21）
+
+提交管線不動。§4.9 的 base + Δ 沒過，但第 0 步的形狀訊號存在；這裡把每局的 9 個形狀特徵（`aicup.seqshape.game_shape`，就是 `seq_diag.py` 算的那些）在每題的局上取平均、去掉 log_moves 後接在 56 維 `fused_opp` 後面：`fused_opp_shape`（+8，目標手）、`fused_opp_shape2`（+16，再加對手手）。CV 協定與 `l1b_opp_check` 相同，只多算形狀表（讀 `scores3`／`scores3_B`、`scores3_opp`／`scores3_B_opp` 的每手 npz，每折兩側約 1 分鐘）。CPU 一支工作；三個特徵集 × 四折的 MLP 擬合，依 §4.9 `seq_check` 的經驗（五個集合 25–48 分）估 15–40 分，時限給 4 小時：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 04:00:00 -J shapecheck scripts/nano4/run.sbatch python -I scripts/shape_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --out results/seq/shape_check.json
+```
+
+預期：`fused_opp` 0.6735（差 0；與 `seq_check.json`、`opp_check.json` 的 `fused_opp` 列相同）。**預先指定** `fused_opp_shape vs fused_opp`（條件 (1)(3)(4)）；只報告 `shape2 vs fused_opp`、`shape2 vs shape`。三列（總分、NLL、by n、每折）與三條比較貼回 issue #21，`shape_check.json` 進 git。決策：過 → 另開 issue 接進提交（分片已有每手 L1b 陣列，形狀特徵在分片後算）；沒過 → METHOD_NOTES §2.16，局內順序這條線結束。
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：

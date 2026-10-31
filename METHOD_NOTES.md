@@ -267,6 +267,17 @@
   4. `ctm_seq` 落後 `gru` 且 CI 不含 0（只報告；依預先指定 GRU 沒過時不解讀）。在這條通道下，容量更大的 CTM 更差；`ctm_seq` 自己也沒過，`--seed 1` 重跑那條不觸發。對使用者的問題「CTM 為什麼不能一步一步學」：可以，而且學得比 GRU 更會壓 inner CE（4.59–5.42），但在這個資料、這條通道上沒有變成題目層級的分數。
 - **結論**：提交維持 A／B 的 `fused_opp`。這條線（base + Δ）結束。若要再問「局內順序」，應改走**獨立通道**而不是修正加總（新實驗，要另外事先指定）：(a) 便宜的做法——把第 0 步的每局形狀特徵（`std_pmi`、`ac1_pmi`、`half_diff_pmi`、`slope_pmi` 等）在每題的局上取平均，接在 56 維 `fused_opp` 後面成 `fused_opp_shape`，CPU 幾分鐘，預先指定 vs `fused_opp`；(b) 或把 Δ 限制成只能學形狀（序列輸入先減掉每局的平均，encoder 就修不了刻度）。CTM 逐手這條，只有 (a)／(b) 顯示形狀訊號能進到題目層級後才值得再開。
 
+### 2.16 獨立通道 fused_opp_shape：每題局內形狀特徵的平均接在 fused_opp 後面（2026-10-31；issue #21；nano4 待跑）
+- **使用者決定（2026-10-31）**：做 §2.15 結論的 (a)。形狀特徵不去修正 L1b 加總，直接當額外欄位給 MLP；提交管線不動，不碰 fold 0。
+- **做法**（`aicup.seqshape`、`scripts/shape_check.py`）：
+  - 每局形狀特徵 = 第 0 步診斷的 9 個（`game_shape`，從 `seq_diag.py` 搬到 `aicup.seqshape`，數值不變）：每手 L1b 後驗平均等級 pmi_t 與 surprisal s_t 的 mean_pmi、log_moves、std_pmi、ac1_pmi、ac2_pmi、half_diff_pmi、slope_pmi、mean_s、ac1_s。來源：`scores3`／`scores3_B` 的每手 npz（目標手）、`scores3_opp`／`scores3_B_opp`（對手手），與 `fused_opp` 同一組 OOF 評分。
+  - 每題：題內各局的形狀特徵取**平均**（`question_shape`；每局的量都是強度量，不隨局數累加，所以取平均而不是加總），去掉 log_moves（n_moves 已在 16 維 L1b 特徵裡）→ 8 維。`fused_opp_shape` = 56 + 8 = 64 維；`fused_opp_shape2` = 再加對手手的 8 維 = 72。MLP 本來就把輸入標準化，刻度不是問題。
+  - CV 與 `l1b_opp_check` 完全相同（pilot 驗證題、`sample_questions` 32／人、`RandomState(42 + v)`、`MLPModel(hidden=32)`、玩家 bootstrap），只多算形狀表；CPU 一支工作。
+- **預先指定**：`fused_opp_shape vs fused_opp`（條件 (1)(3)(4)）。只報告：`fused_opp_shape2 vs fused_opp`、`fused_opp_shape2 vs fused_opp_shape`。雜訊底線沿用 §2.15 的單折 ±0.001。
+- **預期**：單局層級的 shape gain 是 +0.0085 平衡準確率（§2.15）；題目層級對 5–20 局取平均，形狀特徵的雜訊縮 √n，但 56 維已帶走大部分等級訊息，效應應該小；門檻就是條件 (4) 的 0.005。
+- **決策**：過 → 另開 issue 接進提交（`predict_submission.py` 的分片已存每手 L1b 陣列，目標與對手都有，形狀特徵可在分片後算，不需重新評分；`fit_fused_model.py` 加 shape 欄）。沒過 → 單局形狀訊號在題目層級被 56 維吃掉或太小，局內順序這條線（§2.15 + §2.16）結束，提交維持 `fused_opp`。
+- **結果**：待 nano4（指令在 NANO4 §4.10）。
+
 ## 3. 成本：0B 實測（2026-10-16，lab01 單卡 RTX PRO 6000，torch 2.14.1+cu130，`scripts/bench_humansl.py` → `results/bench_0B.json`）
 
 | 量測 | 數字 |
@@ -305,4 +316,4 @@ H200 對 RTX PRO 6000 的單卡速度比 r **未實測**。以 0B 的 4,296 評�
 - 1D|2D、3D|4D 為什麼分不開：Human SL 解析度不足，還是本資料這兩對標籤本身重疊？要靠 L1b（用本資料標籤訓練）回答。
 - 測試集是否含虛手／殘局（11/04 後重跑 check_legal）。
 - 測試集每題的棋局順序是否有意義（若為時間序，順序本身帶訊號；聚合器先設計成順序無關，11/04 後測順序敏感度）。
-- ~~局內落子的順序是否帶加總看不到的等級訊號~~ → §2.15 部分回答：單局層級有小而一致的趨勢訊號（弱者越下越差、強者越下越好），但以 base + Δ 修正 L1b 加總接進 fused_opp 沒有提升題目層級的分數；獨立通道（每題的形狀特徵）還沒試。
+- ~~局內落子的順序是否帶加總看不到的等級訊號~~ → §2.15 部分回答：單局層級有小而一致的趨勢訊號（弱者越下越差、強者越下越好），但以 base + Δ 修正 L1b 加總接進 fused_opp 沒有提升題目層級的分數；獨立通道（每題的形狀特徵）見 §2.16（issue #21，待 nano4）。

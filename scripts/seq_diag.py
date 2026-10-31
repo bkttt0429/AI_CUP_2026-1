@@ -26,44 +26,19 @@ for d in (ROOT / "src", ROOT / "scripts"):
 from aicup.ladder import environment, to_json  # noqa: E402
 from aicup.metric import LEVELS, RANK_TO_IDX  # noqa: E402
 from aicup.rankmodel import SoftmaxModel, class_weights  # noqa: E402
-from aicup.seqdata import read_moves  # noqa: E402
+from aicup.seqshape import FEATURES, fold_shape_table, game_shape  # noqa: E402
 import l1b_cv  # noqa: E402
 
-FEATURES = ["mean_pmi", "log_moves", "std_pmi", "ac1_pmi", "ac2_pmi", "half_diff_pmi", "slope_pmi", "mean_s", "ac1_s"]
+__all__ = ["FEATURES", "MEAN_ONLY", "game_shape", "fold_table", "main"]
 MEAN_ONLY = ["mean_pmi", "log_moves"]
 
 
-def _ac(x, lag):
-    x = x - x.mean()
-    if len(x) <= lag + 1 or np.var(x) < 1e-12:
-        return 0.0
-    return float(np.dot(x[:-lag], x[lag:]) / (len(x) - lag) / np.var(x))
-
-
-def game_shape(logp):
-    """The FEATURES of one game from its per-move L1b log p [n, 10]."""
-    lp = np.asarray(logp, dtype=np.float64)
-    n = len(lp)
-    if n == 0:
-        return np.zeros(len(FEATURES))
-    z = lp - lp.max(axis=1, keepdims=True)
-    p = np.exp(z)
-    p /= p.sum(axis=1, keepdims=True)
-    pmi = p @ np.arange(lp.shape[1])
-    s = -lp.max(axis=1)
-    t = np.linspace(0.0, 1.0, n) if n > 1 else np.zeros(1)
-    half = n // 2
-    half_diff = float(pmi[half:].mean() - pmi[:half].mean()) if half else 0.0
-    slope = float(np.polyfit(t, pmi, 1)[0]) if n > 2 else 0.0
-    return np.array([pmi.mean(), np.log(n), pmi.std(), _ac(pmi, 1), _ac(pmi, 2), half_diff, slope, s.mean(), _ac(s, 1)])
-
-
 def fold_table(fold_dir):
-    games, moves = read_moves(fold_dir)
-    rows = np.stack([game_shape(moves[k][1]) for k in games["game_key"]])
-    out = pd.DataFrame(rows, columns=FEATURES)
-    out.insert(0, "y", games["rank"].map(RANK_TO_IDX).to_numpy())
-    out.insert(0, "player_id", games["player_id"].to_numpy(dtype=str))
+    """player_id, y (rank index) and the FEATURES of every game of one scored fold."""
+    t = fold_shape_table(fold_dir)
+    out = t[FEATURES].copy()
+    out.insert(0, "y", t["rank"].map(RANK_TO_IDX).to_numpy())
+    out.insert(0, "player_id", t["player_id"].to_numpy(dtype=str))
     return out
 
 
