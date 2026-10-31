@@ -80,12 +80,13 @@ def feature_sets(hsl, l1b, opp, questions):
     return {"fused_opp": X["fused_opp"], "fused_opp_diff": np.hstack([X["fused_opp"], D])}, y, n
 
 
-def fit_gbm(X, y, seed=0, n_jobs=1):
+def gbm_proba(X_tr, y_tr, X_va, seed=0, n_jobs=1):
+    """Through xgboost's native API like gbdt_check.py (the sklearn wrapper would add scikit-learn as a dependency)."""
     import xgboost as xgb
-    m = xgb.XGBClassifier(objective="multi:softprob", n_estimators=300, learning_rate=0.05, max_depth=6, subsample=0.8, colsample_bytree=0.8,
-                          tree_method="hist", random_state=seed, n_jobs=n_jobs, verbosity=0)
-    m.fit(X, y, sample_weight=class_weights(y))
-    return m
+    params = {"objective": "multi:softprob", "num_class": len(LEVELS), "eta": 0.05, "max_depth": 6, "subsample": 0.8, "colsample_bytree": 0.8,
+              "tree_method": "hist", "seed": seed, "nthread": n_jobs, "verbosity": 0}
+    booster = xgb.train(params, xgb.DMatrix(X_tr, label=y_tr, weight=class_weights(y_tr)), num_boost_round=300)
+    return booster.predict(xgb.DMatrix(X_va)).reshape(len(X_va), len(LEVELS))
 
 
 def player_table(oof, data, folds_df):
@@ -201,7 +202,7 @@ def main(argv=None):
         X_va, y_va, n_va = feature_sets(data[v]["hsl"], data[v]["l1b"], data[v]["opp"], val)
         fits = {"mlp": lambda: MLPModel(hidden=32).fit(X_tr["fused_opp"], y_tr).predict_proba(X_va["fused_opp"]),
                 "mlp_diff": lambda: MLPModel(hidden=32).fit(X_tr["fused_opp_diff"], y_tr).predict_proba(X_va["fused_opp_diff"]),
-                "gbm": lambda: fit_gbm(X_tr["fused_opp"], y_tr, n_jobs=a.jobs).predict_proba(X_va["fused_opp"]),
+                "gbm": lambda: gbm_proba(X_tr["fused_opp"], y_tr, X_va["fused_opp"], n_jobs=a.jobs),
                 "mlp_h128": lambda: MLPModel(hidden=128).fit(X_tr["fused_opp"], y_tr).predict_proba(X_va["fused_opp"])}
         sc = {}
         for m in models:
