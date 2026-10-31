@@ -528,6 +528,28 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 04:00:00 -J shapecheck scr
 
 預期：`fused_opp` 0.6735（差 0；與 `seq_check.json`、`opp_check.json` 的 `fused_opp` 列相同）。**預先指定** `fused_opp_shape vs fused_opp`（條件 (1)(3)(4)）；只報告 `shape2 vs fused_opp`、`shape2 vs shape`。三列（總分、NLL、by n、每折）與三條比較貼回 issue #21，`shape_check.json` 進 git。決策：過 → 另開 issue 接進提交（分片已有每手 L1b 陣列，形狀特徵在分片後算）；沒過 → METHOD_NOTES §2.16，局內順序這條線結束。
 
+### 4.11 80 分路線：測試玩家是否在訓練集裡（2026-10-31，issue #22；程式在 AI_CUP_2026-2，從這裡的根目錄送件）
+
+提交管線不動。設計與判準在 METHOD_NOTES §2.17 與 AI_CUP_2026-2 的 METHOD_NOTES §2.3、docs/NANO4.md §4。AI_CUP_2026-2 的 checkout 要在 `claude/pid-rank-overlap`（PR #4）或合併後的 `main`。
+
+**步 0：SGF 標頭確認**（登入節點一行即可）：
+
+```bash
+for f in data/training/train_*.csv; do echo "$f RE=$(grep -c 'RE\[' "$f") HA=$(grep -c 'HA\[' "$f") KM=$(grep -c 'KM\[' "$f") AB=$(grep -c 'AB\[' "$f") DT=$(grep -c 'DT\[' "$f")"; done
+```
+
+全為 0 → 元資料這條關閉（預期如此，mock 測試檔每局只有 `SZ[19]`）。
+
+**步 1：8,007 路辨識可行性**（CPU 一支，讀 100 萬局前 12 手約 10 分鐘、RAM 數 GB；不夠就 `--workers 12`）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 24 -t 02:00:00 -J rankovl scripts/nano4/run.sbatch python -I ../AICUP_2026-2/scripts/pid_rank_overlap.py --scores results/scores --calib-fold 1 --eval-fold 0 --fused-proba results/l1b/fold0_fused_opp_proba.csv --siblings --workers 24 --out ../AICUP_2026-2/results/rank_overlap.json
+```
+
+貼回 issue #22：校準折（fold 1）的 Top-1／Top-5 按 n 與 τ；評估折（fold 0）的 Top-1／Top-5 按 n、`id_rank_score`、margin ≥ τ 的比例與精確率、認對／認錯的 margin 分位數；`combined` vs `fused_opp`（差、CI；`fused_opp` 須重現 0.6716）；`siblings` 每個 n 的 `top1_same_player`。`rank_overlap.json` 進 AI_CUP_2026-2 的 git。
+
+**步 2（11/04）**：官方檔案到手後先跑 `--test-csv`（指令在 AI_CUP_2026-2 docs/NANO4.md §4，τ 取 json 的 `calibration.tau`），貼回 `share_above_tau`（按 n）與 margin 分位數；判準見 METHOD_NOTES §2.17。
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：
