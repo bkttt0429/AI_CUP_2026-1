@@ -156,6 +156,21 @@ def test_make_encoder_rejects_unknown_arch_and_zero_delta_at_init():
         assert out.dtype == torch.float64 and torch.equal(out, torch.from_numpy(base)), f"{arch}: Δ is not 0 at initialisation"
 
 
+def test_training_steps_stay_in_train_mode_after_inner_evaluations(monkeypatch):
+    modes, make = [], sm.make_encoder
+
+    def spied(cfg, *a):
+        model = make(cfg, *a)
+        model.register_forward_hook(lambda m, _in, _out: modes.append(m.training) if torch.is_grad_enabled() else None)
+        return model
+
+    monkeypatch.setattr(sm, "make_encoder", spied)
+    seq = _random_seq(np.random.RandomState(0), 64, 5)
+    model, meta = sm.fit_seq_encoder(seq, sm.SeqCfg(arch="gru", **TINY), log=lambda *a, **k: None)
+    assert len(modes) == meta["steps_run"] > meta["steps_run"] / 2 >= 1 and all(modes), "a training step ran in eval mode"
+    assert not model.training
+
+
 def test_seq_crossfit_cli_writes_l1b_score_layout(tmp_path, capsys):
     l1b_dir, hsl_dir, opp_dir = _dirs(tmp_path)
     out = tmp_path / "seq_sum"

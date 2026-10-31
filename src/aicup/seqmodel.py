@@ -241,6 +241,7 @@ def fit_seq_encoder(seq, cfg, log=print):
         if not len(inner_idx):
             return False
         ce, dsq = _balanced_ce(model, seq, inner_idx, cfg, w_inner)
+        model.train()  # evaluations fall inside the epochs; cuDNN's RNN refuses a backward pass in eval mode
         epoch = step / steps_per_epoch
         history.append((epoch, ce, dsq))
         if best is None or ce < best["ce"]:
