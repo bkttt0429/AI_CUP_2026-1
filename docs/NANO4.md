@@ -552,6 +552,16 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 24 -t 02:00:00 -J rankovl 
 
 **步 2（11/04）**：官方檔案到手後先跑 `--test-csv`（指令在 AI_CUP_2026-2 docs/NANO4.md §4，τ 取 json 的 `calibration.tau`），貼回 `share_above_tau`（按 n）與 margin 分位數；判準見 METHOD_NOTES §2.17。
 
+### 4.12 判錯的原因：OOF 殘差分解、對手通道、模型類別檢查（2026-10-31，issue #23）
+
+提交管線不動，不碰 fold 0。CPU 一支：四折 × 四個模型（`mlp`、`mlp_diff`、`gbm`、`mlp_h128`），`gbm` 用 `requirements.txt` 既有的 xgboost 2.1.4（沒裝就加 `--no-gbm`）；依 §4.10 的經驗（三個集合 4.5 分）估 15–30 分，`mlp_h128` 與 300 棵樹較慢，時限給 4 小時：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 04:00:00 -J erran scripts/nano4/run.sbatch python -I scripts/error_analysis.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --jobs 12 --out results/l1b/error_analysis.json --proba-out results/l1b/oof_fused_opp_proba.csv
+```
+
+預期：`mlp` 0.6735（差 0；每折同 `opp_check.json`）。**預先指定** `mlp_diff vs mlp`、`gbm vs mlp`；只報告 `mlp_h128 vs mlp`。貼回 issue #23：四列（總分、NLL、by n、每折）、三條比較、殘差分析（玩家間比例、全對／全錯對獨立期望、按局數五分位、按等級、Spearman 表、三群平均）、對手通道的五個 Spearman。`error_analysis.json` 與 `oof_fused_opp_proba.csv`（約 39,000 列）進 git；fold 2 的那段機率給 issue #22 的 combined 用（欄名 `fused_opp_p_<rank>`）。
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：

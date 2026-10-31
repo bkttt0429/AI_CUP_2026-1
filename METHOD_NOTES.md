@@ -302,6 +302,14 @@
 - **沒排的次要路線**：humanv0 value head 的每手勝率損失（落子通道裡唯一沒用過的形式，但量的仍是棋力，預期 +0.00–0.02）；§2.16 的 `fused_opp_shape` 等 nano4。
 - **結果**：待 nano4（NANO4 §4.11）。
 
+### 2.18 判錯的原因：folds 1–4 OOF 殘差分解、對手通道、模型類別檢查（2026-10-31；issue #23；nano4 待跑）
+- **使用者決定（2026-10-31）**：80 分沒有別的合法路線（§2.17；辨識路線等主辦單位回覆），改看判錯的原因有沒有能修的。§2.13 的錯誤結構只在 fold 0 看過一次且只有描述；這裡在 folds 1–4 的 OOF 預測上做，不碰 fold 0。提交管線不動。
+- **做法**（`scripts/error_analysis.py`，CPU 一支）：`l1b_opp_check` 的 CV 協定，每個驗證折訓四個模型：`mlp`（fused_opp 56 維、`MLPModel(hidden=32)`，須重現 0.6735；OOF 機率寫到 `results/l1b/oof_fused_opp_proba.csv`，含 fold 2，給 issue #22 的 combined 用）、`mlp_diff`（56 + 3：每題各局「對手 pmi − 自己 pmi」的平均、對手 pmi 的平均與標準差，pmi = 10 個 L1b 加總的後驗平均等級；伺服器配對用的是**標籤**，對手棋力是資料裡唯一間接量到標籤那一側的東西）、`gbm`（fused_opp 56 維、xgboost 2.1.4 `multi:softprob`、類別平衡權重、300 棵深 6；模型類別檢查）、`mlp_h128`（容量檢查）。
+- **預先指定**：`mlp_diff vs mlp`、`gbm vs mlp`（條件 (1)(3)(4)）。只報告：`mlp_h128 vs mlp`。
+- **殘差分析**（`mlp` 的 OOF 預測，約 39,000 題、6,400 人；只報告）：(a) 帶號誤差（expected-score 決策 − 真值）的變異數在玩家間／玩家內的比例；每人全對／全錯的比例對獨立期望（acc^k）；全錯率按訓練局數五分位、按等級；|每人平均殘差| 與訓練局數、黑棋比例、平均手數、Human SL 曲線尖銳度（每局 softmax 熵、各局 argmax 的標準差）、自己／對手 pmi 的 Spearman；全錯、全對、其他三群的這些量的平均。(b) 對手通道：每人「對手 pmi 平均」與標籤的 Spearman 對比「自己 pmi 平均」的；標籤對自己 pmi 迴歸的殘差與（對手 − 自己）的 Spearman；`mlp` 每人平均殘差與（對手 − 自己）的 Spearman。
+- **讀法**：`mlp_diff` 或 `gbm` 過 → 另開 issue 接進提交。都沒過、(a) 的殘差集中在「局數少」或「某幾級」且與下法無關 → 標籤雜訊，這組特徵的上限證據。(b) 若殘差仍與（對手 − 自己）相關但 `mlp_diff` 沒過 → 寫下矛盾，不再開變體。預期：多半是確認上限，運氣好 +0.01。
+- **結果**：待 nano4（NANO4 §4.12）。
+
 ## 3. 成本：0B 實測（2026-10-16，lab01 單卡 RTX PRO 6000，torch 2.14.1+cu130，`scripts/bench_humansl.py` → `results/bench_0B.json`）
 
 | 量測 | 數字 |
