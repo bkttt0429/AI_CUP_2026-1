@@ -1,0 +1,69 @@
+{
+ "arch": "conv",
+ "cfg": {
+  "arch": "conv",
+  "epochs": 10,
+  "batch": 256,
+  "lr": 0.001,
+  "weight_decay": 0.0001,
+  "gamma": 0.001,
+  "seed": 0,
+  "device": "cuda",
+  "inner_frac": 0.1,
+  "evals_per_epoch": 4,
+  "patience": 8,
+  "hidden": 64,
+  "d_latent": 128,
+  "history": 8,
+  "nlm_hidden": 16,
+  "n_sync": 256
+ },
+ "folds": {
+  "1": {
+   "inner_ce_init": 8.870395250231052,
+   "inner_ce_best": 5.449917770339943,
+   "best_epoch": 9.25,
+   "n_params": 39434,
+   "train_wall_seconds": 25.04424548149109,
+   "mean_abs_delta": 6.521017478518895
+  },
+  "2": {
+   "inner_ce_init": 8.915898877498462,
+   "inner_ce_best": 5.706472924642298,
+   "best_epoch": 9.160771704180064,
+   "n_params": 39434,
+   "train_wall_seconds": 20.391502857208252,
+   "mean_abs_delta": 5.936308271318223
+  },
+  "3": {
+   "inner_ce_init": 8.661270565883303,
+   "inner_ce_best": 5.543360853337467,
+   "best_epoch": 9.75,
+   "n_params": 39434,
+   "train_wall_seconds": 20.35144019126892,
+   "mean_abs_delta": 5.325455239334276
+  },
+  "4": {
+   "inner_ce_init": 8.562887660384751,
+   "inner_ce_best": 5.310356402480959,
+   "best_epoch": 10.0,
+   "n_params": 39434,
+   "train_wall_seconds": 20.373674631118774,
+   "mean_abs_delta": 5.561091058442888
+  }
+ },
+ "git_head": "16a67d5",
+ "git_dirty": false,
+ "code_sha256": "8cf8dbbd0a7e9024e4ed529c7a55497b48b8f487944f4fceec2567d9f644a2f7",
+ "code_files": [
+  "src/aicup/gamevec.py",
+  "src/aicup/ladder_data.py",
+  "src/aicup/aggregators.py",
+  "src/aicup/settrain.py",
+  "src/aicup/rankmodel.py",
+  "src/aicup/qfeatures.py",
+  "src/aicup/metric.py"
+ ],
+ "torch_version": "2.14.1+cu126",
+ "device_name": "cpu"
+}

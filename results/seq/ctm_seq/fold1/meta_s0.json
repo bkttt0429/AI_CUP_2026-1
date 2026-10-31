@@ -1,0 +1,64 @@
+{
+ "fold": 1,
+ "shard": 0,
+ "nshards": 1,
+ "games": 29598,
+ "positions": 3291224,
+ "side": "target",
+ "finished": "2026-10-31T18:32:30",
+ "arch": "ctm_seq",
+ "train_folds": [
+  2,
+  3,
+  4
+ ],
+ "cfg": {
+  "arch": "ctm_seq",
+  "epochs": 10,
+  "batch": 256,
+  "lr": 0.001,
+  "weight_decay": 0.0001,
+  "gamma": 0.001,
+  "seed": 0,
+  "device": "cuda",
+  "inner_frac": 0.1,
+  "evals_per_epoch": 4,
+  "patience": 8,
+  "hidden": 64,
+  "d_latent": 128,
+  "history": 8,
+  "nlm_hidden": 16,
+  "n_sync": 256
+ },
+ "inner_ce_init": 8.870395250231052,
+ "inner_ce_best": 5.326524420226405,
+ "best_epoch": 2.25,
+ "stopped_early": true,
+ "n_params": 76426,
+ "train_wall_seconds": 637.1434681415558,
+ "n_train_games": 79639,
+ "heads": {
+  "path": "results/seq/ctm_seq/encoder_f1.pt",
+  "state_sha256": "dc16e461fe1f878bb7a3838d032a26bd84a3e5b3c57ac14b9da94364ed25aa98",
+  "train_folds": [
+   2,
+   3,
+   4
+  ]
+ },
+ "mean_abs_delta": 7.03903134084025,
+ "git_head": "16a67d5",
+ "git_dirty": false,
+ "code_sha256": "8cf8dbbd0a7e9024e4ed529c7a55497b48b8f487944f4fceec2567d9f644a2f7",
+ "code_files": [
+  "src/aicup/gamevec.py",
+  "src/aicup/ladder_data.py",
+  "src/aicup/aggregators.py",
+  "src/aicup/settrain.py",
+  "src/aicup/rankmodel.py",
+  "src/aicup/qfeatures.py",
+  "src/aicup/metric.py"
+ ],
+ "torch_version": "2.14.1+cu126",
+ "device_name": "cpu"
+}

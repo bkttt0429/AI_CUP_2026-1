@@ -506,10 +506,10 @@ done
 
 預設 `--epochs 10 --batch 256 --lr 1e-3 --hidden 64`（CTM 另有 `--d-latent 128 --history 8 --n-sync 256`），inner 早停（每等級 10% 的玩家留出、每 epoch 評 4 次、8 次沒進步就停）。sum 幾分鐘（只算標準化與評估）；conv／GRU 每 epoch 約 1 分鐘；CTM 每 tick 一圈 Python 迴圈（每局 200–500 步），每 epoch 約 5–10 分鐘，10 epoch 內結束，8 小時夠。輸出 `results/seq/<arch>/fold{k}/games_s0_p000.csv`（`sum_<rank>` = base + Δ）、`moves_s0_p000.npz`（base、delta）、`meta_s0.json`、`encoder_f{k}.pt`、`summary.json`。`sum` 的表必須與 `scores3`／`scores3_B` 的 `sum_<rank>` 只差 float32 捨入（`mean_abs_delta` 0）。CTM 可以用 `--only-folds k` 拆成每折一支工作（4 張 GPU 同時跑，訓練集仍由 `--folds` 決定，結果定義不變；`summary.json` 從各折的 `meta_s0.json` 重建，最後結束的那支寫齊四折）。進 git 的只有每個 arch 的 `summary.json` 與四個 `meta_s0.json`（`.gitignore` 已排除 .pt／.npz／每局 csv）。貼回：每個 arch 每折的 inner CE init → best、best_epoch、mean |Δ|、wall。
 
-**2. CV（CPU，幾分鐘；四個 arch 都寫完後）**：
+**2. CV（CPU；四個 arch 都寫完後。實測 25 分鐘，慢的節點一折就要 48 分鐘，所以時限給 8 小時）**：
 
 ```bash
-sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 01:00:00 -J seqcheck scripts/nano4/run.sbatch python -I scripts/seq_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --seq sum:results/seq/sum conv:results/seq/conv gru:results/seq/gru ctm_seq:results/seq/ctm_seq --out results/seq/seq_check.json
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 08:00:00 -J seqcheck scripts/nano4/run.sbatch python -I scripts/seq_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --seq sum:results/seq/sum conv:results/seq/conv gru:results/seq/gru ctm_seq:results/seq/ctm_seq --out results/seq/seq_check.json
 ```
 
 預期：`fused_opp` 0.6735（差 0）；`fused_opp_seq_sum` 與它只差 float32 捨入（管線檢查，應在 ±0.001 內）。**預先指定** `fused_opp_seq_gru vs fused_opp`（條件 (1)(3)(4)）；只報告 conv、ctm_seq vs fused_opp 與 `ctm_seq vs gru`。五列、四條比較貼回 issue #19，`seq_check.json` 進 git。
