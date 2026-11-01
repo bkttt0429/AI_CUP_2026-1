@@ -671,6 +671,16 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 03:00:00 -J tsfelchk
 
 預期：`fused_opp_diff` 0.6916（每折同 `error_analysis.json` 的 `mlp_diff`）。**預先指定** `fused_opp_diff_tsfel16 vs fused_opp_diff`（條件 (1)(3)(4)）；只報告 tsfel4／tsfel64／tsfel_all vs `fused_opp_diff`、局層級 softmax 的增益（mean-only vs mean + tsfel16）、每折保留欄數與 PCA 解釋變異。貼回 issue #36：五列（總分、NLL、by n、每折）、四條比較、`TSFEL:` 與 `game-level softmax:` 兩行；`tsfel_check.json` 進 git（新分支 + PR），`results/seq/tsfel/*.npz` 不進。決策見 METHOD_NOTES §2.22。
 
+### 4.17 正則化的題目層模型與對多餘欄位的抵抗力（2026-11-01，issue #41）
+
+提交管線不動、不碰 fold 0。CPU 一支，在提交 `.venv` 跑即可（TSFEL 塊只讀 §4.16 的 npz 快取，不需要 tsfel）；七個模型 × 三個特徵集 × 四折，約 §4.14 的 2–3 倍：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 03:00:00 -J qmodel scripts/nano4/run.sbatch python -I scripts/qmodel_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --tsfel-cache ~/BK_AICUP_2026-1-tsfelwt/results/seq/tsfel --out results/l1b/qmodel_check.json
+```
+
+`--tsfel-cache` 指向 §4.16 那個 worktree 裡的四個 `fold<F>.npz`；沒有就加 `--no-tsfel`（只跑純雜訊對照）。預期：`mlp@base` 0.6916（每折同 `error_analysis.json` 的 `mlp_diff`）。**預先指定** `mlp_l1@base vs mlp@base`（條件 (1)(3)(4)）；只報告其他模型 vs `mlp@base`、每個模型的 `@base_tsfel16 − @base` 與 `@base_noise16 − @base`。貼回 issue #41：各模型 × 特徵集的總分、NLL、每折、best epochs；預先指定那條；抵抗力的兩條；`qmodel_check.json` 進 git（新分支 + PR）。判讀規則與決策見 METHOD_NOTES §2.23。
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：

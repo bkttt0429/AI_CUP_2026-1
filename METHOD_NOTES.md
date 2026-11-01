@@ -443,6 +443,15 @@
   5. **（cloud）要分開兩種解釋有一個很便宜的對照**：把 k 欄**純高斯雜訊**（與 TSFEL 塊同標準差）接在 `fused_opp_diff` 後面，k = 4／16／64／267，同一套 CV。純雜訊也掉同樣多 → 是模型對多餘欄位沒抵抗力，三條線的「沒過」都不足以說特徵沒料，應先換有正則化／提早停止的題目層模型再重測；純雜訊幾乎不掉 → TSFEL／直方圖／形狀帶的是會傷人的玩家特有偏移，是特徵的問題。CPU 幾分鐘，不需要新特徵。§2.18 的 `mlp_h128` 比 h32 差 0.005，也符合「題目層模型容量越大越容易被多餘資訊拖累」。兩件事（雜訊對照、正則化的題目層模型）都**未預先指定、未做**，nano4 建議 11/04 後再開，由使用者決定。
 - **依賴補記（nano4 的獨立環境，NANO4 §4.16 有做法）**：`~/BK_AICUP_tsfel_venv`，用提交 `.venv` 的同一個直譯器建、`--target` 只裝 tsfel 與其依賴（scikit-learn 1.9.1、statsmodels 0.15.0、PyWavelets 1.10.0、ipython 9.18），numpy／pandas／scipy／torch 以 `.pth` 指回提交 `.venv`；另開在 `main` 的 worktree 切換；提交 `.venv` 清單雜湊前後相同。
 
+### 2.23 正則化的題目層模型與「對多餘欄位的抵抗力」（2026-11-01；issue #41；nano4 待跑）
+- **起因**：§2.16、§2.20、§2.22 三次「題目層 MLP 多加一塊欄位就退步」，§2.22 有劑量關係。兩個解釋在競爭：(a) 現行 `MLPModel(hidden=32)`（固定 300 epoch、l2 1e-4、無提早停止）對多餘欄位沒抵抗力；(b) 那些塊帶玩家特有、跨折不穩的分布（共變量偏移）。官方後測問卷列的減少過擬合藥方（更多資料、L1、降低複雜度）就是 (a) 的處方。**使用者決定（2026-11-01）**：做。
+- **做法**（`aicup.rankmodel.MLPModel` 新增 `l1`（輸入層 L1）與 `fit(..., val=, eval_every=, patience=)` 的內層提早停止，預設值下訓練迴圈逐位元不變（測試）；`scripts/qmodel_check.py`）：同一批訓練題（協定同 `l1b_opp_check`），模型 `mlp`（基準）、`mlp_es`（每級 10% 訓練玩家留出，`settrain.inner_players`，`INNER_SEED + fold`；每 10 epoch 評類別平衡 CE，patience 5）、`mlp_l1`（輸入層 L1 1e-3 + 提早停止）、`mlp_l2`（l2 1e-2）、`mlp_h16`、`softmax`（l2 1e-3）、`mlp_pp64`（每人 64 題，只在 base）。特徵集 `base` = `fused_opp_diff`、`base_tsfel16` = + §2.22 的 PCA-16 塊（讀快取的每折表）、`base_noise16` = + 16 欄標準常態雜訊（`RandomState(seed + fold)`）。提早停止的模型少用 10% 訓練玩家（§2.7 的保守做法）。
+- **預先指定**：`mlp_l1@base vs mlp@base`（條件 (1)(3)(4)）。只報告：其他模型 @base vs `mlp@base`；抵抗力差 `@base_tsfel16 − @base`、`@base_noise16 − @base`（每個模型）。
+- **判讀規則（事先）**：`mlp` 在純雜訊上掉 ≥ 0.005 而 `mlp_es`／`mlp_l1` 掉 < 0.002 → 模型沒抵抗力，三條線的「沒過」部分是模型的，應在正則化模型下重測（另開 issue）；`mlp` 在純雜訊上幾乎不掉 → §2.22 的退步是 TSFEL 塊自己的偏移，三條線結論維持。
+- **預期**：基準特徵上 +0.000 到 +0.005（§2.18 的 h128 比 h32 差 0.005、§2.13 的 label smoothing +0.002 不顯著，都說現行模型離最佳正則化不遠）；主要價值是抵抗力的判讀。`mlp_pp64` 依 §2.7 的 `@pp8` 經驗（−0.0008）期望最低。
+- **決策**：預先指定過 → 另開 issue 把正則化模型接進提交（`fit_fused_model.py` 換模型、fold 0 評一次）。不碰 fold 0、不動提交管線。
+- **結果**：待 nano4（NANO4 §4.17）。
+
 ## 3. 成本：0B 實測（2026-10-16，lab01 單卡 RTX PRO 6000，torch 2.14.1+cu130，`scripts/bench_humansl.py` → `results/bench_0B.json`）
 
 | 量測 | 數字 |
