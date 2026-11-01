@@ -1,0 +1,70 @@
+{
+ "fold": 3,
+ "shard": 0,
+ "nshards": 1,
+ "games": 29513,
+ "positions": 3282691,
+ "side": "target",
+ "finished": "2026-11-01T20:51:13",
+ "arch": "mamba3",
+ "train_folds": [
+  1,
+  2,
+  4
+ ],
+ "cfg": {
+  "arch": "mamba3",
+  "epochs": 10,
+  "batch": 256,
+  "lr": 0.001,
+  "weight_decay": 0.0001,
+  "gamma": 0.001,
+  "seed": 0,
+  "device": "cuda",
+  "inner_frac": 0.1,
+  "evals_per_epoch": 4,
+  "patience": 8,
+  "hidden": 64,
+  "d_latent": 128,
+  "history": 8,
+  "nlm_hidden": 16,
+  "n_sync": 256,
+  "layers": 2,
+  "heads": 4,
+  "d_state": 16,
+  "d_conv": 4,
+  "expand": 2,
+  "headdim": 16
+ },
+ "inner_ce_init": 8.661270565883303,
+ "inner_ce_best": 4.8244319534336135,
+ "best_epoch": 9.75,
+ "stopped_early": false,
+ "n_params": 68778,
+ "train_wall_seconds": 1372.729207277298,
+ "n_train_games": 79785,
+ "heads": {
+  "path": "results/seq/mamba3/encoder_f3.pt",
+  "state_sha256": "c4d038b1f80d1ebfc2ca7a06d90244523a6ea6850df2f72025fec234444dfd82",
+  "train_folds": [
+   1,
+   2,
+   4
+  ]
+ },
+ "mean_abs_delta": 5.606847049619054,
+ "git_head": "d6dba15",
+ "git_dirty": false,
+ "code_sha256": "8cf8dbbd0a7e9024e4ed529c7a55497b48b8f487944f4fceec2567d9f644a2f7",
+ "code_files": [
+  "src/aicup/gamevec.py",
+  "src/aicup/ladder_data.py",
+  "src/aicup/aggregators.py",
+  "src/aicup/settrain.py",
+  "src/aicup/rankmodel.py",
+  "src/aicup/qfeatures.py",
+  "src/aicup/metric.py"
+ ],
+ "torch_version": "2.14.1+cu126",
+ "device_name": "cpu"
+}
