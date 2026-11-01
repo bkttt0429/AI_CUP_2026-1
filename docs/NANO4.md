@@ -601,6 +601,8 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 02:00:00 -J histcheck scri
 
 預期：`fused_opp` 0.6735、`fused_opp_diff` 0.6916（每折同 `error_analysis.json` 的 `mlp`／`mlp_diff`）；`fused_opp` 殘差的 `spearman_oof_mean_e_vs_opp_minus_own` 重現 −0.213。**預先指定** `fused_opp_diff_hist vs fused_opp_diff`（條件 (1)(3)(4)）；只報告 `hist2 vs fused_opp_diff`、`hist2 vs hist`、`fused_opp_diff vs fused_opp`（+0.0181）。貼回 issue #29：四列（總分、NLL、by n、每折）、四條比較、各等級的合併直方圖與相鄰重疊係數、兩個模型的殘差 Spearman；`hist_check.json` 進 git（結果檔走新分支 + PR）。決策見 METHOD_NOTES §2.20：過 → 另開 issue 接進提交（分片後算直方圖，不需重新評分）；沒過 → 這把尺上的「分布範圍」結束。C 路線的判讀規則：`fused_opp_diff` 的 |Spearman(mean e, opp − own)| ≥ 0.10 → 開 C 的 issue。
 
+**結果（nano4，2026-11-01，PR #31 `7b5726a`；實跑 297 s）**：`fused_opp` 0.6735、`fused_opp_diff` 0.6916 重現；**`fused_opp_diff_hist` 0.6861（預先指定 −0.0055 [−0.0085, −0.0025]，四折全負，三條件全不過）**、`fused_opp_diff_hist2` 0.6853（−0.0063）；相鄰等級重疊 0.858–0.937（1D|2D 0.937）；`fused_opp` 殘差對 (opp − own) −0.213 重現，`fused_opp_diff` −0.130。分布範圍這條線結束（METHOD_NOTES §2.20）。
+
 **重跑（2026-11-01）**：第一次跑完後 `hist_check.py` 多了題內版的殘差診斷（`question_level`：殘差對模型看到的題內 opp／own／(opp − own) 的 Spearman，分每題、按 n、每人；METHOD_NOTES §2.20）。同一條指令重跑一次（約 7 分），四列與四條比較應逐位元相同，`hist_check.json` 以重跑的為準。
 
 ## 5. 同步程式碼、取回結果
