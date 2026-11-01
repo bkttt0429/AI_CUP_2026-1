@@ -4,6 +4,7 @@ import json
 
 import numpy as np
 import pandas as pd
+import pytest
 
 import fit_fused_model as ffm
 import l1b_cv
@@ -151,6 +152,52 @@ def test_fit_fused_model_cli_with_opponent(tmp_path, capsys):
     plain = tmp_path / "models" / "plain.json"
     assert ffm.main([*l1b_args, *rest[:-4], "--out", str(plain)]) == 0
     assert fused.load_fused_model(plain)[0]["opponent"] is False
+
+
+def test_fit_fused_model_cli_with_diff(tmp_path, capsys):
+    import error_analysis as ea
+    from aicup.scoring import read_scored_games
+
+    l1b_dir, hsl_dir, _ = _synthetic_scores(tmp_path, folds=(0, 1, 2, 3, 4), l1b_name="l1b_all")
+    opp_dir = _opponent_scores(tmp_path)
+    side_a = _sidecar(tmp_path / "heads3_A.json", "a" * 64, "1" * 64, [1, 2])
+    side_b = _sidecar(tmp_path / "heads3_B.json", "b" * 64, "2" * 64, [3, 4])
+    folds_csv = _folds_csv(tmp_path)
+    out, proba = tmp_path / "models" / "rank_model_fused_opp_diff.json", tmp_path / "fold0_fused_opp_diff_proba.csv"
+    l1b_args = ["--l1b", f"A:{l1b_dir}:{side_a}", f"B:{l1b_dir}:{side_b}"]
+    rest = ["--hsl", str(hsl_dir), "--per-player", "2", "--folds-csv", str(folds_csv), "--out", str(out), "--fold0-proba", str(proba)]
+    args = [*l1b_args, "--opp", f"A:{opp_dir}", f"B:{opp_dir}", "--diff", *rest]
+    assert ffm.main(args) == 0
+    printed = capsys.readouterr().out
+    assert "fused_opp_diff_avg vs fused_opp_avg" in printed and "fused_opp_avg vs fused_avg" in printed
+    doc, mlp = fused.load_fused_model(out)
+    assert doc["name"] == fused.NAME_OPP_DIFF and doc["feature_set"] == "fused_opp_diff" and doc["opponent"] is True and len(doc["features"]) == 59
+    assert len(doc["state"]["params"]["0.weight"][0]) == 59 and len(doc["fused_opp_state"]["params"]["0.weight"][0]) == 56 and len(doc["fused_state"]["params"]["0.weight"][0]) == 40
+    f0 = doc["fold0_check"]
+    assert set(f0["scores"]) == {"hsl", "fused_A", "fused_B", "fused_avg", "fused_opp_A", "fused_opp_B", "fused_opp_avg", "fused_opp_diff_A", "fused_opp_diff_B", "fused_opp_diff_avg"}
+    assert "ci95" in f0["fused_opp_diff_avg_vs_fused_opp_avg"] and "ci95" in f0["vs_hsl"]["fused_opp_diff_avg"]
+    # the training reproduces error_analysis.py's mlp_diff fit on the same questions
+    folds_df = pd.read_csv(folds_csv, dtype={"player_id": str})
+    data = {}
+    for f in (1, 2, 3, 4):
+        hsl, l1b = l1b_cv.load_fold(hsl_dir, l1b_dir, f)
+        data[f] = {"hsl": hsl, "l1b": l1b, "opp": read_scored_games(opp_dir / f"fold{f}"), "players": l1b_cv.players_from_scores(hsl, folds_df)}
+    rng = np.random.RandomState(l1b_cv.TRAIN_SEED)
+    train_q = pd.concat([l1b_cv.sample_questions(data[f]["players"], 2, rng) for f in (1, 2, 3, 4)], ignore_index=True)
+    cat = lambda key: pd.concat([data[f][key] for f in (1, 2, 3, 4)], ignore_index=True)  # noqa: E731
+    X_tr, y_tr, _ = ea.feature_sets(cat("hsl"), cat("l1b"), cat("opp"), train_q)
+    ref = ffm.MLPModel(hidden=32).fit(X_tr["fused_opp_diff"], y_tr)
+    np.testing.assert_array_equal(from_state(doc["state"]).predict_proba(X_tr["fused_opp_diff"][:5]), ref.predict_proba(X_tr["fused_opp_diff"][:5]))
+    np.testing.assert_array_equal(from_state(doc["fused_opp_state"]).predict_proba(X_tr["fused_opp"][:5]), ffm.MLPModel(hidden=32).fit(X_tr["fused_opp"], y_tr).predict_proba(X_tr["fused_opp"][:5]))
+    table = pd.read_csv(proba)
+    cols = lambda s: [f"{s}_p_{lv}" for lv in LEVELS]  # noqa: E731
+    assert all(c in table.columns for s in ("fused_opp_avg", "fused_opp_diff_A", "fused_opp_diff_B", "fused_opp_diff_avg") for c in cols(s))
+    np.testing.assert_allclose(table[cols("fused_opp_diff_avg")].to_numpy(), (table[cols("fused_opp_diff_A")].to_numpy() + table[cols("fused_opp_diff_B")].to_numpy()) / 2, atol=1e-12)
+    # --diff without --opp is refused; the default output name follows the kind
+    with pytest.raises(SystemExit) as e:
+        ffm.main([*l1b_args, "--diff", *rest])
+    assert e.value.code == 2
+    assert ffm.DEFAULT_OUT["fused_opp_diff"].name == "rank_model_fused_opp_diff.json"
 
 
 def _proba_frame(ids, P, prefix="p"):

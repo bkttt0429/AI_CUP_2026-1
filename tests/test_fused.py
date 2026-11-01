@@ -121,6 +121,7 @@ def test_opponent_document_round_trip_and_checks(tmp_path):
     # an old 40-feature document without the flag loads as opponent False
     old = json.loads(path.read_text())
     old.pop("opponent")
+    old.pop("feature_set")  # written before the key existed
     old["features"], old["name"] = fused.FUSED_FEATURE_NAMES, fused.NAME
     old["state"] = MLPModel(hidden=4, epochs=5).fit(X[:, :40], y).state_dict()
     (tmp_path / "old.json").write_text(json.dumps(old))
@@ -168,3 +169,73 @@ def test_fused_predict_with_the_opponent_features():
     # each model's opponent column goes with its own L1b column: swapping the opponent columns changes the result
     swapped = fused.fused_predict(mlp, hsl, l1b, n, order=[1, 0], opp_sums=opp[:, ::-1], opp_n_moves=n_opp)
     assert not np.allclose(swapped, p)
+
+
+def test_fused_opp_diff_features_match_error_analysis():
+    import error_analysis as ea
+    from aicup.evidence import posterior_mean_index
+
+    rng = np.random.RandomState(7)
+    hsl, l1b, questions = _tables(rng)
+    opp = pd.DataFrame({"game_key": hsl["game_key"], "n_moves": hsl["n_moves"].to_numpy() + rng.randint(-1, 2, size=len(hsl)),
+                        **{f"sum_{lv}": -rng.rand(len(hsl)) * 300 for lv in LEVELS}})
+    assert len(fused.FUSED_OPP_DIFF_FEATURE_NAMES) == 59 and fused.FUSED_OPP_DIFF_FEATURE_NAMES[:56] == fused.FUSED_OPP_FEATURE_NAMES
+    assert fused.FUSED_OPP_DIFF_FEATURE_NAMES[56:] == fused.DIFF_FEATURE_NAMES == ["opp_minus_own_pmi_mean", "opp_pmi_mean", "opp_pmi_std"]
+    assert fused.feature_names_for("fused_opp_diff") == fused.FUSED_OPP_DIFF_FEATURE_NAMES and fused.feature_set_of(True) == "fused_opp"
+    assert fused.feature_set_of(False, "fused_opp_diff") == "fused_opp_diff"
+    with pytest.raises(ValueError, match="unknown feature set"):
+        fused.feature_set_of(feature_set="fused_x")
+    # the error-analysis script's mlp_diff columns, column for column
+    want = ea.feature_sets(hsl, l1b, opp, questions)[0]["fused_opp_diff"]
+    h, l, o = hsl.set_index("game_key"), l1b.set_index("game_key"), opp.set_index("game_key")
+    lv_cols = [f"sum_{lv}" for lv in LEVELS]
+    got = np.stack([fused.fused_opp_diff_features(h.loc[ks, [f"sum_{p}" for p in PROFILES]].to_numpy(), l.loc[ks, lv_cols].to_numpy(), h.loc[ks, "n_moves"].to_numpy(),
+                                                  o.loc[ks, lv_cols].to_numpy(), o.loc[ks, "n_moves"].to_numpy()) for ks in questions["game_keys"]])
+    np.testing.assert_array_equal(got[:, :56], want[:, :56])
+    np.testing.assert_allclose(got[:, 56:], want[:, 56:], rtol=0, atol=1e-12)  # the same formula on differently laid-out arrays
+    assert got.shape == (3, 59)
+    # the three differences by hand: posterior-mean index of each game's ten sums
+    ks = questions["game_keys"][0]
+    own, op = posterior_mean_index(l.loc[ks, lv_cols].to_numpy()), posterior_mean_index(o.loc[ks, lv_cols].to_numpy())
+    np.testing.assert_allclose(got[0, 56:], [(op - own).mean(), op.mean(), op.std()], rtol=0, atol=1e-12)
+    np.testing.assert_allclose(fused.question_diff_features(l1b, opp, questions), got[:, 56:], rtol=0, atol=1e-12)
+    assert fused.question_diff_features(l1b, opp, questions.iloc[:0]).shape == (0, 3)
+
+
+def test_diff_document_round_trip_and_predict(tmp_path):
+    rng = np.random.RandomState(8)
+    X, y = rng.randn(80, 59), np.arange(80) % 10
+    mlp = MLPModel(hidden=4, epochs=5).fit(X, y)
+    doc = fused.fused_document(mlp, _models(), train_folds=[1, 2, 3, 4], per_player=32, n_train=80, questions_sha256="c" * 64, feature_set="fused_opp_diff")
+    assert doc["name"] == fused.NAME_OPP_DIFF and doc["features"] == fused.FUSED_OPP_DIFF_FEATURE_NAMES and doc["opponent"] is True
+    assert doc["feature_set"] == "fused_opp_diff" and "opponent-minus-own" in doc["role"]
+    path = tmp_path / "rank_model_fused_opp_diff.json"
+    fused.save_fused_model(doc, path)
+    doc2, mlp2 = fused.load_fused_model(path)
+    assert doc2["feature_set"] == "fused_opp_diff" and doc2["opponent"] is True and doc2["name"] == fused.NAME_OPP_DIFF
+    np.testing.assert_array_equal(mlp2.predict_proba(X[:7]), mlp.predict_proba(X[:7]))
+    # a document whose feature_set disagrees with its features is refused; an older fused_opp document without the key loads
+    broken = json.loads(path.read_text())
+    broken["feature_set"] = "fused_opp"
+    (tmp_path / "bad.json").write_text(json.dumps(broken))
+    with pytest.raises(ValueError, match="feature_set"):
+        fused.load_fused_model(tmp_path / "bad.json")
+    old = fused.fused_document(MLPModel(hidden=4, epochs=5).fit(X[:, :56], y), _models(), [1, 2, 3, 4], 32, 80, "c" * 64, opponent=True)
+    old.pop("feature_set")
+    (tmp_path / "old.json").write_text(json.dumps(old))
+    d_old = fused.load_fused_model(tmp_path / "old.json")[0]
+    assert d_old["feature_set"] == "fused_opp" and d_old["opponent"] is True
+    # prediction: the diff features per L1b model, averaged; the set must be asked for, and it needs the opponent's sums
+    m = 5
+    hsl, l1b, opp = -rng.rand(m, 18) * 200, -rng.rand(m, 2, 10) * 200, -rng.rand(m, 2, 10) * 200
+    n, n_opp = rng.randint(50, 150, size=m), rng.randint(50, 150, size=m)
+    p = fused.fused_predict(mlp, hsl, l1b, n, order=[1, 0], opp_sums=opp, opp_n_moves=n_opp, feature_set="fused_opp_diff")
+    want = np.mean([mlp.predict_proba(fused.fused_opp_diff_features(hsl, l1b[:, k], n, opp[:, k], n_opp)[None])[0] for k in (1, 0)], axis=0)
+    np.testing.assert_allclose(p, want, rtol=0, atol=1e-15)
+    with pytest.raises(ValueError, match="opponent"):
+        fused.fused_predict(mlp, hsl, l1b, n, order=[1, 0], feature_set="fused_opp_diff")
+    # without feature_set the opponent sums still mean fused_opp (the old call)
+    mlp56 = MLPModel(hidden=4, epochs=5).fit(X[:, :56], y)
+    np.testing.assert_array_equal(fused.fused_predict(mlp56, hsl, l1b, n, [0, 1], opp_sums=opp, opp_n_moves=n_opp),
+                                  fused.fused_predict(mlp56, hsl, l1b, n, [0, 1], opp_sums=opp, opp_n_moves=n_opp, feature_set="fused_opp"))
+

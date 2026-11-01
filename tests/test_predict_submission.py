@@ -442,19 +442,20 @@ def _tiny_l1b_heads(tmp_path):
     return paths, sides
 
 
-def _tiny_fused_doc(tmp_path, sides, names=("A", "B"), shuffle_models=False, opponent=False):
-    """A fused (or, with opponent, fused_opp) model document whose L1b models are the tiny heads' sidecars (feature folds
-    as in the real setup)."""
+def _tiny_fused_doc(tmp_path, sides, names=("A", "B"), shuffle_models=False, opponent=False, feature_set=None):
+    """A fused (or, with opponent, fused_opp; or the named feature_set) model document whose L1b models are the tiny heads'
+    sidecars (feature folds as in the real setup)."""
     from aicup import fused
     from aicup.rankmodel import MLPModel
 
+    feature_set = fused.feature_set_of(opponent, feature_set)
     rng = np.random.RandomState(5)
-    mlp = MLPModel(hidden=4, epochs=20).fit(rng.randn(120, 56 if opponent else 40), np.arange(120) % 10)
+    mlp = MLPModel(hidden=4, epochs=20).fit(rng.randn(120, len(fused.FEATURE_SETS[feature_set])), np.arange(120) % 10)
     records = [fused.l1b_model_record(n, f"heads3_{n}.pt", s, [3, 4] if n == "A" else [1, 2]) for n, s in zip(names, sides)]
     if shuffle_models:
         records = records[::-1]
-    doc = fused.fused_document(mlp, records, [1, 2, 3, 4], 32, 120, "d" * 64, opponent=opponent)
-    path = tmp_path / "models" / ("rank_model_fused_opp.json" if opponent else "rank_model_fused.json")
+    doc = fused.fused_document(mlp, records, [1, 2, 3, 4], 32, 120, "d" * 64, feature_set=feature_set)
+    path = tmp_path / "models" / f"rank_model_{feature_set}.json"
     fused.save_fused_model(doc, path)
     return path, mlp, records
 
@@ -536,6 +537,19 @@ def test_l1b_heads_in_shards_and_fused_decision(tmp_path, fake_scorer, capsys):
     assert ps.main(_args(inputs, sharded, 5, 3, 2, "--merge", "--nshards", "2", "--fused-model", str(opp_path))) == ps.EXIT_OK
     np.testing.assert_allclose(pd.read_csv(sharded.with_name("submission_rank_proba.csv"))[[f"p_{lv}" for lv in LEVELS]].to_numpy(), got_o, atol=1e-12)
     assert json.loads(sharded.with_name("submission_rank_report.json").read_text())["opp_positions"] == meta["opp_positions"]
+    # the fused_opp_diff document (issue #25) on the same shards: the three differences come from the per-game sums
+    diff_path, diff_mlp, _ = _tiny_fused_doc(tmp_path / "diff", sides, feature_set="fused_opp_diff")
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--merge", "--fused-model", str(diff_path))) == ps.EXIT_OK
+    report = json.loads(out.with_name("submission_rank_report.json").read_text())
+    assert report["decision_model"] == "fused_opp_diff" and report["fused_model"]["feature_set"] == "fused_opp_diff" and report["fused_model"]["name"] == fused.NAME_OPP_DIFF
+    want_d = []
+    for qi in range(len(questions)):
+        ks = [k for k, q in enumerate(owner) if q == qi]
+        want_d.append(fused.fused_predict(diff_mlp, np.stack([per_task[k][1] for k in ks]), np.stack([l1b_per_task[k] for k in ks]), np.array([per_task[k][0] for k in ks]), order,
+                                          opp_sums=np.stack([opp_per_task[k][1] for k in ks]), opp_n_moves=np.array([opp_per_task[k][0] for k in ks]), feature_set="fused_opp_diff"))
+    got_d = pd.read_csv(out.with_name("submission_rank_proba.csv"))[[f"p_{lv}" for lv in LEVELS]].to_numpy()
+    np.testing.assert_allclose(got_d, np.stack(want_d), rtol=0, atol=1e-12)
+    assert not np.allclose(got_d, got_o) and report["fused_fallback_questions"] == []
 
 
 def test_fused_decision_refusals_and_fallback(tmp_path, fake_scorer, capsys):
@@ -571,6 +585,9 @@ def test_fused_decision_refusals_and_fallback(tmp_path, fake_scorer, capsys):
         assert "l1b_opp_sums" not in z.files and "l1b_opp_n_moves" not in z.files and json.loads(str(z["__meta__"]))["l1b_opponent"] is False
     assert ps.load_shards_l1b(no_opp, 1)[3] is None
     assert ps.main(_args(inputs, no_opp, 5, 3, 2, "--merge", "--fused-model", str(opp_path))) == ps.EXIT_INPUTS
+    assert "opponent" in capsys.readouterr().err
+    diff_path, _, _ = _tiny_fused_doc(tmp_path / "diff", sides, feature_set="fused_opp_diff")
+    assert ps.main(_args(inputs, no_opp, 5, 3, 2, "--merge", "--fused-model", str(diff_path))) == ps.EXIT_INPUTS
     assert "opponent" in capsys.readouterr().err
     assert ps.main(_args(inputs, no_opp, 5, 3, 2, "--merge", "--fused-model", str(fused_path))) == ps.EXIT_OK
     assert json.loads(no_opp.with_name("submission_rank_report.json").read_text())["l1b_opponent"] is False

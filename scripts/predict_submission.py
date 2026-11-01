@@ -48,7 +48,9 @@ With --l1b-heads the shard step also scores each game's *opponent* (issue #12): 
 pool over (k, sgf, the other colour) -- as l1b_score.py --opponent -- under the L1b heads only (the 18 profiles
 see the target's moves only), giving the shard file l1b_opp_sums [n, K, 10] and l1b_opp_n_moves [n] (the
 opponent's move counts, which the features use) and the meta l1b_opponent / opp_positions; --no-l1b-opponent
-skips it. A fused_opp document (rank_model_fused_opp.json, 56 features, scripts/fit_fused_model.py --opp)
+skips it. A fused_opp document (rank_model_fused_opp.json, 56 features, scripts/fit_fused_model.py --opp) or a
+fused_opp_diff one (rank_model_fused_opp_diff.json, 59 features, --opp --diff; the differences are computed here
+from the shards' per-game sums, issue #25)
 decides from the target's and the opponent's sums; shards without the opponent's scores cannot feed it
 (exit 2), while the 40-feature rank_model_fused.json ignores them, so one set of shard files serves both.
 
@@ -81,7 +83,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
-from aicup.fused import fused_predict, load_fused_model, pairing_order  # noqa: E402
+from aicup.fused import feature_set_of as fused_feature_set, fused_predict, load_fused_model, pairing_order  # noqa: E402
 from aicup.gamevec import SEGMENTS, WHOLE, game_vector  # noqa: E402
 from aicup.humansl import PROFILES  # noqa: E402
 from aicup.ladder_data import pack_questions  # noqa: E402
@@ -286,12 +288,14 @@ def load_shards_l1b(out, nshards, with_moves=False):
     return models or [], per_task, moves, (opp if opponent else None)
 
 
-def fused_probs(questions, owner, per_task, l1b_per_task, mlp, order, rank_model, opp_per_task=None, opponent=False):
+def fused_probs(questions, owner, per_task, l1b_per_task, mlp, order, rank_model, opp_per_task=None, opponent=False, feature_set=None):
     """({question index: probabilities [10]} for every question with a usable game, info): the fused MLP on each
     L1b model's fused features (shard columns `order`), averaged; a question whose averaged probabilities are not
     finite gets rank_model's (q24) probabilities and is listed in info["fused_fallback_questions"]. With opponent (a
-    fused_opp document) the opponent's sums and move counts opp_per_task {k: (n, [K, 10])} join the features;
-    ValueError when the shards carry none."""
+    fused_opp document) the opponent's sums and move counts opp_per_task {k: (n, [K, 10])} join the features, and a
+    fused_opp_diff document (feature_set) adds the opponent-minus-own differences; ValueError when the shards carry none."""
+    feature_set = fused_feature_set(opponent, feature_set)
+    opponent = feature_set != "fused"
     if opponent and opp_per_task is None:
         raise ValueError("the fused model takes the opponent's L1b features but the shards carry no opponent scores: score them "
                          "again with --l1b-heads (without --no-l1b-opponent), or decide with the 40-feature rank_model_fused.json")
@@ -308,7 +312,7 @@ def fused_probs(questions, owner, per_task, l1b_per_task, mlp, order, rank_model
         l1b = np.stack([l1b_per_task[k] for k in ks])
         if opponent:
             p = fused_predict(mlp, hsl, l1b, n, order, opp_sums=np.stack([opp_per_task[k][1] for k in ks]),
-                              opp_n_moves=np.array([opp_per_task[k][0] for k in ks]))
+                              opp_n_moves=np.array([opp_per_task[k][0] for k in ks]), feature_set=feature_set)
         else:
             p = fused_predict(mlp, hsl, l1b, n, order)
         if not np.isfinite(p).all():
@@ -571,7 +575,7 @@ def main(argv=None):
             fused_doc, fused_mlp = load_fused_model(a.fused_model)
             order = pairing_order(fused_doc, l1b_models)
             set_probs, fused_info = fused_probs(questions, owner, per_task, l1b_per_task, fused_mlp, order, rank_model,
-                                                opp_per_task, fused_doc["opponent"])
+                                                opp_per_task, fused_doc["opponent"], fused_doc["feature_set"])
     except (FileNotFoundError, ValueError) as e:
         print(e, file=sys.stderr)
         return EXIT_INPUTS
@@ -598,12 +602,12 @@ def main(argv=None):
               "expectations": {"rows": a.expect_rows, "pub_": a.expect_public, "priv_": a.expect_private},
               "fallback_questions": fallback, "allow_fallback": a.allow_fallback,
               "lenient_inputs": a.lenient_inputs, "input_warnings": input_warnings, "allow_input_warnings": a.allow_input_warnings,
-              "decision_model": ("fused_opp" if fused_doc["opponent"] else "fused") if a.fused_model else "set_models" if a.set_models else "rank_model",
+              "decision_model": fused_doc["feature_set"] if a.fused_model else "set_models" if a.set_models else "rank_model",
               "set_models": [{"path": path, **set_model_summary(meta)} for _, meta, path in set_models], "set_base": a.set_base,
               "set_rungs": set_info["rungs"], "set_model_warnings": set_warnings,
               "set_model_fallback_questions": set_info["set_model_fallback_questions"],
               "l1b_models": l1b_models,
-              "fused_model": ({"path": a.fused_model, **{k: fused_doc.get(k) for k in ("name", "opponent", "file_sha256", "train_folds", "per_player",
+              "fused_model": ({"path": a.fused_model, **{k: fused_doc.get(k) for k in ("name", "opponent", "feature_set", "file_sha256", "train_folds", "per_player",
                                                                                          "questions_sha256", "l1b_models", "git_head")},
                                "n_models": len(fused_doc["l1b_models"])} if fused_doc else None),
               "fused_fallback_questions": fused_info["fused_fallback_questions"],
