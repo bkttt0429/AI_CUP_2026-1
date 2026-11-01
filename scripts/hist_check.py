@@ -17,7 +17,12 @@ Also reported, no decision rides on them: (i) the per-rank pooled histogram of p
 "distribution range" of each rank) with the overlap coefficient sum_i min(h_r, h_r+1) of adjacent ranks; (ii) the OOF
 residual diagnostics of fused_opp and fused_opp_diff (scripts/error_analysis.py's player_table / residual_analysis /
 opponent_channel): how much of the per-player mean residual still follows the opponent channel once the diff features
-are in the model (the pre-check of the "opponent head" route, METHOD_NOTES 2.20). Fold 0 is refused.
+are in the model (the pre-check of the "opponent head" route, METHOD_NOTES 2.20). That per-player covariate is the mean
+over ALL of the player's games, which the model never sees; so the same Spearmans are also given against the
+QUESTION-level opp / own / (opp - own) pmi means the model did see (the diff columns of fused_opp_diff), per question,
+by question size and per player (mean over the player's questions). A correlation that survives at the question level
+is a missing model component; one that only exists against the all-games mean, and shrinks from n = 5 to n = 20, is
+measurement noise of the question's estimate and is not recoverable from the question. Fold 0 is refused.
 
   python -I scripts/hist_check.py --l1b results/l1b/scores3 results/l1b/scores3_B \\
       --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --out results/seq/hist_check.json
@@ -34,7 +39,7 @@ ROOT = Path(__file__).resolve().parents[1]
 for d in (ROOT / "src", ROOT / "scripts"):
     if str(d) not in sys.path:
         sys.path.insert(0, str(d))
-from aicup.fused import question_diff_features  # noqa: E402
+from aicup.fused import DIFF_FEATURE_NAMES, FUSED_OPP_FEATURE_NAMES, question_diff_features  # noqa: E402
 from aicup.ladder import FOLDS_CSV, environment, to_json  # noqa: E402
 from aicup.metric import LEVELS, expected_score_decision  # noqa: E402
 from aicup.qeval import SIZES, balanced_mean_over_n, evaluate, paired_diff  # noqa: E402
@@ -51,6 +56,8 @@ PRE = [("fused_opp_diff_hist", "fused_opp_diff")]
 REPORT = [("fused_opp_diff_hist2", "fused_opp_diff"), ("fused_opp_diff_hist2", "fused_opp_diff_hist"), ("fused_opp_diff", "fused_opp")]
 RESIDUAL_SETS = ("fused_opp", "fused_opp_diff")
 RESIDUAL_COVARIATES = ("own_pmi", "opp_pmi", "opp_minus_own")
+Q_COVARIATES = ("q_own_pmi", "q_opp_pmi", "q_opp_minus_own")  # the question-level pmi means the model saw (diff columns of fused_opp_diff)
+COL_DIFF, COL_OPP = len(FUSED_OPP_FEATURE_NAMES) + DIFF_FEATURE_NAMES.index("opp_minus_own_pmi_mean"), len(FUSED_OPP_FEATURE_NAMES) + DIFF_FEATURE_NAMES.index("opp_pmi_mean")
 
 
 def features(hsl, l1b, opp, hist_t, hist_o, questions):
@@ -78,14 +85,32 @@ def rank_distribution(tables):
     return {"bin_edges": HIST_EDGES.tolist(), "by_rank": by_rank, "adjacent_overlap": overlap}
 
 
+def _sp(a, b):
+    return float(pd.Series(np.asarray(a, dtype=float)).corr(pd.Series(np.asarray(b, dtype=float)), method="spearman"))
+
+
+def question_level(oof):
+    """Spearmans of the signed residual with the QUESTION-level pmi means the model saw (Q_COVARIATES): per question (all sizes and
+    by question size), and per player (the player's mean residual against the mean of the covariate over the player's questions)."""
+    e = oof["pred"].to_numpy() - oof["y"].to_numpy()
+    n = oof["n_games"].to_numpy()
+    out = {"spearman_e": {c: _sp(e, oof[c]) for c in Q_COVARIATES},
+           "spearman_e_by_n": {str(m): {c: _sp(e[n == m], oof[c].to_numpy()[n == m]) for c in Q_COVARIATES} for m in SIZES if (n == m).sum() > 2}}
+    g = oof.assign(e=e).groupby("player_id")
+    mean_e = g["e"].mean()
+    out["spearman_mean_e"] = {c: _sp(mean_e, g[c].mean().reindex(mean_e.index)) for c in Q_COVARIATES}
+    return out
+
+
 def residual_diagnostics(oof, data, folds_df):
     """error_analysis's per-player residual table of one model's OOF decisions: the opponent-channel Spearmans, the Spearman of the
-    per-player mean signed residual with own / opponent pmi and their difference, and the between-player share of the residual variance."""
+    per-player mean signed residual with own / opponent pmi and their difference (means over ALL of the player's games), the
+    between-player share of the residual variance; and question_level, the same against what the model saw."""
     players = ea.player_table(oof, data, folds_df)
     r = ea.residual_analysis(oof, players)
     return {"opponent_channel": ea.opponent_channel(players), "spearman_mean_e": {c: r["spearman_with_mean_e"][c] for c in RESIDUAL_COVARIATES},
             "spearman_abs_mean_e": {c: r["spearman_with_abs_mean_e"][c] for c in RESIDUAL_COVARIATES}, "between_player_share": r["between_player_share"],
-            "exact": r["exact"], "within1": r["within1"]}
+            "exact": r["exact"], "within1": r["within1"], "question_level": question_level(oof)}
 
 
 def main(argv=None):
@@ -140,7 +165,9 @@ def main(argv=None):
             if s in oof:
                 oof[s].append(pd.DataFrame({"question_id": d["val"]["question_id"].to_numpy(dtype=str), "rank": d["val"]["rank"].to_numpy(dtype=str),
                                             "player_id": d["val"]["player_id"].to_numpy(dtype=str), "n_games": n_va, "fold": v, "y": y_va,
-                                            "pred": [expected_score_decision(p) for p in P]}))
+                                            "pred": [expected_score_decision(p) for p in P], "q_opp_minus_own": X_va["fused_opp_diff"][:, COL_DIFF],
+                                            "q_opp_pmi": X_va["fused_opp_diff"][:, COL_OPP],
+                                            "q_own_pmi": X_va["fused_opp_diff"][:, COL_OPP] - X_va["fused_opp_diff"][:, COL_DIFF]}))
         print(f"fold {v} ({len(train_q)} training questions): " + "  ".join(f"{s} {per_fold[s][-1]:.4f}" for s in SETS) + f"  ({time.time() - t0:.0f} s)", flush=True)
         rows.append(pd.DataFrame({"player_id": d["val"]["player_id"].to_numpy(dtype=str), "y": y_va, "n": n_va, **{s: sc[s] for s in SETS}}))
     t = pd.concat(rows, ignore_index=True)
@@ -176,6 +203,10 @@ def main(argv=None):
         print(f"residuals of {s}: exact {r['exact']:.3f} within1 {r['within1']:.3f} between-player share {fmt(r['between_player_share'])}; "
               "spearman mean e vs " + " ".join(f"{c} {fmt(v)}" for c, v in r["spearman_mean_e"].items())
               + f"; opponent channel oof_mean_e_vs_opp_minus_own {fmt(r['opponent_channel']['spearman_oof_mean_e_vs_opp_minus_own'])}")
+        q = r["question_level"]
+        print("  question-level (what the model saw): e vs " + " ".join(f"{c} {fmt(v)}" for c, v in q["spearman_e"].items())
+              + "; by n " + " ".join(f"{m}: {fmt(v['q_opp_minus_own'])}" for m, v in q["spearman_e_by_n"].items())
+              + "; per player mean e vs " + " ".join(f"{c} {fmt(v)}" for c, v in q["spearman_mean_e"].items()))
     out = {"folds": folds, "questions": int(len(y)), "per_player": a.per_player, "hsl_dir": a.hsl, "l1b_dirs": a.l1b, "opp_dirs": a.opp,
            "hist_features": list(HIST), "bin_edges": HIST_EDGES.tolist(), "scores": head, "comparisons": comps, "rank_distribution": dist,
            "residual_diagnostics": resid, "min_diff": l1b_cv.MIN_DIFF, "seconds": time.time() - t0, **environment("cpu")}
