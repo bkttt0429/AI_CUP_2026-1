@@ -1,0 +1,4 @@
+# Optional extra for scripts/tsfel_check.py (issue #36). Install into a SEPARATE environment, not the submission .venv:
+# tsfel pulls scikit-learn, statsmodels, PyWavelets, ipython and requests, and the submission environment must not change
+# before the 11/04 scoring (nano4's decision, 2026-11-01). Same Python; numpy / pandas / scipy at requirements.txt's versions.
+tsfel==0.2.0

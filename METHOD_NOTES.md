@@ -421,7 +421,7 @@
   - 局層級診斷（§2.15 第 0 步的做法，只報告）：每局類別平衡 softmax 回歸，「只用平均」（pmi_Mean、log 手數）對「平均 + PCA-16 的 TSFEL 塊」（PCA 在訓練局上擬合），平衡準確率與 NLL 的增益 = TSFEL 在平均之外帶來的局層級資訊（§2.15 的形狀特徵是 +0.0085）。
 - **預先指定**：`fused_opp_diff_tsfel16 vs fused_opp_diff`（條件 (1)(3)(4)）。只報告：tsfel4、tsfel64、tsfel_all 各 vs `fused_opp_diff`；局層級增益；每折保留的欄數與 PCA 解釋變異。
 - **預期**：§2.16 的 8 個形狀統計量與 §2.20 的直方圖都在 ±0.005 內且 NLL 變差；TSFEL 多出來的是頻譜／分形／更多統計量，但同樣在落子通道、同樣是每局量的題內平均，估 −0.005 到 +0.005；PCA 降維是給它一個不被維度拖垮的機會。局層級診斷若比 §2.15 的 +0.0085 大很多（例如 > +0.02）而題目層級仍沒過，就把「接法」列為下一個問題。
-- **依賴**：`tsfel==0.2.0`（`requirements.txt`），會連帶裝 scikit-learn、statsmodels、PyWavelets、ipython、requests；nano4 的 venv 要 `pip install tsfel==0.2.0`。
+- **依賴**：`tsfel==0.2.0`（`requirements-tsfel.txt`，**不在** `requirements.txt`），會連帶裝 scikit-learn、statsmodels、PyWavelets、ipython、requests 等十幾個套件。nano4 的決定（2026-11-01，cloud 同意）：不裝進 11/04 要跑正式評分的提交 `.venv`，另開一個獨立環境（同一個 Python 3.12，numpy／pandas／scipy 共用提交環境的版本），提交 `.venv` 的套件清單雜湊前後相同；`tests/test_tsfel_check.py` 在沒有 tsfel 的環境會 skip。
 - **決策**：過 → 另開 issue 接進提交（分片已存每手 L1b 陣列，TSFEL 特徵與 PCA 在分片後算；PCA 與標準化統計量要存進文件）。沒過 → 記在這裡，自動特徵庫這條線結束。
 - **結果**：待 nano4（NANO4 §4.16）。
 

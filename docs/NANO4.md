@@ -647,10 +647,10 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 02:00:00 -J ohc scripts/na
 
 ### 4.16 TSFEL 生成的每局時序特徵接在 fused_opp_diff 後面（2026-11-01，issue #36）
 
-提交管線不動、不碰 fold 0。先在 venv 裝 TSFEL（一次；會連帶裝 scikit-learn、statsmodels、PyWavelets、ipython、requests）：
+提交管線不動、不碰 fold 0。TSFEL **不裝進提交用的 `.venv`**（它會連帶拉進 scikit-learn、statsmodels、ipython 等十幾個套件，而 `.venv` 要在 11/04 跑正式評分；nano4 的決定，2026-11-01）：另開一個獨立環境（同一個 Python 3.12，numpy／pandas／scipy 用 `requirements.txt` 的版本），只多裝 `requirements-tsfel.txt`，下面的工作在那個環境裡跑；提交 `.venv` 的套件清單雜湊應前後相同。環境的路徑與啟用方式由 nano4 補在這裡：
 
 ```bash
-pip install tsfel==0.2.0
+pip install -r requirements-tsfel.txt   # 在獨立環境裡，一次
 ```
 
 然後一支 CPU 工作：第一次會算每折的 TSFEL 表（約 118k 局 × 2 條序列 × 11 ms，`--workers 12` 約 5 分）並快取到 `results/seq/tsfel/fold<F>.npz`（不進 git），接著五個特徵集 × 四折的 MLP 與局層級的 softmax 回歸（約 §4.10 的 2 倍）：
