@@ -647,17 +647,27 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 02:00:00 -J ohc scripts/na
 
 ### 4.16 TSFEL 生成的每局時序特徵接在 fused_opp_diff 後面（2026-11-01，issue #36）
 
-提交管線不動、不碰 fold 0。TSFEL **不裝進提交用的 `.venv`**（它會連帶拉進 scikit-learn、statsmodels、ipython 等十幾個套件，而 `.venv` 要在 11/04 跑正式評分；nano4 的決定，2026-11-01）：另開一個獨立環境（同一個 Python 3.12，numpy／pandas／scipy 用 `requirements.txt` 的版本），只多裝 `requirements-tsfel.txt`，下面的工作在那個環境裡跑；提交 `.venv` 的套件清單雜湊應前後相同。環境的路徑與啟用方式由 nano4 補在這裡：
+提交管線不動、不碰 fold 0。TSFEL **不裝進提交用的 `.venv`**（它會連帶拉進 scikit-learn、statsmodels、ipython 等十幾個套件，而 `.venv` 要在 11/04 跑正式評分；nano4 的決定，2026-11-01）：另開一個獨立環境（同一個 Python 3.12，numpy／pandas／scipy 用 `requirements.txt` 的版本），只多裝 `requirements-tsfel.txt`，下面的工作在那個環境裡跑；提交 `.venv` 的套件清單雜湊應前後相同。nano4 的做法（2026-11-01）：
 
 ```bash
-pip install -r requirements-tsfel.txt   # 在獨立環境裡，一次
+# 一次：用提交 .venv 的同一個直譯器建獨立環境，只裝 tsfel 與其依賴
+$(readlink -f .venv/bin/python) -m venv --without-pip ~/BK_AICUP_tsfel_venv
+python -m pip install --no-compile --target ~/BK_AICUP_tsfel_venv/lib/python3.12/site-packages -r requirements-tsfel.txt
+# 刪掉 target 裡 pip 重抓的 numpy / pandas / scipy，放兩個 .pth：zz_base_venv.pth 指向提交 .venv/lib/python3.12/site-packages
+# （torch、numpy 2.5.4、pandas 3.0.6、scipy 1.18.1 從那裡來），katago.pth 複製自提交 .venv
+# 切換：另開在 main 的 worktree ~/BK_AICUP_2026-1-tsfelwt，.venv 符號連結指到這個環境，data / logs / repo / models 連回主 checkout；
+# run.sbatch 不用改，從 worktree 根目錄送件，--hsl / --l1b / --opp 給主 checkout 的絕對路徑
 ```
+
+多出來的只有 tsfel、scikit-learn 1.9.1、statsmodels 0.15.0、PyWavelets 1.10.0、ipython 9.18 與其依賴；提交 `.venv` 的 site-packages 清單雜湊前後相同。
 
 然後一支 CPU 工作：第一次會算每折的 TSFEL 表（約 118k 局 × 2 條序列 × 11 ms，`--workers 12` 約 5 分）並快取到 `results/seq/tsfel/fold<F>.npz`（不進 git），接著五個特徵集 × 四折的 MLP 與局層級的 softmax 回歸（約 §4.10 的 2 倍）：
 
 ```bash
 sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 03:00:00 -J tsfelchk scripts/nano4/run.sbatch python -I scripts/tsfel_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --workers 12 --out results/seq/tsfel_check.json
 ```
+
+**結果（nano4，2026-11-01，PR #39 `1447777`；job 669660，612 s，每折 TSFEL 表約 35 s；pytest 獨立環境 325 passed／5 skipped）**：`fused_opp_diff` 0.6916 重現；**`fused_opp_diff_tsfel16` 0.6788（預先指定 −0.0128 [−0.0167, −0.0090]，四折全負，三條件全不過）**；tsfel4 −0.0014、tsfel64 −0.0375、tsfel_all −0.0610，退步隨維度單調放大；局層級增益 +0.0093。自動特徵庫這條線在這個接法下結束（METHOD_NOTES §2.22，含「模型對多餘欄位沒抵抗力 vs 共變量偏移」的兩個未預先指定的對照提案）。
 
 預期：`fused_opp_diff` 0.6916（每折同 `error_analysis.json` 的 `mlp_diff`）。**預先指定** `fused_opp_diff_tsfel16 vs fused_opp_diff`（條件 (1)(3)(4)）；只報告 tsfel4／tsfel64／tsfel_all vs `fused_opp_diff`、局層級 softmax 的增益（mean-only vs mean + tsfel16）、每折保留欄數與 PCA 解釋變異。貼回 issue #36：五列（總分、NLL、by n、每折）、四條比較、`TSFEL:` 與 `game-level softmax:` 兩行；`tsfel_check.json` 進 git（新分支 + PR），`results/seq/tsfel/*.npz` 不進。決策見 METHOD_NOTES §2.22。
 
