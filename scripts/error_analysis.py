@@ -35,6 +35,7 @@ for d in (ROOT / "src", ROOT / "scripts"):
     if str(d) not in sys.path:
         sys.path.insert(0, str(d))
 from aicup.evidence import posterior_mean_index  # noqa: E402
+from aicup.fused import DIFF_FEATURE_NAMES, question_diff_features  # noqa: E402
 from aicup.humansl import PROFILES  # noqa: E402
 from aicup.ladder import FOLDS_CSV, environment, to_json  # noqa: E402
 from aicup.metric import LEVELS, expected_score_decision  # noqa: E402
@@ -48,7 +49,7 @@ import l1b_opp_check as oc  # noqa: E402
 MODELS = ("mlp", "mlp_diff", "gbm", "mlp_h128")
 PRE = [("mlp_diff", "mlp"), ("gbm", "mlp")]
 REPORT = [("mlp_h128", "mlp")]
-DIFF_NAMES = ["opp_minus_own_pmi_mean", "opp_pmi_mean", "opp_pmi_std"]
+DIFF_NAMES = list(DIFF_FEATURE_NAMES)
 COVARIATES = ["log_train_games", "frac_black", "mean_moves", "hsl_entropy", "hsl_argmax_std", "own_pmi", "opp_pmi", "opp_minus_own"]
 
 
@@ -65,19 +66,10 @@ def game_entropy(table, profiles=PROFILES):
     return pd.Series(-(p * np.log(np.clip(p, 1e-300, None))).sum(axis=1), index=table["game_key"].to_numpy())
 
 
-def diff_features(pmi_t, pmi_o, questions):
-    """[Q, 3]: mean(opp - own), mean(opp), std(opp) of the games' pmi."""
-    out = np.zeros((len(questions), 3))
-    for q, keys in enumerate(questions["game_keys"]):
-        o, t = pmi_o[keys].to_numpy(dtype=float), pmi_t[keys].to_numpy(dtype=float)
-        out[q] = [(o - t).mean(), o.mean(), o.std()]
-    return out
-
-
 def feature_sets(hsl, l1b, opp, questions):
+    """fused_opp (56) and fused_opp_diff (59: + aicup.fused.question_diff_features) of the questions."""
     X, y, n = oc.features(hsl, l1b, opp, questions)
-    D = diff_features(game_pmi(l1b), game_pmi(opp), questions)
-    return {"fused_opp": X["fused_opp"], "fused_opp_diff": np.hstack([X["fused_opp"], D])}, y, n
+    return {"fused_opp": X["fused_opp"], "fused_opp_diff": np.hstack([X["fused_opp"], question_diff_features(l1b, opp, questions)])}, y, n
 
 
 def gbm_proba(X_tr, y_tr, X_va, seed=0, n_jobs=1):

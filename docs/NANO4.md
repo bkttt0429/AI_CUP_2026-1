@@ -564,6 +564,20 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 04:00:00 -J erran sc
 
 預期：`mlp` 0.6735（差 0；每折同 `opp_check.json`）。**預先指定** `mlp_diff vs mlp`、`gbm vs mlp`；只報告 `mlp_h128 vs mlp`。貼回 issue #23：四列（總分、NLL、by n、每折）、三條比較、殘差分析（玩家間比例、全對／全錯對獨立期望、按局數五分位、按等級、Spearman 表、三群平均）、對手通道的五個 Spearman。`error_analysis.json` 與 `oof_fused_opp_proba.csv`（約 39,000 列）進 git；fold 2 的那段機率給 issue #22 的 combined 用（欄名 `fused_opp_p_<rank>`）。
 
+**結果（nano4，2026-10-31，`results/l1b/error_analysis.json`，PR #24；12 核實跑 81 分）**：`mlp` 0.6735 重現；**`mlp_diff` 0.6916（+0.0181 [+0.0140, +0.0220]，四折全正，預先指定過）**；`gbm` 0.6677（−0.0058）、`mlp_h128` 0.6686（−0.0050）都沒過。`gbm` 改用 xgboost 原生 API（`XGBClassifier` 需要 scikit-learn，nano4 的 venv 沒有）。殘差與對手通道的數字在 METHOD_NOTES §2.18。使用者決定接進提交（§4.13）。
+
+### 4.13 提交改用 fused_opp_diff（2026-11-01，issue #25）
+
+與 §4.3／§4.4 當年同一套流程。**步 1：fold 0 評一次 + 擬合提交用的文件**（CPU，`-c 12`；fused_opp 當時約 20 分鐘，這次多一個集合）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 02:00:00 -J fitdiff scripts/nano4/run.sbatch python -I scripts/fit_fused_model.py --l1b A:results/l1b/scores3:results/l1b/heads3_A.json B:results/l1b/scores3_B:results/l1b/heads3_B.json --opp A:results/l1b/scores3_opp B:results/l1b/scores3_B_opp --diff --out results/models/rank_model_fused_opp_diff.json --fold0-proba results/l1b/fold0_fused_opp_diff_proba.csv --reference results/l1b/opp_fold0_check.json
+```
+
+預期：`--reference` 對 hsl／fused_*／fused_opp_* 各列印 `+0.00e+00`（`fused_opp_avg` 0.6716 重現）；`fused_opp_diff_avg` 約 0.69，`fused_opp_diff_avg vs fused_opp_avg` 約 +0.018。貼回 issue #25：fold 0 的全部列（總分、NLL、by n）與那條比較；`rank_model_fused_opp_diff.json`、`fold0_fused_opp_diff_proba.csv` 進 git（結果檔走新分支 + PR）。
+
+**步 2（11/04，官方檔案到手後）**：§4.4 的分片／合併指令不變，合併時 `--fused-model results/models/rank_model_fused_opp_diff.json`；報告的 `decision_model` 應為 `fused_opp_diff`、`fused_fallback_questions` 為空。若提交次數允許，另以 `rank_model_fused_opp.json` 合併一次出第二版，兩版都上 Public LB 對比。`pack_weights.py --models` 加上新文件。
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：

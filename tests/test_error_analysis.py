@@ -16,10 +16,12 @@ def test_diff_features_and_entropy():
     l1b.loc[0, "sum_6D"] = 50.0  # game a: posterior mass on index 9; game b: uniform -> 4.5
     opp = l1b.copy()
     opp.loc[0, "sum_6D"], opp.loc[0, "sum_D"] = 0.0, 50.0  # opponent of a at index 0
+    from aicup.fused import question_diff_features
+
     pmi_t, pmi_o = ea.game_pmi(l1b), ea.game_pmi(opp)
     assert np.allclose(pmi_t[["a", "b"]], [9.0, 4.5]) and np.allclose(pmi_o[["a", "b"]], [0.0, 4.5])
-    D = ea.diff_features(pmi_t, pmi_o, pd.DataFrame({"game_keys": [["a", "b"], ["b"]]}))
-    assert np.allclose(D, [[(-9.0 + 0.0) / 2, 2.25, 2.25], [0.0, 4.5, 0.0]])
+    D = question_diff_features(l1b, opp, pd.DataFrame({"game_keys": [["a", "b"], ["b"]]}))
+    assert np.allclose(D, [[(-9.0 + 0.0) / 2, 2.25, 2.25], [0.0, 4.5, 0.0]]) and ea.DIFF_NAMES == ["opp_minus_own_pmi_mean", "opp_pmi_mean", "opp_pmi_std"]
     ent = ea.game_entropy(l1b, profiles=LEVELS)
     assert ent["a"] < 1e-6 and abs(ent["b"] - np.log(10)) < 1e-9
 
