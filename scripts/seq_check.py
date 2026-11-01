@@ -5,8 +5,8 @@ Protocol as scripts/l1b_opp_check.py (pilot validation questions, sample_questio
 MLPModel(hidden=32), player bootstrap). Feature sets: fused_opp (the A/B sums of --l1b/--opp; must reproduce 0.6735) and,
 per --seq NAME:DIR, fused_opp_seq_<NAME>: the same 56 features with the target's L1b sums replaced by the encoder's
 base + Δ (the opponent's sums stay the A/B ones). Pre-specified (conditions (1) CI lower bound > 0, (3) > 0 in >= 3 of 4
-folds, (4) >= 0.005): fused_opp_seq_<--pre> vs fused_opp (default --pre gru). Reported only: every other encoder vs
-fused_opp, and fused_opp_seq_ctm_seq vs fused_opp_seq_gru when both are given. The "sum" encoder's set must equal
+folds, (4) >= 0.005): fused_opp_seq_<--pre> vs fused_opp (default --pre gru; several encoders can be named). Reported only:
+every other encoder vs fused_opp, and fused_opp_seq_{ctm_seq, transformer, mamba} vs fused_opp_seq_gru when both are given. The "sum" encoder's set must equal
 fused_opp (a check of the plumbing). Fold 0 is refused.
 
   python -I scripts/seq_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp \\
@@ -45,7 +45,7 @@ def main(argv=None):
     ap.add_argument("--l1b", nargs="+", required=True)
     ap.add_argument("--opp", nargs="+", required=True)
     ap.add_argument("--seq", nargs="+", required=True, metavar="NAME:DIR", help="seq_crossfit.py output directories")
-    ap.add_argument("--pre", default="gru", help="the encoder whose comparison with fused_opp is pre-specified")
+    ap.add_argument("--pre", nargs="+", default=["gru"], help="the encoders whose comparisons with fused_opp are pre-specified")
     ap.add_argument("--hsl", default=str(ROOT / "results" / "scores"))
     ap.add_argument("--folds", type=int, nargs="+", default=[1, 2, 3, 4])
     ap.add_argument("--per-player", type=int, default=32)
@@ -60,8 +60,8 @@ def main(argv=None):
         seq_dirs = dict(parse_seq(s) for s in a.seq)
         if len(seq_dirs) != len(a.seq):
             raise ValueError("--seq names must be distinct")
-        if a.pre not in seq_dirs:
-            raise ValueError(f"--pre {a.pre!r} is not one of the --seq names {sorted(seq_dirs)}")
+        if not set(a.pre) <= set(seq_dirs):
+            raise ValueError(f"--pre {a.pre!r} are not all among the --seq names {sorted(seq_dirs)}")
         where, where_o = l1b_cv.locate_folds(a.l1b, folds), l1b_cv.locate_folds(a.opp, folds)
         where_s = {name: l1b_cv.locate_folds([d], folds) for name, d in seq_dirs.items()}
         folds_df = pd.read_csv(a.folds_csv, dtype={"player_id": str})
@@ -116,10 +116,10 @@ def main(argv=None):
         cond = {"1": bool(d["ci95"][0] > 0), "3": bool(sum(e > 0 for e in pf) >= need), "4": bool(d["diff"] >= l1b_cv.MIN_DIFF)}
         return {**d, "per_fold_diff": pf, "conditions": cond, "pass": all(cond.values())}
 
-    pre = [(f"fused_opp_seq_{a.pre}", "fused_opp")]
-    report = [(f"fused_opp_seq_{n}", "fused_opp") for n in seq_dirs if n != a.pre]
-    if "ctm_seq" in seq_dirs and "gru" in seq_dirs:
-        report.append(("fused_opp_seq_ctm_seq", "fused_opp_seq_gru"))
+    pre = [(f"fused_opp_seq_{n}", "fused_opp") for n in a.pre]
+    report = [(f"fused_opp_seq_{n}", "fused_opp") for n in seq_dirs if n not in a.pre]
+    if "gru" in seq_dirs:
+        report += [(f"fused_opp_seq_{n}", "fused_opp_seq_gru") for n in ("ctm_seq", "transformer", "mamba") if n in seq_dirs]
     comps = {"pre_specified": {f"{x} vs {z}": compare(x, z) for x, z in pre}, "report_only": {f"{x} vs {z}": compare(x, z) for x, z in report}}
     for s, h in head.items():
         print(f"{s:22s} {h['balanced_mean_over_n']:.4f}  NLL {h['nll_balanced']:.4f}  by n " + " ".join(f"{m}: {h['balanced_by_n'][str(m)]:.4f}" for m in SIZES)
@@ -129,7 +129,7 @@ def main(argv=None):
             print(f"[{g}] {k}: {c['diff']:+.4f} [{c['ci95'][0]:+.4f}, {c['ci95'][1]:+.4f}]  folds " + " ".join(f"{x:+.4f}" for x in c["per_fold_diff"])
                   + "  conditions " + " ".join(f"{q} {'✓' if v else '✗'}" for q, v in c["conditions"].items()) + f"  -> {'PASS' if c['pass'] else 'no'}")
     out = {"folds": folds, "questions": int(len(y)), "per_player": a.per_player, "hsl_dir": a.hsl, "l1b_dirs": a.l1b, "opp_dirs": a.opp,
-           "seq_dirs": seq_dirs, "pre": a.pre, "scores": head, "comparisons": comps, "min_diff": l1b_cv.MIN_DIFF, **environment("cpu")}
+           "seq_dirs": seq_dirs, "pre": a.pre[0] if len(a.pre) == 1 else a.pre, "scores": head, "comparisons": comps, "min_diff": l1b_cv.MIN_DIFF, **environment("cpu")}
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     Path(a.out).write_text(to_json(out, indent=1) + "\n")
     print(f"wrote {a.out}")

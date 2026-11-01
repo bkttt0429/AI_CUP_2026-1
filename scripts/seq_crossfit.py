@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Cross-fit a move-sequence encoder over the CV folds and write its per-game outputs in l1b_score.py's layout (issue #19).
 
-For every fold k of --folds the encoder (aicup.seqmodel; --arch sum / conv / gru / ctm_seq) is trained on the other folds'
+For every fold k of --folds the encoder (aicup.seqmodel; --arch sum / conv / gru / ctm_seq / transformer / mamba) is trained on the other folds'
 games (per-game rank cross-entropy, inner early stopping by players) and applied to fold k's games, so every fold's outputs
 come from a model that never saw it. Fold k's outputs go to <out>/fold{k}/games_s0_p000.csv with sum_<rank> = base + Δ
 (the target's summed L1b log p corrected by the encoder; the "sum" encoder reproduces the l1b_score sums exactly), a
