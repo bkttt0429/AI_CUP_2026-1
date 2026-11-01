@@ -92,6 +92,7 @@ from aicup.qfeatures import FEATURE_NAMES, question_features  # noqa: E402
 from aicup.rankmodel import _softmax, from_state  # noqa: E402
 from aicup.setmodel_io import file_sha256, load_set_model, sidecar_path, summary as set_model_summary  # noqa: E402
 from aicup.settrain import BASE_CLIP, predict_set_model  # noqa: E402
+from aicup.sgf import handicap  # noqa: E402
 from aicup.submission import check_game, read_test, read_test_lenient, validate_submission, write_submission  # noqa: E402
 
 CKPT = ROOT / "models" / "katago" / "b18c384nbt-humanv0.ckpt"
@@ -131,6 +132,14 @@ def build_tasks(questions):
             else:
                 dropped.append({"question_id": q["question_id"], "game": gi + 1, "error": info["error"]})
     return tasks, owner, dropped, passes
+
+
+def handicap_counts(questions):
+    """{"absent" | HD: games} over every game read (usable or not): dataset v1.1 marks handicap games with HD[n] and the
+    scoring replays HD >= 2 with the stones placed and the colours swapped (aicup.sgf.setup_and_moves); "absent" games are
+    replayed as written, so a test set without HD[] is scored exactly as before v1.1."""
+    c = Counter("absent" if (h := handicap(sgf)) is None else str(h) for q in questions for sgf, _ in q["games"])
+    return {k: c[k] for k in sorted(c, key=lambda k: (k != "absent", k))}
 
 
 def questions_sha(inputs, questions):
@@ -538,8 +547,9 @@ def main(argv=None):
               + (f" (and {len(input_warnings) - 5} more)" if len(input_warnings) > 5 else ""), file=sys.stderr, flush=True)
     tasks, owner, dropped, passes = build_tasks(questions)
     sha = questions_sha(a.inputs, questions)
+    hd_counts = handicap_counts(questions)
     print(f"{len(questions)} questions, {sum(len(q['games']) for q in questions)} games, {len(tasks)} usable, "
-          f"{len(dropped)} dropped, {passes} passes", flush=True)
+          f"{len(dropped)} dropped, {passes} passes; handicap HD[] " + " ".join(f"{k}:{v}" for k, v in hd_counts.items()), flush=True)
 
     if not a.merge:
         shard = 0 if a.shard is None else a.shard
@@ -593,7 +603,7 @@ def main(argv=None):
               "nshards": a.nshards, "shards": shard_metas, "questions": len(questions),
               "games_declared": int(sum(q["declared_games"] for q in questions)),
               "games_present": int(sum(len(q["games"]) for q in questions)),
-              "games_used": len(tasks), "games_dropped": dropped, "passes": passes,
+              "games_used": len(tasks), "games_dropped": dropped, "passes": passes, "handicap": hd_counts,
               "positions": int(sum(m["positions"] for m in shard_metas)),
               "scoring_wall_s": float(sum(m["scoring_wall_s"] for m in shard_metas)), "total_wall_s": time.time() - t0,
               "l1b_opponent": bool(l1b_models) and all(m.get("l1b_opponent") for m in shard_metas),

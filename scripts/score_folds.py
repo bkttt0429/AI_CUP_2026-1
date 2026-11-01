@@ -34,7 +34,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 from aicup.scoring import (fold_players, init_worker, load_games, part_paths, pause_requested,  # noqa: E402
-                           player_games, resume_plan, score_stream)
+                           player_games, read_game_keys, restrict_players, resume_plan, score_stream)
 
 CKPT = ROOT / "models" / "katago" / "b18c384nbt-humanv0.ckpt"
 STOP = {"signal": None}
@@ -63,6 +63,8 @@ def main():
     ap.add_argument("--cudnn-benchmark", action="store_true")
     ap.add_argument("--out", default=str(ROOT / "results" / "scores"))
     ap.add_argument("--pause-file", default=None, help="default: <out>/PAUSE")
+    ap.add_argument("--game-keys", default=None, help="score only these games of each fold's selection (a CSV with a game_key column or one key "
+                    "per line), e.g. the HD >= 2 games again into a patch directory that scripts/patch_scored.py merges (issue #42)")
     a = ap.parse_args()
     pause_file = Path(a.pause_file) if a.pause_file else Path(a.out) / "PAUSE"
     if pause_requested(pause_file):
@@ -87,8 +89,11 @@ def main():
     def stop_now():
         return STOP["signal"] is not None or pause_requested(pause_file)
 
+    only = read_game_keys(a.game_keys) if a.game_keys else None
     for fold in a.folds:
         players = fold_players(all_games, folds, fold)
+        if only is not None:
+            players = restrict_players(players, only)
         games = [(p.rank, p.player_id, k) for p in players.itertuples() for k in p.game_keys][a.shard::a.nshards]
         if a.limit_games:
             games = games[:a.limit_games]

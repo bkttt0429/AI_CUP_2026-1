@@ -8,8 +8,8 @@ from katago.game.features import Features
 from katago.game.gamestate import GameState
 from katago.train import modelconfigs
 
-from aicup.pilot import game_positions
-from aicup.sgf import parse_moves
+from aicup.pilot import game_positions, start_state
+from aicup.sgf import parse_moves, setup_and_moves
 
 ROOT = Path(__file__).resolve().parents[1]
 CKPT = ROOT / "models" / "katago" / "b18c384nbt-humanv0.ckpt"
@@ -49,6 +49,32 @@ def test_game_positions_features_equal_replay_features():
     b, g = gs.get_input_features(features)
     assert np.array_equal(pos["bins"][1], b[0].astype(np.uint8))
     assert np.array_equal(pos["globs"][1], g[0].astype(np.float32))
+
+
+HD2 = "(;SZ[19]HD[2];B[qf];W[cf];B[qq];W[cc])"  # White (the upper hand) is marked B; pd and dp hold Black's handicap stones
+
+
+def test_game_positions_handicap_game_places_the_stones_and_swaps_the_colours():
+    features = _features()
+    # the record's "B" moves are White's: the W target gets t = 0, 2 with the two handicap stones already on the board
+    pos = game_positions(HD2, "W", features)
+    assert pos["t"].tolist() == [0, 2] and pos["color"].tolist() == [1, 1]
+    assert pos["legal"].sum(axis=1).tolist() == [362 - 2, 362 - 4] and pos["target"].tolist() == [5 * 19 + 16, 16 * 19 + 16]
+    pos_b = game_positions(HD2, "B", features)
+    assert pos_b["t"].tolist() == [1, 3] and pos_b["color"].tolist() == [0, 0] and pos_b["legal"].sum(axis=1).tolist() == [362 - 3, 362 - 5]
+    # the features equal a manual replay from the handicap position: stones placed, White to move, no move history
+    stones, moves = setup_and_moves(HD2)
+    gs = start_state(stones)
+    assert gs.board.pla == Board.WHITE and gs.moves == [] and len(gs.boards) == 1
+    b, g = gs.get_input_features(features)
+    assert np.array_equal(pos["bins"][0], b[0].astype(np.uint8)) and np.array_equal(pos["globs"][0], g[0].astype(np.float32))
+    # the stones are White's opponent's (plane 2 = opponent stones for the side to move) at pd and dp
+    assert b[0, 2].sum() == 2 and b[0, 2, 3, 15] == 1 and b[0, 2, 15, 3] == 1 and b[0, 1].sum() == 0
+    # handicap=False replays the record as written (the pre-v1.1 behaviour): B target = the recorded B marks on an empty board
+    old = game_positions(HD2, "B", features, handicap=False)
+    assert old["t"].tolist() == [0, 2] and old["legal"].sum(axis=1).tolist() == [362, 360]
+    # an even game is unchanged by the flag
+    assert np.array_equal(game_positions(SGF, "B", features)["bins"], game_positions(SGF, "B", features, handicap=False)["bins"])
 
 
 def _first_games_by_colour():

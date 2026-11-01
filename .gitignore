@@ -44,3 +44,10 @@ results/l1b/**/games_s*_p*.csv
 results/seq/**/*.pt
 results/seq/**/*.npz
 results/seq/**/games_s*_p*.csv
+# dataset v1.1 handicap fix (issue #42): the HD table (a million rows), the HD >= 2 key list and the re-scored directories stay on nano4;
+# hd_check.json / patch_scores_*.json / patch_meta.json go to git
+results/data/hd_table.csv
+results/data/hd2_keys.csv
+results/scores_hd*/
+results/l1b/*_hdpatch/
+results/l1b/*_hd/

@@ -50,7 +50,7 @@ def sgf_to_xy(coord):
 
 
 def parse_moves(sgf):
-    """Return [(color, x, y), ...]; a pass is (color, None, None)."""
+    """Return [(color, x, y), ...]; a pass is (color, None, None). The colours are the record's marks: see setup_and_moves."""
     moves = []
     for m in _MOVE_RE.finditer(sgf):
         color, coord = m.group(1), m.group(2)
@@ -59,6 +59,27 @@ def parse_moves(sgf):
         else:
             moves.append((color, ord(coord[0]) - 97, ord(coord[1]) - 97))
     return moves
+
+
+def other_colour(c):
+    return "W" if c == "B" else "B"
+
+
+def setup_and_moves(sgf):
+    """(stones, moves): how to replay one of the competition's records so that the colours are the ACTUAL ones.
+
+    stones: the Black setup stones [(x, y), ...] of a handicap game (HD >= 2: the standard points of HANDICAP_STONES, which the
+    record omits), else []. moves: parse_moves with the actual colours: for HD >= 2 every recorded mark is swapped (Q13: the
+    record marks White's first move, the stronger side's, as B), otherwise unchanged (HD absent, i.e. dataset v1.0, HD[0] and
+    HD[1] 讓先 are recorded as played). The `color` column of the data is the actual colour (issue #42's census), so the target
+    colour of a game needs no change. ValueError for a handicap the table does not cover (HD >= 10)."""
+    hd = handicap(sgf)
+    moves = parse_moves(sgf)
+    if hd is None or hd < 2:
+        return [], moves
+    if hd not in HANDICAP_STONES:
+        raise ValueError(f"unsupported handicap HD[{hd}]")
+    return [sgf_to_xy(c) for c in HANDICAP_STONES[hd]], [(other_colour(c), x, y) for c, x, y in moves]
 
 
 def board_size(sgf):

@@ -8,16 +8,31 @@ import numpy as np
 from katago.game.board import Board
 from katago.game.gamestate import GameState
 
-from aicup.sgf import parse_moves
+from aicup.sgf import parse_moves, setup_and_moves
 
 PASS_POS = 19 * 19
 
 
-def game_positions(sgf, target_color, features):
-    """Inputs for every move of `target_color`, taken from the position before that move."""
-    gs = GameState(19, GameState.RULES_CHINESE)
+def start_state(stones=(), rules=None):
+    """A GameState at the start of a game: empty, Black to play; with `stones` (the Black setup stones (x, y) of a handicap
+    game) placed outside the move history and White to play, as KataGo treats an SGF's AB[] stones."""
+    gs = GameState(19, rules or GameState.RULES_CHINESE)
+    if stones:
+        for x, y in stones:
+            gs.board.set_stone(Board.BLACK, gs.board.loc(x, y))
+        gs.board.set_pla(Board.WHITE)
+        gs.boards = [gs.board.copy()]
+    return gs
+
+
+def game_positions(sgf, target_color, features, handicap=True):
+    """Inputs for every move of `target_color`, taken from the position before that move. handicap: replay HD >= 2 records
+    with their handicap stones on the board and the actual colours (aicup.sgf.setup_and_moves); False replays the record as
+    written (the behaviour before dataset v1.1 made the handicap known)."""
+    stones, moves = setup_and_moves(sgf) if handicap else ([], parse_moves(sgf))
+    gs = start_state(stones)
     bins, globs, legal, target, ts = [], [], [], [], []
-    for t, (c, x, y) in enumerate(parse_moves(sgf)):
+    for t, (c, x, y) in enumerate(moves):
         pla = Board.BLACK if c == "B" else Board.WHITE
         loc = Board.PASS_LOC if x is None else gs.board.loc(x, y)
         if c == target_color:

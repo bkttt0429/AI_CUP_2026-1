@@ -84,6 +84,18 @@ def test_check_game_accepts_passes_and_rejects_bad_games():
     assert not check_game("(;SZ[19];B[pd];B[dp];W[pq])", "W")[0]  # colours do not alternate
 
 
+def test_check_game_handicap_records_are_replayed_with_stones_and_swapped_colours():
+    # HD[2]: the record marks White's first move as B; after the swap White moves first and the W target has 2 moves
+    ok, info = check_game("(;SZ[19]HD[2];B[qf];W[cf];B[qq])", "W")
+    assert ok and info["handicap"] == 2 and info["moves"] == 3 and info["target_moves"] == 2
+    ok_b, info_b = check_game("(;SZ[19]HD[2];B[qf];W[cf];B[qq])", "B")
+    assert ok_b and info_b["target_moves"] == 1
+    assert check_game(GOOD, "B")[1]["handicap"] is None and check_game("(;SZ[19]HD[1];B[pd];W[dp])", "W")[1]["handicap"] == 1
+    assert not check_game("(;SZ[19]HD[2];B[pd];W[cf])", "W")[0]  # a move on an occupied handicap point
+    assert not check_game("(;SZ[19]HD[2];W[qf];B[cf])", "W")[0]  # after the swap Black would move first in a handicap game
+    assert not check_game("(;SZ[19]HD[10];B[qf];W[cf])", "W")[0]  # no table for 10 stones
+
+
 def test_validate_submission_reports_problems(tmp_path):
     ids = ["pub_q_0001", "pub_q_0002", "priv_q_0001"]
     good = tmp_path / "good.csv"

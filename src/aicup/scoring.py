@@ -4,7 +4,9 @@ per-fold game selection and resumable part bookkeeping.
 Used by the pilot, the full-fold scoring run and the submission pipeline, so every
 log-likelihood in the project comes from the same code path.
 """
+import json
 import re
+import shutil
 import time
 from pathlib import Path
 
@@ -120,6 +122,114 @@ def fold_players(games, folds, fold, max_games=20, min_games=5, seed=42):
         rows.append({"rank": r.rank, "player_id": r.player_id,
                      "game_keys": [keys[i] for i in rng.permutation(len(keys))[:max_games]]})
     return pd.DataFrame(rows, columns=["rank", "player_id", "game_keys"])
+
+
+def read_game_keys(path):
+    """The game keys listed in a file: a CSV with a game_key column (any other columns ignored), or one key per line
+    (blank lines and # comments skipped)."""
+    text = Path(path).read_text()
+    lines = text.splitlines()
+    if lines and "game_key" in lines[0].split(","):
+        return pd.read_csv(path, usecols=["game_key"], dtype=str, keep_default_na=False)["game_key"].tolist()
+    return [ln.strip() for ln in lines if ln.strip() and not ln.lstrip().startswith("#")]
+
+
+def restrict_players(players, keys):
+    """fold_players' table with each player's game_keys cut to `keys` (same order); players left with none are dropped.
+    Scoring some games of a fold again (the HD >= 2 games, issue #42): the selection stays the fold's, only the listed
+    games are scored, into another directory that patch_fold then merges over the original."""
+    want = set(keys)
+    rows = [{"rank": r.rank, "player_id": r.player_id, "game_keys": [k for k in r.game_keys if k in want]} for r in players.itertuples()]
+    return pd.DataFrame([r for r in rows if r["game_keys"]], columns=["rank", "player_id", "game_keys"])
+
+
+def _part_moves(fold_dir):
+    """{game_key: (row of the games table, logp [n, S], t [n])} over the finished parts of one scored directory."""
+    out = {}
+    for s, k in completed_parts(fold_dir):
+        csv_path, npz_path = part_paths(fold_dir, s, k)
+        games = pd.read_csv(csv_path, dtype={"game_key": str, "player_id": str, "rank": str, "color": str}, keep_default_na=False)
+        with np.load(npz_path, allow_pickle=False) as z:
+            logp, row, t = z["logp"], z["game_row"].astype(np.int64), z["t"]
+        for g, rec in enumerate(games.to_dict("records")):
+            m = row == g
+            if rec["game_key"] in out:
+                raise ValueError(f"{fold_dir}: game {rec['game_key']} scored more than once")
+            out[rec["game_key"]] = (rec, logp[m], t[m])
+    if not out:
+        raise FileNotFoundError(f"no finished parts in {fold_dir}")
+    return out
+
+
+def patch_fold(base_dir, patch_dir, out_dir):
+    """Write out_dir: base_dir's parts with the games scored in patch_dir replaced, game by game (the table's n_moves and sum
+    columns and the per-move arrays; player_id, rank and color must agree, and the sum columns must be the same set); every
+    other file of base_dir (meta_s*.json, done_s*) is copied. Every patch game must be in base; out_dir must not hold parts.
+    Returns the summary (games, patched, n_moves before/after over the patched games, mean |change| and mean change of every
+    sum column, the patched keys with their move counts), also written to out_dir/patch_meta.json."""
+    base_dir, patch_dir, out_dir = Path(base_dir), Path(patch_dir), Path(out_dir)
+    if out_dir.exists() and completed_parts(out_dir):
+        raise FileExistsError(f"{out_dir} already holds scored parts")
+    patch = _part_moves(patch_dir)
+    base_keys = set()
+    for s, k in completed_parts(base_dir):
+        base_keys |= set(pd.read_csv(part_paths(base_dir, s, k)[0], usecols=["game_key"], dtype=str, keep_default_na=False)["game_key"])
+    if not base_keys:
+        raise FileNotFoundError(f"no finished parts in {base_dir}")
+    missing = sorted(set(patch) - base_keys)
+    if missing:
+        raise ValueError(f"{len(missing)} patched games are not in {base_dir}, e.g. {missing[:3]}")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    sum_cols, deltas, before, after, patched = None, [], 0, 0, []
+    for s, k in completed_parts(base_dir):
+        csv_path, npz_path = part_paths(base_dir, s, k)
+        games = pd.read_csv(csv_path, dtype={"game_key": str, "player_id": str, "rank": str, "color": str}, keep_default_na=False)
+        with np.load(npz_path, allow_pickle=False) as z:
+            logp, row, t = z["logp"], z["game_row"].astype(np.int64), z["t"]
+        cols = [c for c in games.columns if c.startswith("sum_")]
+        sum_cols = sum_cols or cols
+        keep = np.ones(len(row), dtype=bool)
+        new_logp, new_row, new_t = [], [], []
+        for g in np.flatnonzero(games["game_key"].isin(patch)):
+            key = games.at[g, "game_key"]
+            rec, lp, tt = patch[key]
+            for c in ("player_id", "rank", "color"):
+                if str(rec[c]) != str(games.at[g, c]):
+                    raise ValueError(f"game {key}: {c} is {rec[c]!r} in the patch but {games.at[g, c]!r} in {base_dir}")
+            if set(c for c in rec if c.startswith("sum_")) != set(cols):
+                raise ValueError(f"game {key}: the patch has other sum columns than {base_dir}")
+            old_sums = games.loc[g, cols].to_numpy(dtype=float)
+            deltas.append(np.array([float(rec[c]) for c in cols]) - old_sums)
+            before, after = before + int(games.at[g, "n_moves"]), after + int(rec["n_moves"])
+            patched.append({"game_key": key, "n_moves_before": int(games.at[g, "n_moves"]), "n_moves_after": int(rec["n_moves"])})
+            games.at[g, "n_moves"] = int(rec["n_moves"])
+            for c in cols:
+                games.at[g, c] = float(rec[c])
+            keep &= row != g
+            new_logp.append(lp)
+            new_row.append(np.full(len(tt), g, dtype=row.dtype))
+            new_t.append(tt)
+        logp = np.concatenate([logp[keep], *new_logp]) if new_logp else logp[keep]
+        row = np.concatenate([row[keep], *new_row]) if new_row else row[keep]
+        t = np.concatenate([t[keep], *new_t]) if new_t else t[keep]
+        order = np.lexsort((t, row))
+        out_csv, out_npz = part_paths(out_dir, s, k)
+        np.savez_compressed(out_npz, logp=logp[order].astype(np.float32), game_row=row[order].astype(np.int32), t=t[order].astype(np.int16))
+        games.to_csv(out_csv, index=False)
+    for p in base_dir.iterdir():
+        if p.is_file() and not _PART_RE.fullmatch(p.name) and not p.name.endswith((".tmp.csv", ".tmp.npz")):
+            shutil.copy2(p, out_dir / p.name)
+    unused = sorted(set(patch) - {q["game_key"] for q in patched})
+    if unused:  # cannot happen after the membership check above, kept as a guard
+        raise ValueError(f"{len(unused)} patched games were not written, e.g. {unused[:3]}")
+    D = np.stack(deltas) if deltas else np.zeros((0, len(sum_cols or [])))
+    summary = {"base": str(base_dir), "patch": str(patch_dir), "out": str(out_dir), "games": len(base_keys), "patched": len(patched),
+               "n_moves_before": before, "n_moves_after": after,
+               "sum_mean_abs_change": {c: float(np.abs(D[:, i]).mean()) if len(D) else 0.0 for i, c in enumerate(sum_cols or [])},
+               "sum_mean_change": {c: float(D[:, i].mean()) if len(D) else 0.0 for i, c in enumerate(sum_cols or [])},
+               "patched_games": patched}
+    (out_dir / "patch_meta.json").write_text(json.dumps(summary, indent=1) + "\n")
+    return summary
 
 
 def plan_parts(n_items, part_size):

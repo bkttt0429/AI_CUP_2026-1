@@ -693,6 +693,50 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 4 -t 01:00:00 -J hdcensus 
 
 貼回 issue #42：`hd`、`handicap_games.labelled_rank_by_color`、`first_move_on_star_point_share`、`players_with_any_hd1_share`／`hd2_share`；`hd_census.json` 進 git。切換 `data/training` 到 v1.1 時：`games_sha256` 不含 `sgf_content`，快取 provenance 不受影響；REPORT.md §134「沒有讓子」那行要改。
 
+### 4.19 讓子資訊：(a) HD 特徵的 CV、(b) 只重評 HD≥2 的局並併回（2026-11-01，issue #42）
+
+前提：`data/training` 是 v1.1。`aicup.sgf.setup_and_moves` 讓每個重播點（評分、快取、提交、`check_game`、replay）對 HD≥2 的局自動補讓子石、B/W 對調；HD 缺／0／1 的局逐位不變，所以現有評分只有那 3.6% 的局（36,421 局）要重算。設計與決策規則在 METHOD_NOTES §2.24。
+
+**步 1（CPU，幾分鐘）：HD 表與 HD≥2 的 key 清單**（兩個檔都不進 git）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 4 -t 01:00:00 -J hdtable scripts/nano4/run.sbatch python -I scripts/hd_table.py --out results/data/hd_table.csv --keys-out results/data/hd2_keys.csv
+```
+
+**步 2（CPU，約 1 小時；(a)，用現有分數、不重評）**：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 8 -t 03:00:00 -J hdcheck scripts/nano4/run.sbatch python -I scripts/hd_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --hd-table results/data/hd_table.csv --out results/seq/hd_check.json
+```
+
+貼回 issue #42：`scores`（`fused_opp` 須 0.6735、`fused_opp_diff` 0.6916）、`comparisons`（預先指定 `fused_opp_diff_hd vs fused_opp_diff`）、`coverage`、`buckets`、`residual`；`hd_check.json` 進 git。
+
+**步 3（GPU；(b)）：只重評 HD≥2 的局，進補丁目錄。** 五個評分目錄各跑一次，`--game-keys` 直接吃 `hd2_keys.csv`（有 `game_key` 欄）；fold 的選局不變，只評清單上的局，所以每折只有幾百到幾千局。A 的 heads（訓練 folds 1、2）評 0、3、4，B 的評 0、1、2（`check_unseen` 會擋錯的）：
+
+```bash
+# Human SL 18 profiles（原目錄 results/scores）
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] --gres=gpu:1 -c 12 -t 04:00:00 -J hdhsl scripts/nano4/run.sbatch python -I scripts/score_folds.py --folds 0 1 2 3 4 --game-keys results/data/hd2_keys.csv --out results/scores_hdpatch
+# L1b 目標側與對手側，A 與 B
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] --gres=gpu:1 -c 12 -t 02:00:00 -J hdl1bA scripts/nano4/run.sbatch python -I scripts/l1b_score.py --heads results/l1b/heads3_A.pt --folds 0 3 4 --game-keys results/data/hd2_keys.csv --out results/l1b/scores3_hdpatch
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] --gres=gpu:1 -c 12 -t 02:00:00 -J hdl1bAo scripts/nano4/run.sbatch python -I scripts/l1b_score.py --heads results/l1b/heads3_A.pt --folds 0 3 4 --game-keys results/data/hd2_keys.csv --opponent --out results/l1b/scores3_opp_hdpatch
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] --gres=gpu:1 -c 12 -t 02:00:00 -J hdl1bB scripts/nano4/run.sbatch python -I scripts/l1b_score.py --heads results/l1b/heads3_B.pt --folds 0 1 2 --game-keys results/data/hd2_keys.csv --out results/l1b/scores3_B_hdpatch
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] --gres=gpu:1 -c 12 -t 02:00:00 -J hdl1bBo scripts/nano4/run.sbatch python -I scripts/l1b_score.py --heads results/l1b/heads3_B.pt --folds 0 1 2 --game-keys results/data/hd2_keys.csv --opponent --out results/l1b/scores3_B_opp_hdpatch
+```
+
+`--game-keys` 可以用在任何原本的評分命令上（`--shard`／`--nshards` 照舊）；補丁目錄的 part 從 0 編號、可中斷續跑。
+
+**步 4（CPU，幾分鐘）：併回。** 每個目錄的 `fold{F}/patch_meta.json` 與 `--summary` 記錄換了幾局、手數前後、每個 `sum_*` 欄的平均 |Δ| 與平均 Δ（`sum` 的平均 Δ 預期為負——缺子棋盤上評的是對手的棋）：
+
+```bash
+python -I scripts/patch_scored.py --base results/scores --patch results/scores_hdpatch --out results/scores_hd --folds 0 1 2 3 4 --summary results/data/patch_scores_hd.json
+python -I scripts/patch_scored.py --base results/l1b/scores3 --patch results/l1b/scores3_hdpatch --out results/l1b/scores3_hd --folds 0 3 4 --summary results/data/patch_scores3_hd.json
+python -I scripts/patch_scored.py --base results/l1b/scores3_opp --patch results/l1b/scores3_opp_hdpatch --out results/l1b/scores3_opp_hd --folds 0 3 4 --summary results/data/patch_scores3_opp_hd.json
+python -I scripts/patch_scored.py --base results/l1b/scores3_B --patch results/l1b/scores3_B_hdpatch --out results/l1b/scores3_B_hd --folds 0 1 2 --summary results/data/patch_scores3_B_hd.json
+python -I scripts/patch_scored.py --base results/l1b/scores3_B_opp --patch results/l1b/scores3_B_opp_hdpatch --out results/l1b/scores3_B_opp_hd --folds 0 1 2 --summary results/data/patch_scores3_B_opp_hd.json
+```
+
+**步 5（CPU）：修正後的 CV 與提交文件。** 用 `_hd` 目錄跑一次 `hist_check.py`（有 `fused_opp`／`fused_opp_diff` 兩組與殘差診斷；比較 `fused_opp_diff` 與修正前的 0.6916，下降不超過 0.002 視為不劣）和 `hd_check.py`（(a) 在修正後的分數上）；不劣就照 §4.13 的 `fitdiff` 命令、把五個目錄換成 `_hd`、`--out results/models/rank_model_fused_opp_diff_hd.json --fold0-proba results/l1b/fold0_fused_opp_diff_hd_proba.csv`，fold 0 的 `--reference` 對照照舊。11/04 用哪個文件由使用者決定；`predict_submission.py` 的報告有 `handicap`（每局 HD 值的計數），測試檔有沒有帶 `HD[` 一跑就知道。
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：

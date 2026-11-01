@@ -103,10 +103,11 @@ input[type=range] { width: 100%; margin: 0; accent-color: var(--accent); }
     for (const q of neighbours(p)) if (board[q] && board[q] !== color) removeIfDead(board, q);
     removeIfDead(board, p);
   }
-  const colorAt = t => (t % 2 === 0 ? 1 : 2);  // games alternate from Black
+  const colorAt = (g, t) => ((t % 2 === 0) === ((g.first || "B") === "B") ? 1 : 2);  // games alternate from g.first (White after a handicap)
   function rebuild(view, step) {
     view.board.fill(0);
-    for (let t = 0; t < step; t++) play(view.board, view.g.moves[t], colorAt(t));
+    for (const s of view.g.stones || []) view.board[s[1] * 19 + s[0]] = 1;  // a handicap game's Black stones (not in moves)
+    for (let t = 0; t < step; t++) play(view.board, view.g.moves[t], colorAt(view.g, t));
     view.step = step;
   }
 
@@ -212,7 +213,7 @@ input[type=range] { width: 100%; margin: 0; accent-color: var(--accent); }
     for (const v of views) {
       const target = Math.max(0, Math.min(v.total, v.step + delta));
       if (target === v.step) continue;
-      if (delta === 1) { play(v.board, v.g.moves[v.step], colorAt(v.step)); v.step = target; } else rebuild(v, target);
+      if (delta === 1) { play(v.board, v.g.moves[v.step], colorAt(v.g, v.step)); v.step = target; } else rebuild(v, target);
       v.dirty = true; moved = true;
     }
     schedule();

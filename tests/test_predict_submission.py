@@ -148,8 +148,15 @@ def test_shards_then_merge_equal_the_single_process_run(tmp_path, fake_scorer):
     assert [m["shard"] for m in rm["shards"]] == [0, 1, 2] and sum(m["n_tasks"] for m in rm["shards"]) == 375
     assert sorted(k for m in range(3) for k in np.load(ps.shard_path(merged, m, 3))["task"].tolist()) == list(range(375))
     assert np.load(ps.shard_path(merged, 1, 3))["task"].tolist() == list(range(1, 375, 3))
-    for key in ("questions", "games_used", "games_dropped", "passes", "fallback_questions", "problems", "exit_code"):
+    for key in ("questions", "games_used", "games_dropped", "passes", "handicap", "fallback_questions", "problems", "exit_code"):
         assert rm[key] == rs[key], key
+    assert rs["handicap"] == {"absent": 375}  # the mock test is v1.0-style: no HD[]
+
+
+def test_handicap_counts_orders_absent_first_then_by_handicap():
+    qs = [{"games": [("(;SZ[19];B[pd])", "B"), ("(;SZ[19]HD[2];B[qf])", "W"), ("(;SZ[19]HD[0];B[pd])", "B"), ("(;SZ[19]HD[2];B[qf])", "B")]},
+          {"games": [("(;SZ[19]HD[1];B[pd])", "W")]}]
+    assert ps.handicap_counts(qs) == {"absent": 1, "0": 1, "1": 1, "2": 2}
 
 
 def test_merge_refuses_missing_inconsistent_or_duplicated_shards(tmp_path, fake_scorer, capsys):
