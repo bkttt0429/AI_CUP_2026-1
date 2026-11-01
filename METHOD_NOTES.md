@@ -338,7 +338,7 @@
   - `aicup.fused`：特徵集 `fused_opp_diff` = 56 維 `fused_opp` + `diff_features(l1b_sums, opp_sums)` 的 3 維（每題各局 pmi = `posterior_mean_index` 的 10 個 L1b 加總；mean(對手 − 自己)、mean(對手)、std(對手)），與 `error_analysis.py` 的 `mlp_diff` 逐欄相同（`question_diff_features` 共用）。文件多記 `feature_set`（`fused`／`fused_opp`／`fused_opp_diff`；舊文件無此鍵，由特徵名推得），名稱 `mlp_h32_fused_opp_diff`，`fused_predict(..., feature_set=)` 依集合算特徵；舊的 `opponent` 旗標與呼叫方式不變。
   - `scripts/fit_fused_model.py --opp ... --diff`：多擬合 `fused_opp_diff` 的 MLP（h32，同一批訓練題），fold 0 表多 `fused_opp_diff_<model>`、`fused_opp_diff_avg` 與 `fused_opp_diff_avg vs fused_opp_avg`（玩家 bootstrap）；文件預設 `results/models/rank_model_fused_opp_diff.json`，另存 `fused_opp_state`／`fused_state` 供對照；`--reference results/l1b/opp_fold0_check.json` 確認 hsl／fused／fused_opp 列與以前完全相同。
   - `scripts/predict_submission.py --fused-model rank_model_fused_opp_diff.json`：差值特徵從分片既有的每局 `l1b_sums`／`l1b_opp_sums` 算（每個 L1b 模型各算、機率再平均，規則不變），不需重新評分；沒有對手分數的分片同 fused_opp 拒絕（exit 2）；報告的 `decision_model` 寫 `fused_opp_diff`。
-- **採用檢查（fold 0，只評這一次）**：`fused_opp_avg` 須重現 0.6716（差 0）；預期 `fused_opp_diff_avg` ≈ 0.69（CV 的 +0.018）。若為負或 CI 含 0 且點差 < 0.005 → 回報，由使用者決定是否仍提交（CV 四折全正是較強的證據，fold 0 只是重現檢查）。
+- **採用檢查（fold 0，只評這一次）**：`fused_opp_avg` 須重現 0.6716（差 0）；預期 `fused_opp_diff_avg` ≈ 0.69（CV 的 +0.018）。之後與 §2.10／§2.11 相同，用 mock 40 題跑一次提交管線並與離線機率比對（`check_fused_submission.py --set fused_opp_diff_avg`；NANO4 §4.13 步 1b），提早驗證 11/04 的新路徑。`check_fused_submission.py`／`pack_weights.py` 本來就是通用的，不必改（nano4 讀過）。若為負或 CI 含 0 且點差 < 0.005 → 回報，由使用者決定是否仍提交（CV 四折全正是較強的證據，fold 0 只是重現檢查）。
 - **11/04**：以 `rank_model_fused_opp_diff.json` 出提交；若提交次數允許，`rank_model_fused_opp.json` 也出一版上 Public LB 對比（§2.18 洩漏疑慮的最終檢查）。`pack_weights.py` 把新文件一併打包。
 - **結果**：待 nano4（NANO4 §4.13）。
 

@@ -576,6 +576,15 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 02:00:00 -J fitdiff 
 
 預期：`--reference` 對 hsl／fused_*／fused_opp_* 各列印 `+0.00e+00`（`fused_opp_avg` 0.6716 重現）；`fused_opp_diff_avg` 約 0.69，`fused_opp_diff_avg vs fused_opp_avg` 約 +0.018。貼回 issue #25：fold 0 的全部列（總分、NLL、by n）與那條比較；`rank_model_fused_opp_diff.json`、`fold0_fused_opp_diff_proba.csv` 進 git（結果檔走新分支 + PR）。
 
+**步 1b：mock 40 題驗提交管線**（與 §4.3／§4.4 採用時相同；nano4 建議，2026-11-01）。文件擬合好後，用同一組 mock 題跑一次提交管線，再與離線的 fold 0 機率比對；`decision_model` 應為 `fused_opp_diff`，`fused_fallback_questions` 為空，`check_fused_submission.py` 的機率差應在浮點誤差內（和 `fused_opp` 當時一樣）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 02:00:00 -J mockd1 scripts/nano4/run.sbatch python -I scripts/predict_submission.py --inputs tests/fixtures/mock_fold0_40/rank_prediction_test_public.csv tests/fixtures/mock_fold0_40/rank_prediction_test_private.csv --expect-rows 40 --expect-public 20 --expect-private 20 --out results/mock_fold0_40_diff/submission_rank.csv --l1b-heads results/l1b/heads3_A.pt results/l1b/heads3_B.pt --fused-model results/models/rank_model_fused_opp_diff.json
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 01:00:00 -J diffchk scripts/nano4/run.sbatch python -I scripts/check_fused_submission.py --submission results/mock_fold0_40_diff/submission_rank.csv --offline results/l1b/fold0_fused_opp_diff_proba.csv --set fused_opp_diff_avg --answers tests/fixtures/mock_fold0_40/answers.csv --report results/mock_fold0_40_diff/fused_check.json
+```
+
+貼回 `fused_check.json` 的摘要（最大機率差、40 題的分數）；`fused_check.json` 與 `submission_rank_report.json` 進 git。
+
 **步 2（11/04，官方檔案到手後）**：§4.4 的分片／合併指令不變，合併時 `--fused-model results/models/rank_model_fused_opp_diff.json`；報告的 `decision_model` 應為 `fused_opp_diff`、`fused_fallback_questions` 為空。若提交次數允許，另以 `rank_model_fused_opp.json` 合併一次出第二版，兩版都上 Public LB 對比。`pack_weights.py --models` 加上新文件。
 
 ## 5. 同步程式碼、取回結果
