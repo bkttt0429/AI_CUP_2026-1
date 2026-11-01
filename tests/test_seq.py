@@ -143,6 +143,31 @@ def test_encoders_fit_predict_round_trip_and_ignore_padding(tmp_path, arch):
     assert torch.allclose(alone, padded, atol=1e-5), f"{arch}: padding changes the output by {(alone - padded).abs().max():.2e}"
 
 
+def test_mamba3_scan_is_the_kernels_closed_form_and_rotation_keeps_the_direct_term():
+    torch.manual_seed(0)
+    B, T, H, P, N = 2, 7, 3, 4, 6
+    q, k, v = torch.randn(B, T, H, N), torch.randn(B, T, H, N), torch.randn(B, T, H, P)
+    dt, trap, D = torch.rand(B, T, H), torch.randn(B, T, H), torch.rand(H)
+    adt = -torch.rand(B, T, H) * dt
+    y = sm.mamba3_scan(q, k, v, adt, dt, trap, D)
+    lam = torch.sigmoid(trap)
+    want = torch.zeros_like(y)
+    for b in range(B):
+        for h in range(H):
+            for t in range(T):
+                # mamba3_siso_fwd: Q K^T scaled and decayed below the diagonal, the diagonal through gamma and D
+                want[b, t, h] = (D[h] + dt[b, t, h] * lam[b, t, h] * (q[b, t, h] @ k[b, t, h])) * v[b, t, h]
+                for j in range(t):
+                    scale = dt[b, j, h] * lam[b, j, h] + dt[b, j + 1, h] * (1 - lam[b, j + 1, h])
+                    want[b, t, h] += torch.exp(adt[b, j + 1:t + 1, h].sum()) * scale * (q[b, t, h] @ k[b, j, h]) * v[b, j, h]
+    assert torch.allclose(y, want, atol=1e-5)
+    theta = torch.rand(B, T, H, 2)
+    x = torch.randn(B, T, H, N)
+    r = sm._rotate(x, torch.cos(theta), torch.sin(theta))
+    assert torch.equal(r[..., 4:], x[..., 4:]) and torch.allclose(r.norm(dim=-1), x.norm(dim=-1), atol=1e-5)
+    assert torch.allclose(r[..., 0], x[..., 0] * torch.cos(theta[..., 0]) - x[..., 1] * torch.sin(theta[..., 0]))
+
+
 def test_make_encoder_rejects_unknown_arch_and_zero_delta_at_init():
     with pytest.raises(ValueError, match="unknown arch"):
         sm.make_encoder(sm.SeqCfg(arch="lstm", device="cpu"))

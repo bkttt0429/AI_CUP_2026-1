@@ -6,7 +6,7 @@ MLPModel(hidden=32), player bootstrap). Feature sets: fused_opp (the A/B sums of
 per --seq NAME:DIR, fused_opp_seq_<NAME>: the same 56 features with the target's L1b sums replaced by the encoder's
 base + Δ (the opponent's sums stay the A/B ones). Pre-specified (conditions (1) CI lower bound > 0, (3) > 0 in >= 3 of 4
 folds, (4) >= 0.005): fused_opp_seq_<--pre> vs fused_opp (default --pre gru; several encoders can be named). Reported only:
-every other encoder vs fused_opp, and fused_opp_seq_{ctm_seq, transformer, mamba} vs fused_opp_seq_gru when both are given. The "sum" encoder's set must equal
+every other encoder vs fused_opp, fused_opp_seq_{ctm_seq, transformer, mamba, mamba3} vs fused_opp_seq_gru when both are given, and mamba3 vs mamba. The "sum" encoder's set must equal
 fused_opp (a check of the plumbing). Fold 0 is refused.
 
   python -I scripts/seq_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp \\
@@ -119,7 +119,9 @@ def main(argv=None):
     pre = [(f"fused_opp_seq_{n}", "fused_opp") for n in a.pre]
     report = [(f"fused_opp_seq_{n}", "fused_opp") for n in seq_dirs if n not in a.pre]
     if "gru" in seq_dirs:
-        report += [(f"fused_opp_seq_{n}", "fused_opp_seq_gru") for n in ("ctm_seq", "transformer", "mamba") if n in seq_dirs]
+        report += [(f"fused_opp_seq_{n}", "fused_opp_seq_gru") for n in ("ctm_seq", "transformer", "mamba", "mamba3") if n in seq_dirs]
+    if "mamba" in seq_dirs and "mamba3" in seq_dirs:
+        report.append(("fused_opp_seq_mamba3", "fused_opp_seq_mamba"))
     comps = {"pre_specified": {f"{x} vs {z}": compare(x, z) for x, z in pre}, "report_only": {f"{x} vs {z}": compare(x, z) for x, z in report}}
     for s, h in head.items():
         print(f"{s:22s} {h['balanced_mean_over_n']:.4f}  NLL {h['nll_balanced']:.4f}  by n " + " ".join(f"{m}: {h['balanced_by_n'][str(m)]:.4f}" for m in SIZES)

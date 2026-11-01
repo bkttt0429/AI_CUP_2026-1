@@ -9,7 +9,9 @@ neuron-level models turn each neuron's history of pre-activations into its activ
 synchronisation of neuron pairs accumulated recursively over the steps with learned decays -- the original CTM's
 machinery with the data fed one move per tick instead of attended to), transformer (self-attention over the game's steps
 with sinusoidal step positions, masked mean + max pooling) and mamba (Mamba blocks: a gated, causal selective state-space
-scan over the steps, Gu and Dao 2023, last state + masked mean). Training: class-balanced cross-entropy of the
+scan over the steps, Gu and Dao 2023, last state + masked mean) and mamba3 (the same readout over Mamba-3 SISO blocks, Lahoti
+et al. 2026: exponential-trapezoidal recurrence, complex states as rotations of B and C, no convolution; the update of the
+authors' fused kernel written as a loop). Training: class-balanced cross-entropy of the
 player's rank per game + gamma ‖Δ‖², Adam, inner early stopping by held-out players (settrain.inner_players), the best
 inner CE kept; the step inputs are standardised with statistics of the training steps stored in the model.
 """
@@ -30,7 +32,7 @@ from aicup.rankmodel import class_weights
 from aicup.seqdata import STEP_DIM, pad_batch
 from aicup.settrain import INNER_SEED, inner_players
 
-ARCHS = ("sum", "conv", "gru", "ctm_seq", "transformer", "mamba")
+ARCHS = ("sum", "conv", "gru", "ctm_seq", "transformer", "mamba", "mamba3")
 N_CLASSES = len(LEVELS)
 
 
@@ -57,6 +59,7 @@ class SeqCfg:
     d_state: int = 16
     d_conv: int = 4
     expand: int = 2
+    headdim: int = 16
 
 
 class _Encoder(nn.Module):
@@ -234,11 +237,14 @@ class _MambaBlock(nn.Module):
 class MambaEncoder(_Encoder):
     """Causal, so a game's padded tail cannot reach its steps; the readout is the state after its last move + the masked mean."""
 
+    def _block(self, d, cfg):
+        return _MambaBlock(d, cfg.d_state, cfg.d_conv, cfg.expand)
+
     def __init__(self, d_in, cfg):
         super().__init__(d_in)
         h = cfg.hidden
         self.proj = nn.Linear(d_in, h)
-        self.blocks = nn.ModuleList(_MambaBlock(h, cfg.d_state, cfg.d_conv, cfg.expand) for _ in range(cfg.layers))
+        self.blocks = nn.ModuleList(self._block(h, cfg) for _ in range(cfg.layers))
         self.norm = nn.LayerNorm(h)
         self.head = nn.Sequential(nn.Linear(2 * h, h), nn.ReLU())
         self.out = zero_linear(h)
@@ -252,7 +258,79 @@ class MambaEncoder(_Encoder):
         return self.out(self.head(torch.cat([h.gather(1, last).squeeze(1), _masked_mean(h, mask)], dim=-1)))
 
 
-ENCODERS = {"sum": SumEncoder, "conv": ConvEncoder, "gru": GRUEncoder, "ctm_seq": CTMSeqEncoder, "transformer": TransformerEncoder, "mamba": MambaEncoder}
+def mamba3_scan(q, k, v, adt, dt, trap, D):
+    """y [B, T, H, P] before the gate: the recurrence of Mamba-3's SISO kernel (mamba_ssm.ops.triton.mamba3.mamba3_siso_fwd) as a loop.
+    q, k [B, T, H, N] carry the bias and the rotation, v [B, T, H, P], adt, dt, trap (the raw projection) [B, T, H], D [H]. With
+    gamma_t = dt_t sigmoid(trap_t) and scale_t = gamma_t + dt_{t+1} (1 - sigmoid(trap_{t+1})), S_t = exp(adt_t) (S_{t-1} + scale_{t-1} v_{t-1} k_{t-1}^T)
+    and y_t = S_t q_t + (D + gamma_t q_t^T k_t) v_t."""
+    lam = torch.sigmoid(trap)
+    gamma = dt * lam
+    scale = gamma + F.pad(dt[:, 1:] * (1.0 - lam[:, 1:]), (0, 0, 0, 1))
+    decay = torch.exp(adt)
+    state = torch.zeros(*v.shape[0:1], v.shape[2], v.shape[3], q.shape[3], dtype=v.dtype, device=v.device)
+    ys = []
+    for t in range(v.shape[1]):
+        state = state * decay[:, t, :, None, None]
+        direct = D + gamma[:, t] * (q[:, t] * k[:, t]).sum(dim=-1)
+        ys.append((state * q[:, t, :, None, :]).sum(dim=-1) + direct.unsqueeze(-1) * v[:, t])
+        state = state + scale[:, t, :, None, None] * v[:, t].unsqueeze(-1) * k[:, t, :, None, :]
+    return torch.stack(ys, dim=1)
+
+
+def _rotate(x, cos, sin):
+    """The first 2A dimensions of x [..., N] as A pairs turned by the angles behind cos, sin [..., A]; the rest unrotated."""
+    a = cos.shape[-1]
+    x0, x1 = x[..., 0:2 * a:2], x[..., 1:2 * a:2]
+    pairs = torch.stack([x0 * cos - x1 * sin, x0 * sin + x1 * cos], dim=-1).flatten(-2)
+    return torch.cat([pairs, x[..., 2 * a:]], dim=-1)
+
+
+class _Mamba3Block(nn.Module):
+    """Pre-norm residual block around the module of mamba_ssm.modules.mamba3.Mamba3 in its SISO form (one B, C per step shared by the
+    heads, half of the state dimensions rotated, the gate silu(z) instead of the optional norm), same initialisation."""
+
+    def __init__(self, d, cfg, dt_min=0.001, dt_max=0.1, dt_floor=1e-4):
+        super().__init__()
+        e, n, p = cfg.expand * d, cfg.d_state, cfg.headdim
+        if e % p != 0 or n < 4:
+            raise ValueError(f"mamba3: expand * hidden {e} must divide by headdim {p} and d_state {n} must be at least 4")
+        heads = e // p
+        self.sizes = [e, e, n, n, heads, heads, heads, (n // 2 - (n // 2) % 2) // 2]
+        self.heads, self.headdim, self.A_floor = heads, p, 1e-4
+        self.norm = nn.LayerNorm(d)
+        self.in_proj = nn.Linear(d, sum(self.sizes), bias=False)
+        dt0 = torch.exp(torch.rand(heads) * (math.log(dt_max) - math.log(dt_min)) + math.log(dt_min)).clamp_min(dt_floor)
+        self.dt_bias = nn.Parameter(dt0 + torch.log(-torch.expm1(-dt0)))
+        self.B_bias, self.C_bias = nn.Parameter(torch.ones(heads, n)), nn.Parameter(torch.ones(heads, n))
+        self.B_weight, self.C_weight = nn.Parameter(torch.ones(n)), nn.Parameter(torch.ones(n))
+        self.D = nn.Parameter(torch.ones(heads))
+        self.out_proj = nn.Linear(e, d, bias=False)
+
+    @staticmethod
+    def _rms(x, weight, eps=1e-5):
+        return x / torch.sqrt(x.pow(2).mean(dim=-1, keepdim=True) + eps) * weight
+
+    def forward(self, x):
+        z, u, B, C, dd_dt, dd_A, trap, angles = self.in_proj(self.norm(x)).split(self.sizes, dim=-1)
+        shape = (*x.shape[:2], self.heads, self.headdim)
+        z, u = z.reshape(shape), u.reshape(shape)
+        A = -(dd_A.clamp_min(0.0) + torch.reciprocal(1.0 - dd_A.clamp_max(0.0)))  # the kernel's heavy-tail activation
+        dt = F.softplus(dd_dt + self.dt_bias)
+        theta = torch.cumsum((torch.tanh(angles).unsqueeze(2) * math.pi) * dt.unsqueeze(-1), dim=1)  # [B, T, H, A]
+        cos, sin = torch.cos(theta), torch.sin(theta)
+        k = _rotate(self._rms(B, self.B_weight).unsqueeze(2) + self.B_bias, cos, sin)
+        q = _rotate(self._rms(C, self.C_weight).unsqueeze(2) + self.C_bias, cos, sin)
+        y = mamba3_scan(q, k, u, A.clamp_max(-self.A_floor) * dt, dt, trap, self.D) * F.silu(z)
+        return x + self.out_proj(y.flatten(-2))
+
+
+class Mamba3Encoder(MambaEncoder):
+    def _block(self, d, cfg):
+        return _Mamba3Block(d, cfg)
+
+
+ENCODERS = {"sum": SumEncoder, "conv": ConvEncoder, "gru": GRUEncoder, "ctm_seq": CTMSeqEncoder, "transformer": TransformerEncoder, "mamba": MambaEncoder,
+            "mamba3": Mamba3Encoder}
 
 
 def make_encoder(cfg, d_in=STEP_DIM):
