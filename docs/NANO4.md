@@ -568,13 +568,15 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 04:00:00 -J erran sc
 
 ### 4.13 提交改用 fused_opp_diff（2026-11-01，issue #25）
 
-與 §4.3／§4.4 當年同一套流程。**步 1：fold 0 評一次 + 擬合提交用的文件**（CPU，`-c 12`；fused_opp 當時約 20 分鐘，這次多一個集合）：
+與 §4.3／§4.4 當年同一套流程。**步 1：fold 0 評一次 + 擬合提交用的文件**（CPU，`-c 12`；fused_opp 當時約 20 分鐘，這次多一個集合；時限 nano4 放寬到 4 小時：這次 fold 0 只評一次，不想因逾時重跑）：
 
 ```bash
-sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 02:00:00 -J fitdiff scripts/nano4/run.sbatch python -I scripts/fit_fused_model.py --l1b A:results/l1b/scores3:results/l1b/heads3_A.json B:results/l1b/scores3_B:results/l1b/heads3_B.json --opp A:results/l1b/scores3_opp B:results/l1b/scores3_B_opp --diff --out results/models/rank_model_fused_opp_diff.json --fold0-proba results/l1b/fold0_fused_opp_diff_proba.csv --reference results/l1b/opp_fold0_check.json
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 04:00:00 -J fitdiff scripts/nano4/run.sbatch python -I scripts/fit_fused_model.py --l1b A:results/l1b/scores3:results/l1b/heads3_A.json B:results/l1b/scores3_B:results/l1b/heads3_B.json --opp A:results/l1b/scores3_opp B:results/l1b/scores3_B_opp --diff --out results/models/rank_model_fused_opp_diff.json --fold0-proba results/l1b/fold0_fused_opp_diff_proba.csv --reference results/l1b/opp_fold0_check.json
 ```
 
 預期：`--reference` 對 hsl／fused_*／fused_opp_* 各列印 `+0.00e+00`（`fused_opp_avg` 0.6716 重現）；`fused_opp_diff_avg` 約 0.69，`fused_opp_diff_avg vs fused_opp_avg` 約 +0.018。貼回 issue #25：fold 0 的全部列（總分、NLL、by n）與那條比較；`rank_model_fused_opp_diff.json`、`fold0_fused_opp_diff_proba.csv` 進 git（結果檔走新分支 + PR）。
+
+**結果（nano4，2026-11-01，PR #27 `75a66c6`；job 665469，約 24 分）**：`--reference` 全部 `+0.00e+00`、`fused_opp_avg` 0.6716 重現；文件 `mlp_h32_fused_opp_diff`／`fused_opp_diff`／59 特徵／203,328 題。**`fused_opp_diff_avg` 0.6888**（NLL 1.1177；n=5／10／20 0.6392／0.6991／0.7280；A 0.6860、B 0.6817），`fused_opp_diff_avg vs fused_opp_avg` **+0.0172 [+0.0098, +0.0245]**。採用檢查通過（METHOD_NOTES §2.19）。
 
 **步 1b：mock 40 題驗提交管線**（與 §4.3／§4.4 採用時相同；nano4 建議，2026-11-01）。文件擬合好後，用同一組 mock 題跑一次提交管線，再與離線的 fold 0 機率比對；`decision_model` 應為 `fused_opp_diff`，`fused_fallback_questions` 為空，`check_fused_submission.py` 的機率差應在浮點誤差內（和 `fused_opp` 當時一樣）：
 
@@ -585,7 +587,19 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 01:00:00 -J diffchk script
 
 貼回 `fused_check.json` 的摘要（最大機率差、40 題的分數）；`fused_check.json` 與 `submission_rank_report.json` 進 git。
 
+**結果（nano4，2026-11-01，jobs 665537／666475，`results/mock_fold0_40_diff/`）**：`decision_model` `fused_opp_diff`、無退路題、無 problems、375 局 0 丟棄；40 題 max |Δp| 5.12e-4（容差 1e-3）、0 題決策不同，PASS。注意：`heads3_{A,B}.pt: trained by other training code` 是 `rankmodel.py`（`0be8e82`）被算進 `code_sha256` 所致，heads 沒變、無害，11/04 會再出現；這次評分 1785 s（10/28 為 248 s，節點上有其他 GPU 工作），11/04 排程留餘裕；`submission_rank_report.json` 要 `git add -f`。
+
 **步 2（11/04，官方檔案到手後）**：§4.4 的分片／合併指令不變，合併時 `--fused-model results/models/rank_model_fused_opp_diff.json`；報告的 `decision_model` 應為 `fused_opp_diff`、`fused_fallback_questions` 為空。若提交次數允許，另以 `rank_model_fused_opp.json` 合併一次出第二版，兩版都上 Public LB 對比。`pack_weights.py --models` 加上新文件。
+
+### 4.14 每手分數的「分布範圍」：每局 pmi_t 直方圖的題內平均接在 fused_opp_diff 後面（2026-11-01，issue #29）
+
+提交管線不動、不碰 fold 0；可與 §4.13 的 fold 0 檢查並行。§4.10 的作法換兩處：每局特徵換成 pmi_t 在 [0, 9] 等分 10 格的直方圖（`aicup.seqshape.game_pmi_hist`），基準換成 `fused_opp_diff`（59 維）。特徵集 `fused_opp`（56）、`fused_opp_diff`（59）、`fused_opp_diff_hist`（69，目標手）、`fused_opp_diff_hist2`（79，再加對手手）。CV 協定與 `l1b_opp_check`／`error_analysis` 相同；另算各等級的合併直方圖與 `fused_opp`／`fused_opp_diff` 的 OOF 殘差診斷（只報告）。CPU 一支工作：四個特徵集 × 四折的 MLP 加兩側直方圖表，約 §4.10 的 1.5 倍（§4.10 實跑 4.5 分），`-t 02:00:00` 足夠：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 02:00:00 -J histcheck scripts/nano4/run.sbatch python -I scripts/hist_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --out results/seq/hist_check.json
+```
+
+預期：`fused_opp` 0.6735、`fused_opp_diff` 0.6916（每折同 `error_analysis.json` 的 `mlp`／`mlp_diff`）；`fused_opp` 殘差的 `spearman_oof_mean_e_vs_opp_minus_own` 重現 −0.213。**預先指定** `fused_opp_diff_hist vs fused_opp_diff`（條件 (1)(3)(4)）；只報告 `hist2 vs fused_opp_diff`、`hist2 vs hist`、`fused_opp_diff vs fused_opp`（+0.0181）。貼回 issue #29：四列（總分、NLL、by n、每折）、四條比較、各等級的合併直方圖與相鄰重疊係數、兩個模型的殘差 Spearman；`hist_check.json` 進 git（結果檔走新分支 + PR）。決策見 METHOD_NOTES §2.20：過 → 另開 issue 接進提交（分片後算直方圖，不需重新評分）；沒過 → 這把尺上的「分布範圍」結束。C 路線的判讀規則：`fused_opp_diff` 的 |Spearman(mean e, opp − own)| ≥ 0.10 → 開 C 的 issue。
 
 ## 5. 同步程式碼、取回結果
 

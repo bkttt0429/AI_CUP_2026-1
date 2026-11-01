@@ -332,7 +332,7 @@
 - **解讀**：(1) 判錯的原因不在可觀察的資料量或下法特徵上，而是每人固定的落差（§2.13 再次確認）。(2) 那個落差有一部分**量得到**：伺服器依標籤配對，對手的棋力估計比自己的更貼近標籤；原本的 MLP 沒把差值學出來（殘差仍與差值相關），顯式的三個差值特徵補上，+0.018 是落子通道所有實驗裡唯一過關的，而且 NLL 同步變好（1.1396）。(3) 模型類別與容量不是問題：樹模型與更寬的 MLP 都更差。(4) nano4 的洩漏檢查：「同一局也以對手身分出現」為 0（100 萬列棋譜字串全部不同；前 40 手相同的只有 135 列、多為常見定式）。另一條「對手的其他棋局在 head 的訓練折裡」無法由資料排除，但它在 CV 與正式提交間**對稱**（CV 只用一個 head、正式提交 A／B 平均，被看過的對手比例正式提交只會更高），不會讓 CV 相對測試樂觀；前提是測試局的對手與訓練局來自同一母體，這點現行 `fused_opp` 的 16 維對手特徵同樣倚賴，而其 fold 0（0.6716）與 CV（0.6735）一致。最終檢查是 11/04 的 Public LB 兩版對比。
 - **決策（使用者，2026-11-01）**：`mlp_diff` 接進提交（§2.19，issue #25），`fused_opp` 留作退路。
 
-### 2.19 提交改用 fused_opp_diff：三個「對手 − 自己」差值特徵（2026-11-01；issue #25；nano4 待跑 fold 0）
+### 2.19 提交改用 fused_opp_diff：三個「對手 − 自己」差值特徵（2026-11-01；issue #25；PR #26，nano4 驗證 2026-11-01，結果 PR #27）
 - **使用者決定（2026-11-01）**：§2.18 的 `mlp_diff` 過關，接進提交；流程與 §2.10／§2.11 相同（fold 0 評一次當採用檢查，folds 1–4 擬合提交用的文件）。
 - **做法**：
   - `aicup.fused`：特徵集 `fused_opp_diff` = 56 維 `fused_opp` + `diff_features(l1b_sums, opp_sums)` 的 3 維（每題各局 pmi = `posterior_mean_index` 的 10 個 L1b 加總；mean(對手 − 自己)、mean(對手)、std(對手)），與 `error_analysis.py` 的 `mlp_diff` 逐欄相同（`question_diff_features` 共用）。文件多記 `feature_set`（`fused`／`fused_opp`／`fused_opp_diff`；舊文件無此鍵，由特徵名推得），名稱 `mlp_h32_fused_opp_diff`，`fused_predict(..., feature_set=)` 依集合算特徵；舊的 `opponent` 旗標與呼叫方式不變。
@@ -340,7 +340,37 @@
   - `scripts/predict_submission.py --fused-model rank_model_fused_opp_diff.json`：差值特徵從分片既有的每局 `l1b_sums`／`l1b_opp_sums` 算（每個 L1b 模型各算、機率再平均，規則不變），不需重新評分；沒有對手分數的分片同 fused_opp 拒絕（exit 2）；報告的 `decision_model` 寫 `fused_opp_diff`。
 - **採用檢查（fold 0，只評這一次）**：`fused_opp_avg` 須重現 0.6716（差 0）；預期 `fused_opp_diff_avg` ≈ 0.69（CV 的 +0.018）。之後與 §2.10／§2.11 相同，用 mock 40 題跑一次提交管線並與離線機率比對（`check_fused_submission.py --set fused_opp_diff_avg`；NANO4 §4.13 步 1b），提早驗證 11/04 的新路徑。`check_fused_submission.py`／`pack_weights.py` 本來就是通用的，不必改（nano4 讀過）。若為負或 CI 含 0 且點差 < 0.005 → 回報，由使用者決定是否仍提交（CV 四折全正是較強的證據，fold 0 只是重現檢查）。
 - **11/04**：以 `rank_model_fused_opp_diff.json` 出提交；若提交次數允許，`rank_model_fused_opp.json` 也出一版上 Public LB 對比（§2.18 洩漏疑慮的最終檢查）。`pack_weights.py` 把新文件一併打包。
-- **結果**：待 nano4（NANO4 §4.13）。
+- **結果（nano4，2026-11-01；PR #27 `75a66c6`，只有結果檔；程式 `main` `f71f768`；步 1 job 665469 約 24 分、步 1b jobs 665537／666475；cloud 對過 PR 內的 `rank_model_fused_opp_diff.json`、`fused_check.json`、`submission_rank_report.json`，數字一致）**：使用者本人在 nano4 的對話裡同意 fold 0 評一次；fold 0 只評這一次，不再用它選任何東西。
+  - **步 1**：`--reference` 全部 `+0.00e+00`（hsl 0.6113；fused_A／B／avg 0.6479／0.6510／0.6535；fused_opp_A／B／avg 0.6684／0.6684／0.6716；`fused_opp_avg vs fused_avg` +0.0181 [+0.0094, +0.0266]，與 `opp_fold0_check.json` 相同）。文件 `mlp_h32_fused_opp_diff`、`feature_set` `fused_opp_diff`、59 個特徵、203,328 訓練題（`results/models/rank_model_fused_opp_diff.json`、`results/l1b/fold0_fused_opp_diff_proba.csv`）。
+
+  | fold 0 | 總分 | NLL | n=5 / 10 / 20 |
+  | --- | --- | --- | --- |
+  | fused_opp_avg | 0.6716 | 1.1747 | 0.6232 / 0.6801 / 0.7114 |
+  | fused_opp_diff_A | 0.6860 | 1.1277 | 0.6417 / 0.6979 / 0.7185 |
+  | fused_opp_diff_B | 0.6817 | 1.1454 | 0.6330 / 0.6927 / 0.7195 |
+  | **fused_opp_diff_avg** | **0.6888** | 1.1177 | 0.6392 / 0.6991 / 0.7280 |
+
+  `fused_opp_diff_avg vs fused_opp_avg` **+0.0172 [+0.0098, +0.0245]**（n=5／10／20：+0.0160／+0.0190／+0.0166）；CV 是 +0.0181。**採用檢查通過。**
+  - **步 1b**（mock 40 題）：`decision_model` `fused_opp_diff`，`fused_fallback_questions` 與 `problems` 空，375 局 0 丟棄；`check_fused_submission.py` 40 題 max |Δp| 5.12e-4（容差 1e-3；fused_opp 當時 2.80e-4）、0 題決策不同，PASS（`results/mock_fold0_40_diff/`）。
+  - **注意（nano4）**：(1) fold 0 擋不住「head 看過對手其他棋局」這條路徑（§2.18），這次只確認增益重現與管線沒寫錯，最終看 11/04 後 Public LB 的兩版對比。(2) `mockd1` 印 `heads3_{A,B}.pt: trained by other training code`：`rankmodel.py` 在 `0be8e82` 改過而被算進 `code_sha256`，heads 權重沒變、機率差在容差內，判定無害，11/04 會再出現。(3) 這次評分 1785 s（10/28 為 248 s；`hgpn008` 上有其他 GPU 工作），原因未確認，11/04 排程留餘裕。(4) `submission_rank_report.json` 被 `.gitignore` 擋住，依 §4.13 用 `git add -f`。
+- **11/04**：PR #27 合併後文件在 `main`；合併步驟用 `--fused-model results/models/rank_model_fused_opp_diff.json`，`rank_model_fused_opp.json` 留作退路與 Public LB 的對照版。
+
+### 2.20 每手分數的「分布範圍」：每局 pmi_t 直方圖的題內平均接在 fused_opp_diff 後面；老師模型的三種讀法與 CTM 的定位（2026-11-01；issue #29；nano4 待跑）
+- **起因**：使用者提議「每手由導師模型打分數 → 分數序列有時序依賴，用 CTM 的時序機制吃 → 從每手分數找出各等級的分布範圍來分級」。討論（cloud，2026-11-01）：
+  - 「老師模型」能指三件事。**A** 強網當尺：每手記勝率損失、下出之手在強網政策的名次、局面難度，分難度桶看準確度曲線，再對各等級用 humanv0 該級政策算同局面的預期損失（保留「像誰」、抵銷局面效應）；仍在落子通道，§2.15／§2.16 六個實驗都在 ±0.005 內，估上限 +0.01，要一次全資料 GPU 重評分（與 humanv0 評分同量級；前提是載入器能讀無 metadata encoder 的強網）。**B** 蒸餾／特權資訊：老師看一人全部棋局或 20 局、學生只看 5–20 局，訓練目標換成老師的軟後驗；只減訓練目標雜訊、改善 n=5 校準，不新增測試時資訊，估 +0.000–0.005。**C** 老師在標籤側：現在的對手特徵是「預測自己等級的 L1b head 去看對手的棋」，沒有模型專門學「從對手的棋預測**這位玩家**的標籤」；訓練這樣一個 head 直接學伺服器配對規則（含配對偏一級的不對稱），對準 §2.18 的 61–64% 玩家間落差。先決檢查：`mlp_diff` 的殘差對對手特徵還有多少相關（本節一併報告）。
+  - **CTM 的定位**：聚合器／推理器，增加的是對固定輸入的計算，不是資訊（§2.7 的歸因規則「分階段特徵讓所有模型都升 → 貢獻在輸入表示，不留 CTM」）。證據：§2.7 七個集合 rung 對 MLP +0.0054–0.0087、彼此 ≤ 0.003，`r5_ctm` 對 `r3_pma` +0.0005、`G_iter`／`G_sync` 不成立、U-Net synapse −0.0004，沒有編碼器的 `r2_pooled_delta` 就有 +0.0055；§2.15 tick = 落子的 `ctm_seq` inner CE 壓得比 GRU 低、題目分數卻比 GRU 差 0.0026；5 → 20 局 +0.09 而 1 → 8 tick +0.0002、8 → 16 tick 負。結論：CTM 只在輸入問題（A 的強網特徵、C 的對手 head）有結果後，再與 PMA 同台比一次；唯一與老師互補的技術點是 B 的軟後驗可能讓原版 min-loss／max-certainty 雙 tick 損失不再退化（§2.7 的 `r5_ctm_minmax` 12 次都 Δ ≡ 0）。
+  - **對提案三個主張的對照**：(1) 每手分數已經有：每手 10 個 L1b log p 的後驗平均等級 pmi_t（§2.15 `seq_diag.py`），新的只是尺的種類；§2.12 b) 學出來的每手強度分數接進 fused_opp 是顯著變差。(2) 時序依賴存在但主要來自局面（難度、形勢、讀秒），不管哪把尺都在；§2.15 第 0 步形狀特徵隨等級單調、四折同向，但送到題目層級都在 ±0.005 內，序列模型那端沒有理由因為換尺變好。(3) 「分布範圍」= P(分數 | 等級)，Human SL／L1b 的 log p(手 | 等級, 局面) 是它對 361 點、依局面條件化的完整版，1 維分數的分布是投影；一題 20 局兩千多手，若每手分布在平均上有穩定差異，中央極限早就分開，實測 1D|2D AUC 0.62、5 → 20 局只升 0.05（§2.4.1(d)），所以是**同一標籤下不同人的分布本來就不同**，量棋力的尺量不到（§2.18 玩家間 61–64%）。
+- **使用者決定（2026-11-01）**：「先測測看」——先做零成本版（本節）；強網評分（A）排在之後、只在使用者仍要做時才排；C 的先決檢查一併報告。
+- **並行（nano4，issue #28，使用者直接要求）**：局內 Transformer／Mamba encoder 走 §2.15 的 base + Δ 通道（`seq_crossfit.py`／`seq_check.py`，預先指定各自 vs `fused_opp`）；它回答「換架構有沒有用」，不回答順序有沒有訊號，過了也要另外事先指定「疊在 `fused_opp_diff` 上」的比較才談採用。與本節獨立。
+- **做法**（`aicup.seqshape.move_pmi`／`game_pmi_hist`／`fold_table`／`fold_hist_table`、`scripts/hist_check.py`）：
+  - 每局：pmi_t 在 [0, 9] 等分 10 格（`HIST_EDGES`）的直方圖，各格佔該局手數的比例（`game_pmi_hist`）；來源與 §2.16 相同（`scores3`／`scores3_B` 的每手 npz 是目標手、`scores3_opp`／`scores3_B_opp` 是對手手）。`game_shape` 改用共用的 `move_pmi`，數值逐位元不變（測試）。
+  - 每題：題內各局直方圖取平均（`question_shape`，與 §2.16 同一個函式）→ 10 維。`fused_opp_diff_hist` = 59 + 10 = 69 維；`fused_opp_diff_hist2` = 再加對手手的 10 格 = 79 維。
+  - CV 與 `l1b_opp_check`／`error_analysis` 完全相同（pilot 驗證題、`sample_questions` 32／人、`RandomState(42 + v)`、`MLPModel(hidden=32)`、玩家 bootstrap）；四個特徵集 `fused_opp`（須重現 0.6735）、`fused_opp_diff`（須重現 `error_analysis.json` 的 `mlp_diff` 0.6916）、`fused_opp_diff_hist`、`fused_opp_diff_hist2`。不碰 fold 0。
+- **預先指定**：`fused_opp_diff_hist vs fused_opp_diff`（條件 (1)(3)(4)）。只報告：`fused_opp_diff_hist2 vs fused_opp_diff`、`fused_opp_diff_hist2 vs fused_opp_diff_hist`、`fused_opp_diff vs fused_opp`（錨點，應為 +0.0181）。
+- **只報告、不作決策**：(i) 各等級依手數加權的合併 pmi_t 直方圖（驗證折全部目標局）與相鄰等級的重疊係數 Σ_i min(h_r, h_r+1)（1 = 相同、0 = 不相交）——就是使用者問的「各等級的分布範圍」。(ii) `fused_opp` 與 `fused_opp_diff` OOF 決策的殘差（`error_analysis.py` 的 `player_table`／`residual_analysis`／`opponent_channel`）：每人平均帶號殘差對 own_pmi／opp_pmi／(opp − own) 的 Spearman；`fused_opp` 那組應重現 §2.18 的 −0.213。**判讀規則（事先寫下）**：`fused_opp_diff` 的 |Spearman(mean e, opp − own)| ≥ 0.10 → 對手通道還有料，開 C 路線的 issue；< 0.10 → 以現有對手特徵看不到剩餘訊號，C 往後排但不排除（這個檢查只量得到線性、現有特徵能表達的那部分；C 的決定性檢驗是那個 head 本身）。
+- **預期**：§2.16 的形狀特徵（含 std_pmi）沒過且 NLL 變差；直方圖比 mean／std 多的是分布形狀（偏態、雙峰），估 −0.005 到 +0.005，門檻就是條件 (4) 的 0.005。相鄰重疊係數預期高（推論 0.8 以上），與 AUC 0.62–0.89 對應。
+- **決策**：過 → 另開 issue 接進提交（分片已存每手 L1b 陣列，直方圖在分片後算，不需重新評分；`fit_fused_model.py` 加 hist 欄）。沒過 → 「分布範圍」在這把尺上結束；A 只在使用者仍要做時排，順序：強網評分一次 → 靜態（損失按難度三桶 × 階段三段的平均與分位數，獨立通道）→ 序列版只在靜態過關後（序列輸入先減每局平均，encoder 只能學形狀；GRU 先、`ctm_seq` 當對照）。
+- **結果**：待 nano4（NANO4 §4.14）。
 
 ## 3. 成本：0B 實測（2026-10-16，lab01 單卡 RTX PRO 6000，torch 2.14.1+cu130，`scripts/bench_humansl.py` → `results/bench_0B.json`）
 
