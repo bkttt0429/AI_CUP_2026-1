@@ -681,6 +681,18 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 03:00:00 -J qmodel s
 
 `--tsfel-cache` 指向 §4.16 那個 worktree 裡的四個 `fold<F>.npz`；沒有就加 `--no-tsfel`（只跑純雜訊對照）。預期：`mlp@base` 0.6916（每折同 `error_analysis.json` 的 `mlp_diff`）。**預先指定** `mlp_l1@base vs mlp@base`（條件 (1)(3)(4)）；只報告其他模型 vs `mlp@base`、每個模型的 `@base_tsfel16 − @base` 與 `@base_noise16 − @base`。貼回 issue #41：各模型 × 特徵集的總分、NLL、每折、best epochs；預先指定那條；抵抗力的兩條；`qmodel_check.json` 進 git（新分支 + PR）。判讀規則與決策見 METHOD_NOTES §2.23。
 
+**結果（nano4，2026-11-01，PR #43 `426d719`；job 669767，947 s；pytest 327 passed／3 skipped）**：`mlp@base` 0.6916 重現；**`mlp_l1@base` 0.6922（預先指定 +0.0006 [−0.0026, +0.0038]，不過）**；抵抗力：`mlp` +TSFEL-16 −0.0135、+雜訊-16 −0.0014（CI 含 0）→ 模型有抵抗力，三條特徵線的退步是塊自己的偏移；`mlp_es` −0.0043、`mlp_l2` −0.0189、`softmax` −0.0245、`mlp_pp64` −0.0007。這條線結束（METHOD_NOTES §2.23）。
+
+### 4.18 資料集 v1.1 讓子資訊的普查（2026-11-01，issue #42）
+
+v1.1 在 nano4 的 `data/dl_v1.1/training/`（`data/training/` 仍是 v1.0）。`scripts/hd_census.py` 只讀 CSV、不重播（CPU 幾分鐘）；除了 HD 分布，還算 HD≥2 的局「標籤玩家等級 by `color`」（決定 Q13 待確認的 `color` 語義）與第一手落在標準讓子點的比例：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 4 -t 01:00:00 -J hdcensus scripts/nano4/run.sbatch python -I scripts/hd_census.py --train-dir data/dl_v1.1/training --out results/data/hd_census.json
+```
+
+貼回 issue #42：`hd`、`handicap_games.labelled_rank_by_color`、`first_move_on_star_point_share`、`players_with_any_hd1_share`／`hd2_share`；`hd_census.json` 進 git。切換 `data/training` 到 v1.1 時：`games_sha256` 不含 `sgf_content`，快取 provenance 不受影響；REPORT.md §134「沒有讓子」那行要改。
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：
