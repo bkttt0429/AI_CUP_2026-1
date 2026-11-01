@@ -605,6 +605,44 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 02:00:00 -J histcheck scri
 
 **重跑（2026-11-01）**：第一次跑完後 `hist_check.py` 多了題內版的殘差診斷（`question_level`：殘差對模型看到的題內 opp／own／(opp − own) 的 Spearman，分每題、按 n、每人；METHOD_NOTES §2.20）。同一條指令重跑一次（約 7 分），四列與四條比較應逐位元相同，`hist_check.json` 以重跑的為準。
 
+### 4.15 80 分路線 C：對手當老師的 L1b head（2026-11-01，issue #33；**先不跑**，等 11/04 Public LB 兩版對比）
+
+提交管線不動、不碰 fold 0。與 §4.2／§4.7 同一套配方，只換資料：快取取**對手**落子前的局面、標籤是這位玩家的等級。側檔 `heads3c*_{A,B}.json` 進 git，`.pt` 與快取不進。
+
+**1. 對手快取**（CPU 48 核，每包約 30 分；`--opponent` 讓 games 表的 `color` 是對手那一色、meta `side: opponent`）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 48 -t 02:00:00 -J cacheAo scripts/nano4/run.sbatch python -I scripts/l1b_build_cache.py --folds 1 2 --out results/l1b/cache_A_opp --workers 48 --opponent
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 48 -t 02:00:00 -J cacheBo scripts/nano4/run.sbatch python -I scripts/l1b_build_cache.py --folds 3 4 --out results/l1b/cache_B_opp --workers 48 --opponent
+```
+
+預期 `games` 與 `cache_A`／`cache_B` 相同（102,019／101,711），`positions` 接近（對手手數 ≈ 目標手數 ± 1）。
+
+**2. 三階段訓練**（與 §4.7 的鏈同參數：第一階段 8 卡 `--batch 32`、第二、三階段 `--batch 128`；B 把 `cache_A_opp`／`_A` 換成 `cache_B_opp`／`_B`；三段用 `afterok` 串）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 06:00:00 -J c1A scripts/nano4/run.sbatch torchrun --standalone --nproc_per_node 8 scripts/l1b_train.py --cache results/l1b/cache_A_opp --out results/l1b/heads3cs1_A.pt --batch 32
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 06:00:00 -J c2A scripts/nano4/run.sbatch torchrun --standalone --nproc_per_node 8 scripts/l1b_train.py --cache results/l1b/cache_A_opp --out results/l1b/heads3cs2_A.pt --trunk-lr 1e-5 --init-heads results/l1b/heads3cs1_A.pt --batch 128
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 06:00:00 -J c3A scripts/nano4/run.sbatch torchrun --standalone --nproc_per_node 8 scripts/l1b_train.py --cache results/l1b/cache_A_opp --out results/l1b/heads3c_A.pt --trunk-lr 1e-5 --init-heads results/l1b/heads3cs2_A.pt --disc-weight 1 --epochs 2 --batch 128
+```
+
+log 第一行的 `train_folds` 應為 [1, 2]（A）／[3, 4]（B），側檔 `side` 為 `opponent`。要貼的：三段的 `inner_nll_init/best`、`inner_disc_init/best`（第三段；heads3 為 2.137／2.111，ln 10 = 2.303）、`best_epoch`、`wall_seconds`。
+
+**3. OOF 評分**（8 卡分片；`--opponent` **必帶**，否則 exit 2）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 02:00:00 -J scAo scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 8 python -I scripts/l1b_score.py --heads results/l1b/heads3c_A.pt --folds 3 4 0 --out results/l1b/scores3c_A_opp --opponent --workers 10
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 02:00:00 -J scBo scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 8 python -I scripts/l1b_score.py --heads results/l1b/heads3c_B.pt --folds 1 2 0 --out results/l1b/scores3c_B_opp --opponent --workers 10
+```
+
+**4. CV**（CPU 約 10 分；`--copp` 的 fold meta 須是 `side: opponent` 且 `heads.side: opponent`，否則拒絕）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 02:00:00 -J ohc scripts/nano4/run.sbatch python -I scripts/opp_head_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --copp results/l1b/scores3c_A_opp results/l1b/scores3c_B_opp --out results/l1b/opp_head_check.json
+```
+
+預期：`fused_opp_diff` 0.6916（每折同 `error_analysis.json` 的 `mlp_diff`）。**預先指定** `fused_opp_diff_c vs fused_opp_diff`（條件 (1)(3)(4)）；只報告 `c2 vs fused_opp_diff`、`fused_c_diff vs fused_opp_diff`、`c2 vs c`、通道強度。貼回 issue #33：四列、四條比較、通道強度那一行；`opp_head_check.json` 與側檔進 git（新分支 + PR）。決策見 METHOD_NOTES §2.21。
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：

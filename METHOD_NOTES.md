@@ -389,6 +389,20 @@
   - **殘差診斷（全局平均版）**：`fused_opp` 重現 §2.18（exact 0.529、within1 0.907、玩家間 0.636、mean e 對 (opp − own) −0.213）；`fused_opp_diff` exact 0.548、within1 0.919、玩家間 0.624，mean e 對 own_pmi −0.016、opp_pmi −0.047、**(opp − own) −0.130**。依事先寫下的判讀規則（|ρ| ≥ 0.10）對手通道「可能還有料」，但見上面的保留：題內版診斷待重跑（PR #32 的程式）後補記。
   - **使用者決定（2026-11-01）**：(a) 加題內版診斷、nano4 重跑；(b) C 路線先寫程式、不訓練（§2.21），等 11/04 Public LB 的兩版對比再決定要不要跑。
 
+### 2.21 80 分路線 C：對手當老師——專門「從對手的棋預測這位玩家標籤」的 L1b head（2026-11-01；issue #33；程式完成、不訓練，等 11/04 Public LB）
+- **為什麼**：§2.18 的玩家間落差（61–64%）只有標籤那一側的資訊能補，對手通道是資料裡唯一的標籤側資訊（伺服器依標籤配對），`fused_opp`（+0.018）與 `fused_opp_diff`（+0.018）都來自它。現在的對手特徵是「預測**自己**等級的 L1b head 去看對手的棋」，沒有模型專門學「從對手的棋預測**這位玩家**的標籤」（含配對偏一級的不對稱）。§2.20 的殘差診斷：加差值後每人殘差對 (opp − own) 仍 −0.130（≥ 事先寫下的 0.10；保留見 §2.20，題內版診斷決定期望值）。
+- **使用者決定（2026-11-01）**：先寫程式、不訓練；要不要跑看 11/04 Public LB 上 `fused_opp_diff` 對 `fused_opp` 的兩版對比：對手通道在測試集成立 → 11/05 開跑；不成立 → 不跑。
+- **做法（與 heads3 同一套配方，只換資料）**：
+  - `scripts/l1b_build_cache.py --opponent`（`other_colour`）：同一批訓練局，取**對手**落子前的局面、對手那一手當 target，**標籤 = 這位玩家的等級**；games 表的 `color` 欄是被取的那一色（與 `l1b_score.py --opponent` 同慣例），meta 記 `side: opponent`；`merge_meta` 要求各 shard 的 side 一致。`cache_A_opp`（folds 1、2）、`cache_B_opp`（folds 3、4）。
+  - `aicup.l1btrain.caches_meta`：多包快取的 side 必須一致、回傳 `side`；側檔多記 `side`（舊快取沒有這個鍵 → `target`）。訓練程式不改：第 k 個 head 只用「夥伴等級 k」的對手落子訓練，鑑別式 CE 直接學「從對手的這一手分辨夥伴等級」。三階段照 heads3：凍結 trunk → `--trunk-lr 1e-5` → `--disc-weight 1`。
+  - `scripts/l1b_score.py`：側檔 `side: opponent` 的 heads 沒帶 `--opponent` 會被拒（exit 2，`check_side`）；target 側的 heads（含 issue #33 前的所有側檔）兩邊都能評（fused_opp 的做法）；fold meta 的 `heads` 多記 `side`。`scores3c_A_opp`（folds 3、4、0）、`scores3c_B_opp`（1、2、0）。
+  - `scripts/opp_head_check.py`：folds 1–4 CV（協定同 `l1b_opp_check`／`error_analysis`）：`fused_opp_diff`（59，須重現 0.6916）、`fused_opp_diff_c`（75：+ C heads 對手 16 維，`build_matrix`）、`fused_opp_diff_c2`（78：再 + C 的差值 3 維 mean(c_pmi − own_pmi)、mean(c_pmi)、std(c_pmi)）、`fused_c_diff`（59：C 的 16 維**取代** L1b 對手 16 維、差值用 C）。`--copp` 的每個 fold meta 須寫 `side: opponent` 且 `heads.side: opponent`（`check_c_scores`），否則拒絕。另報**通道強度**（玩家層級、驗證折全部局）：標籤對 own／opp／c pmi 的 Spearman、標籤對 own 迴歸的殘差對 (opp − own) 與 (c − own)、opp 對 c。
+- **預先指定**：`fused_opp_diff_c vs fused_opp_diff`（條件 (1)(3)(4)）。只報告：`c2 vs fused_opp_diff`、`fused_c_diff vs fused_opp_diff`、`c2 vs c`；通道強度（§2.18 的參考：標籤對 own 0.934、對 opp 0.948、殘差對 (opp − own) 0.452）；訓練側檔的 inner rank CE 與 heads3（2.137／2.111；ln 10 = 2.303）並列。
+- **預期**：對手通道兩次各 +0.018；這裡能撿的是 L1b head 間接估計沒拿到的部分（配對規則的不對稱、對手棋裡與夥伴標籤直接相關的型態）。§2.20 的題內版診斷決定期望值：題內殘差相關仍在 → 有東西可撿；接近 0 → 多半是量測雜訊，期望值小。保守估 +0.000 到 +0.010。
+- **成本（估）**：對手快取 CPU 48 核約 30 分 × 2；三階段訓練 8 卡每條鏈約 3 小時 × 2（heads3 的量）；評分每 fold 一側約 8 分 × 6；CV CPU 約 10 分。
+- **決策**：過 → 另開 issue 接進提交（分片多一趟 C heads 評對手，與現有對手趟共用局面、只多 head 前向，但 C 若有自己微調的 trunk 就多一次 trunk 前向；`fused` 文件新特徵集；`fused_opp_diff` 留作退路）。沒過 → 對手通道以現有資料結束，記在這裡。
+- **結果**：未跑（等 11/04 的 Public LB 對比）。
+
 ## 3. 成本：0B 實測（2026-10-16，lab01 單卡 RTX PRO 6000，torch 2.14.1+cu130，`scripts/bench_humansl.py` → `results/bench_0B.json`）
 
 | 量測 | 數字 |

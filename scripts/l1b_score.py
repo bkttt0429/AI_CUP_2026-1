@@ -10,7 +10,9 @@ per game (scoring.resume_plan); plus <out>/fold{F}/meta_s{shard}.json with the h
 the environment and the counts.
 
 The heads must not have seen the fold: a fold in the sidecar's train_folds is refused (exit 2) unless
---allow-seen, and then only into an --out whose name contains "_seen" (diagnostics only).
+--allow-seen, and then only into an --out whose name contains "_seen" (diagnostics only). Heads trained on the
+opponent's positions (sidecar side "opponent", l1b_build_cache.py --opponent; issue #33) are refused without
+--opponent: they read the labelled player's rank off the opponent's play.
 
   python -I scripts/l1b_score.py --heads results/l1b/heads_A.pt --folds 3 4 0 --out results/l1b/scores --workers 10
   bash scripts/nano4/shards.sh 8 python -I scripts/l1b_score.py --heads results/l1b/heads_B.pt --folds 1 2 0 --out results/l1b/scores_B
@@ -36,7 +38,16 @@ from aicup.scoring import fold_players, init_worker, load_games, part_paths, pla
 
 CKPT = ROOT / "models" / "katago" / "b18c384nbt-humanv0.ckpt"
 HEADS_SUMMARY = ("train_folds", "max_games", "best_epoch", "inner_nll_init", "inner_nll_best", "stopped_early", "n_params",
-                 "state_sha256", "trunk_file", "trunk_sha256", "code_sha256", "git_head", "git_dirty", "humanv0_sha256", "model_source")
+                 "state_sha256", "trunk_file", "trunk_sha256", "code_sha256", "git_head", "git_dirty", "humanv0_sha256", "model_source", "side")
+
+
+def check_side(meta, opponent):
+    """ValueError when heads trained on the opponent's positions (sidecar side "opponent", issue #33) would score the target's
+    moves: they read the labelled player's rank off the opponent's play and are only meant for --opponent. Target-side heads
+    (the default, and every sidecar before issue #33) score either side, as fused_opp does."""
+    side = meta.get("side") or "target"
+    if side == "opponent" and not opponent:
+        raise ValueError("the heads were trained on the opponent's positions (sidecar side \"opponent\"); score with --opponent")
 
 
 def load_trunk(ckpt, model_config, device):
@@ -129,6 +140,7 @@ def main(argv=None):
     try:
         heads, meta, warnings = load_heads(a.heads, model, "cpu")
         check_unseen(meta, a.folds, a.allow_seen, a.out)
+        check_side(meta, a.opponent)
     except ValueError as e:
         print(e, file=sys.stderr)
         return 2
