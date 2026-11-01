@@ -739,6 +739,8 @@ python -I scripts/patch_scored.py --base results/l1b/scores3_B_opp --patch resul
 
 ### 4.20 讓子特徵的提交文件 `rank_model_fused_opp_diff_hd.json`（2026-11-01，issue #47；**fold 0 第三次使用，要使用者本人同意才跑**）
 
+nano4 在完整資料上的全套 pytest：`f431660` 342 passed／3 skipped（job 670321）、`cf0008c` 344 passed／3 skipped（job 670747）。
+
 前提：§4.19 步 1 的 `results/data/hd_table.csv` 已有；若 (b) 的補丁目錄已做好且要採用，五個評分目錄換成 `_hd` 版。擬合與 fold 0 檢查（CPU，約 10 分）：
 
 ```bash
@@ -751,7 +753,7 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 04:00:00 -J fithd sc
 sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 02:00:00 -J mockhd scripts/nano4/run.sbatch python -I scripts/predict_submission.py --inputs tests/fixtures/mock_fold0_40/rank_prediction_test_public.csv tests/fixtures/mock_fold0_40/rank_prediction_test_private.csv --expect-rows 40 --expect-public 20 --expect-private 20 --out results/mock_fold0_40_hd/submission_rank.csv --l1b-heads results/l1b/heads3_A.pt results/l1b/heads3_B.pt --fused-model results/models/rank_model_fused_opp_diff_hd.json --allow-missing-hd
 ```
 
-mock-40 的 fold-0 表對照（`check_fused_submission.py --set fused_opp_diff_hd_avg`）**不會**逐題相等——離線表的 HD 特徵來自 HD 表、mock 的全 0——所以 mock 只看管線不崩、報告 `decision_model` 是 `fused_opp_diff_hd`、`handicap` 計數為 `absent`。真正的逐題對照要用帶 `HD[` 的 mock：`scripts/make_mock_test.py` 從 v1.1 的 `data/training` 重做一份 mock-40 即可（SGF 會帶 HD），再跑上面兩條（不加 `--allow-missing-hd`）。11/04：`predict_submission.py ... --fused-model results/models/rank_model_fused_opp_diff_hd.json`（報告 `handicap` 沒有 `absent` 才算成立；有 `absent` 會直接拒絕，換 `rank_model_fused_opp_diff.json`）。
+mock-40 的 fold-0 表對照（`check_fused_submission.py --set fused_opp_diff_hd_avg`）**不會**逐題相等——離線表的 HD 特徵來自 HD 表、mock 的全 0——所以 mock 只看管線不崩、報告 `decision_model` 是 `fused_opp_diff_hd`、`handicap` 計數為 `absent`。真正的逐題對照要用帶 `HD[` 的 mock：nano4 已從 v1.1 的 `data/training` 做了 `data/mock_tests/fold0_40_v11/`（題目與舊 fixture 不同批，SGF 帶 HD；不進 git），`--inputs` 換成它的兩個 CSV、`--answers` 換成它的 `answers.csv`，再跑上面兩條（不加 `--allow-missing-hd`）。11/04：`predict_submission.py ... --fused-model results/models/rank_model_fused_opp_diff_hd.json`（報告 `handicap` 沒有 `absent` 才算成立；有 `absent` 會直接拒絕，換 `rank_model_fused_opp_diff.json`）。
 
 ## 5. 同步程式碼、取回結果
 
