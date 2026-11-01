@@ -7,7 +7,9 @@ and every other one starts there (zero-initialised output layer, as the L3 ladde
 Thought Machine whose ticks are the moves: at step t the synapse reads the latent state and the encoded step, the
 neuron-level models turn each neuron's history of pre-activations into its activation, and the output is read from the
 synchronisation of neuron pairs accumulated recursively over the steps with learned decays -- the original CTM's
-machinery with the data fed one move per tick instead of attended to). Training: class-balanced cross-entropy of the
+machinery with the data fed one move per tick instead of attended to), transformer (self-attention over the game's steps
+with sinusoidal step positions, masked mean + max pooling) and mamba (Mamba blocks: a gated, causal selective state-space
+scan over the steps, Gu and Dao 2023, last state + masked mean). Training: class-balanced cross-entropy of the
 player's rank per game + gamma ‖Δ‖², Adam, inner early stopping by held-out players (settrain.inner_players), the best
 inner CE kept; the step inputs are standardised with statistics of the training steps stored in the model.
 """
@@ -28,7 +30,7 @@ from aicup.rankmodel import class_weights
 from aicup.seqdata import STEP_DIM, pad_batch
 from aicup.settrain import INNER_SEED, inner_players
 
-ARCHS = ("sum", "conv", "gru", "ctm_seq")
+ARCHS = ("sum", "conv", "gru", "ctm_seq", "transformer", "mamba")
 N_CLASSES = len(LEVELS)
 
 
@@ -50,6 +52,11 @@ class SeqCfg:
     history: int = 8
     nlm_hidden: int = 16
     n_sync: int = 256
+    layers: int = 2
+    heads: int = 4
+    d_state: int = 16
+    d_conv: int = 4
+    expand: int = 2
 
 
 class _Encoder(nn.Module):
@@ -163,7 +170,89 @@ class CTMSeqEncoder(_Encoder):
         return self.out(alpha / beta.sqrt())
 
 
-ENCODERS = {"sum": SumEncoder, "conv": ConvEncoder, "gru": GRUEncoder, "ctm_seq": CTMSeqEncoder}
+def _step_positions(T, d, like):
+    """[T, d] sinusoidal encodings of the step indices (computed per batch, so a game's encoding does not depend on its padding)."""
+    pos = torch.arange(T, dtype=like.dtype, device=like.device).unsqueeze(-1)
+    freq = torch.exp(torch.arange(0, d, 2, dtype=like.dtype, device=like.device) * (-math.log(10000.0) / d))
+    out = torch.zeros(T, d, dtype=like.dtype, device=like.device)
+    out[:, 0::2] = torch.sin(pos * freq)
+    out[:, 1::2] = torch.cos(pos * freq)[:, :d // 2]
+    return out
+
+
+class TransformerEncoder(_Encoder):
+    """Pre-norm self-attention over the steps, padded steps masked out; no dropout, like the other encoders."""
+
+    def __init__(self, d_in, cfg):
+        super().__init__(d_in)
+        h = cfg.hidden
+        self.proj = nn.Linear(d_in, h)
+        layer = nn.TransformerEncoderLayer(h, cfg.heads, dim_feedforward=2 * h, dropout=0.0, activation="gelu", batch_first=True, norm_first=True)
+        self.layers = nn.TransformerEncoder(layer, cfg.layers, norm=nn.LayerNorm(h), enable_nested_tensor=False)
+        self.head = nn.Sequential(nn.Linear(2 * h, h), nn.ReLU())
+        self.out = zero_linear(h)
+
+    def delta(self, X, mask):
+        h = self.proj(X) + _step_positions(X.shape[1], self.proj.out_features, X)
+        h = self.layers(h, src_key_padding_mask=~mask)
+        return self.out(self.head(torch.cat([_masked_mean(h, mask), _masked_max(h, mask)], dim=-1)))
+
+
+class _MambaBlock(nn.Module):
+    """Pre-norm residual block: expand, split into a gate and a path through a causal depthwise convolution and the selective
+    state-space scan x_t = exp(delta_t A) x_{t-1} + delta_t B_t u_t, y_t = C_t x_t + D u_t, whose delta, B and C depend on the input."""
+
+    def __init__(self, d, d_state, d_conv, expand):
+        super().__init__()
+        e = expand * d
+        self.d_state = d_state
+        self.norm = nn.LayerNorm(d)
+        self.proj_in = nn.Linear(d, 2 * e)
+        self.conv = nn.Conv1d(e, e, d_conv, padding=d_conv - 1, groups=e)
+        self.params = nn.Linear(e, e + 2 * d_state)
+        self.A_log = nn.Parameter(torch.log(torch.arange(1, d_state + 1, dtype=torch.float32)).repeat(e, 1))
+        self.D = nn.Parameter(torch.ones(e))
+        self.proj_out = nn.Linear(2 * e, d)
+
+    def forward(self, x):
+        T = x.shape[1]
+        u, gate = self.proj_in(self.norm(x)).chunk(2, dim=-1)
+        u = F.silu(self.conv(u.transpose(1, 2))[:, :, :T].transpose(1, 2))
+        delta, B, C = self.params(u).split([u.shape[-1], self.d_state, self.d_state], dim=-1)
+        delta = F.softplus(delta)
+        step = torch.exp(-delta.unsqueeze(-1) * torch.exp(self.A_log))  # [B, T, e, N]
+        drive = torch.einsum("bte,btn,bte->bten", delta, B, u)
+        state = torch.zeros(x.shape[0], u.shape[-1], self.d_state, dtype=x.dtype, device=x.device)
+        ys = []
+        for t in range(T):
+            state = step[:, t] * state + drive[:, t]
+            ys.append(torch.einsum("ben,bn->be", state, C[:, t]))
+        y = torch.stack(ys, dim=1) + u * self.D
+        return x + self.proj_out(torch.cat([F.silu(y), F.silu(gate)], dim=-1))
+
+
+class MambaEncoder(_Encoder):
+    """Causal, so a game's padded tail cannot reach its steps; the readout is the state after its last move + the masked mean."""
+
+    def __init__(self, d_in, cfg):
+        super().__init__(d_in)
+        h = cfg.hidden
+        self.proj = nn.Linear(d_in, h)
+        self.blocks = nn.ModuleList(_MambaBlock(h, cfg.d_state, cfg.d_conv, cfg.expand) for _ in range(cfg.layers))
+        self.norm = nn.LayerNorm(h)
+        self.head = nn.Sequential(nn.Linear(2 * h, h), nn.ReLU())
+        self.out = zero_linear(h)
+
+    def delta(self, X, mask):
+        h = self.proj(X)
+        for block in self.blocks:
+            h = block(h)
+        h = self.norm(h)
+        last = (mask.sum(dim=1).clamp_min(1) - 1).view(-1, 1, 1).expand(-1, 1, h.shape[-1])
+        return self.out(self.head(torch.cat([h.gather(1, last).squeeze(1), _masked_mean(h, mask)], dim=-1)))
+
+
+ENCODERS = {"sum": SumEncoder, "conv": ConvEncoder, "gru": GRUEncoder, "ctm_seq": CTMSeqEncoder, "transformer": TransformerEncoder, "mamba": MambaEncoder}
 
 
 def make_encoder(cfg, d_in=STEP_DIM):

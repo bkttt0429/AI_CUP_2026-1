@@ -1,0 +1,74 @@
+{
+ "arch": "transformer",
+ "cfg": {
+  "arch": "transformer",
+  "epochs": 10,
+  "batch": 256,
+  "lr": 0.001,
+  "weight_decay": 0.0001,
+  "gamma": 0.001,
+  "seed": 0,
+  "device": "cuda",
+  "inner_frac": 0.1,
+  "evals_per_epoch": 4,
+  "patience": 8,
+  "hidden": 64,
+  "d_latent": 128,
+  "history": 8,
+  "nlm_hidden": 16,
+  "n_sync": 256,
+  "layers": 2,
+  "heads": 4,
+  "d_state": 16,
+  "d_conv": 4,
+  "expand": 2
+ },
+ "folds": {
+  "1": {
+   "inner_ce_init": 8.870395250231052,
+   "inner_ce_best": 4.998541161926524,
+   "best_epoch": 9.25,
+   "n_params": 78026,
+   "train_wall_seconds": 429.87105655670166,
+   "mean_abs_delta": 5.890500110949919
+  },
+  "2": {
+   "inner_ce_init": 8.915898877498462,
+   "inner_ce_best": 5.145661909922693,
+   "best_epoch": 9.160771704180064,
+   "n_params": 78026,
+   "train_wall_seconds": 68.46906685829163,
+   "mean_abs_delta": 5.962501993505173
+  },
+  "3": {
+   "inner_ce_init": 8.661270565883303,
+   "inner_ce_best": 4.960989712969569,
+   "best_epoch": 8.25,
+   "n_params": 78026,
+   "train_wall_seconds": 70.29582524299622,
+   "mean_abs_delta": 5.262690054817028
+  },
+  "4": {
+   "inner_ce_init": 8.562887660384751,
+   "inner_ce_best": 4.612833260838959,
+   "best_epoch": 9.75,
+   "n_params": 78026,
+   "train_wall_seconds": 175.41716361045837,
+   "mean_abs_delta": 5.515648100966821
+  }
+ },
+ "git_head": "f6c5724",
+ "git_dirty": false,
+ "code_sha256": "8cf8dbbd0a7e9024e4ed529c7a55497b48b8f487944f4fceec2567d9f644a2f7",
+ "code_files": [
+  "src/aicup/gamevec.py",
+  "src/aicup/ladder_data.py",
+  "src/aicup/aggregators.py",
+  "src/aicup/settrain.py",
+  "src/aicup/rankmodel.py",
+  "src/aicup/qfeatures.py",
+  "src/aicup/metric.py"
+ ],
+ "torch_version": "2.14.1+cu126",
+ "device_name": "cpu"
+}
