@@ -78,7 +78,7 @@ def main(argv=None):
     ap.add_argument("--offline", default=None, help="fit_fused_model.py --fold0-proba table")
     ap.add_argument("--answers", default=str(ROOT / "tests" / "fixtures" / "mock_fold0_40" / "answers.csv"))
     ap.add_argument("--set", default="fused_avg",
-                    help="offline column set to compare with (hsl, fused_A, fused_B, fused_avg; fused_opp_A, fused_opp_B, fused_opp_avg "
+                    help="offline column set to compare with (hsl, fused_A, fused_B, fused_avg; fused_opp_A, fused_opp_B, fused_opp_avg; fused_opp_diff_avg; fused_opp_diff_hd_avg "
                          "in fit_fused_model.py --opp's table, for a rank_model_fused_opp.json run)")
     ap.add_argument("--other", default=None, help="another run's submission_rank.csv to compare with instead of --offline")
     ap.add_argument("--tol", type=float, default=1e-3, help="max |Δp| allowed per question")

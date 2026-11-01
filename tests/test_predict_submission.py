@@ -557,6 +557,47 @@ def test_l1b_heads_in_shards_and_fused_decision(tmp_path, fake_scorer, capsys):
     got_d = pd.read_csv(out.with_name("submission_rank_proba.csv"))[[f"p_{lv}" for lv in LEVELS]].to_numpy()
     np.testing.assert_allclose(got_d, np.stack(want_d), rtol=0, atol=1e-12)
     assert not np.allclose(got_d, got_o) and report["fused_fallback_questions"] == []
+    # the fused_opp_diff_hd document (issue #47): the handicap features come from the records' HD[]; the mock inputs carry none -> refused
+    from aicup.handicap import question_hd_features_from_games
+    hd_path, hd_mlp, _ = _tiny_fused_doc(tmp_path / "hd", sides, feature_set="fused_opp_diff_hd")
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--merge", "--fused-model", str(hd_path))) == ps.EXIT_INPUTS
+    assert "carry no HD[]" in capsys.readouterr().err
+    # --allow-missing-hd: unknown handicap, zeros
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--merge", "--fused-model", str(hd_path), "--allow-missing-hd")) == ps.EXIT_OK
+    report = json.loads(out.with_name("submission_rank_report.json").read_text())
+    n_games = sum(len(q["games"]) for q in questions)
+    assert report["decision_model"] == "fused_opp_diff_hd" and report["fused_model"]["name"] == fused.NAME_OPP_DIFF_HD and report["handicap"] == {"absent": n_games}
+
+    def want_hd(task_games):
+        rows = []
+        for qi in range(len(questions)):
+            ks = [k for k, q in enumerate(owner) if q == qi]
+            rows.append(fused.fused_predict(hd_mlp, np.stack([per_task[k][1] for k in ks]), np.stack([l1b_per_task[k] for k in ks]), np.array([per_task[k][0] for k in ks]), order,
+                                            opp_sums=np.stack([opp_per_task[k][1] for k in ks]), opp_n_moves=np.array([opp_per_task[k][0] for k in ks]),
+                                            feature_set="fused_opp_diff_hd", hd_feats=question_hd_features_from_games([task_games[k] for k in ks])))
+        return np.stack(rows)
+    got_h0 = pd.read_csv(out.with_name("submission_rank_proba.csv"))[[f"p_{lv}" for lv in LEVELS]].to_numpy()
+    np.testing.assert_allclose(got_h0, want_hd({k: (sgf, c) for k, sgf, c in tasks}), rtol=0, atol=1e-12)
+    # inputs whose records carry HD[1] (讓先: boards and colours as recorded, so the same shards serve; the file names and the
+    # question ids are the same, so the shards' hash matches): the features come from the records, the report counts them
+    hd_dir = tmp_path / "hd_inputs"
+    hd_dir.mkdir()
+    hd_inputs = []
+    for path in inputs:
+        df = pd.read_csv(path, dtype=str, keep_default_na=False)
+        sgf_cols = [c for c in df.columns if c.startswith("sgf_")]
+        df[sgf_cols] = df[sgf_cols].map(lambda v: v.replace("(;SZ[19]", "(;SZ[19]HD[1]", 1) if v else v)
+        df.to_csv(hd_dir / Path(path).name, index=False)
+        hd_inputs.append(str(hd_dir / Path(path).name))
+    assert ps.main(_args(hd_inputs, out, 5, 3, 2, "--merge", "--fused-model", str(hd_path))) == ps.EXIT_OK
+    report = json.loads(out.with_name("submission_rank_report.json").read_text())
+    assert report["handicap"] == {"1": n_games} and report["decision_model"] == "fused_opp_diff_hd" and report["exit_code"] == 0
+    questions_hd, _ = ps.load_questions(hd_inputs)
+    tasks_hd, owner_hd, _, _ = ps.build_tasks(questions_hd)
+    assert owner_hd == owner and [(k, c) for k, _, c in tasks_hd] == [(k, c) for k, _, c in tasks]
+    got_h1 = pd.read_csv(out.with_name("submission_rank_proba.csv"))[[f"p_{lv}" for lv in LEVELS]].to_numpy()
+    np.testing.assert_allclose(got_h1, want_hd({k: (sgf, c) for k, sgf, c in tasks_hd}), rtol=0, atol=1e-12)
+    assert not np.allclose(got_h1, got_h0)
 
 
 def test_fused_decision_refusals_and_fallback(tmp_path, fake_scorer, capsys):

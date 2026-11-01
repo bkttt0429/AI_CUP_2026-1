@@ -92,6 +92,7 @@ from aicup.qfeatures import FEATURE_NAMES, question_features  # noqa: E402
 from aicup.rankmodel import _softmax, from_state  # noqa: E402
 from aicup.setmodel_io import file_sha256, load_set_model, sidecar_path, summary as set_model_summary  # noqa: E402
 from aicup.settrain import BASE_CLIP, predict_set_model  # noqa: E402
+from aicup.handicap import question_hd_features_from_games  # noqa: E402
 from aicup.sgf import handicap  # noqa: E402
 from aicup.submission import check_game, read_test, read_test_lenient, validate_submission, write_submission  # noqa: E402
 
@@ -297,17 +298,23 @@ def load_shards_l1b(out, nshards, with_moves=False):
     return models or [], per_task, moves, (opp if opponent else None)
 
 
-def fused_probs(questions, owner, per_task, l1b_per_task, mlp, order, rank_model, opp_per_task=None, opponent=False, feature_set=None):
+def fused_probs(questions, owner, per_task, l1b_per_task, mlp, order, rank_model, opp_per_task=None, opponent=False, feature_set=None, task_games=None):
     """({question index: probabilities [10]} for every question with a usable game, info): the fused MLP on each
     L1b model's fused features (shard columns `order`), averaged; a question whose averaged probabilities are not
     finite gets rank_model's (q24) probabilities and is listed in info["fused_fallback_questions"]. With opponent (a
     fused_opp document) the opponent's sums and move counts opp_per_task {k: (n, [K, 10])} join the features, and a
-    fused_opp_diff document (feature_set) adds the opponent-minus-own differences; ValueError when the shards carry none."""
+    fused_opp_diff document (feature_set) adds the opponent-minus-own differences; ValueError when the shards carry none.
+    A fused_opp_diff_hd document (issue #47) also takes the question's handicap features, computed from the usable games'
+    records task_games {k: (sgf, colour)} (aicup.handicap.question_hd_features_from_games; a record without HD[] counts as
+    unknown, zeros -- main refuses such inputs unless --allow-missing-hd)."""
     feature_set = fused_feature_set(opponent, feature_set)
     opponent = feature_set != "fused"
     if opponent and opp_per_task is None:
         raise ValueError("the fused model takes the opponent's L1b features but the shards carry no opponent scores: score them "
                          "again with --l1b-heads (without --no-l1b-opponent), or decide with the 40-feature rank_model_fused.json")
+    with_hd = feature_set == "fused_opp_diff_hd"
+    if with_hd and task_games is None:
+        raise ValueError("the fused_opp_diff_hd model needs the games' records (task_games) for the handicap features")
     by_q = {}
     for k, qi in enumerate(owner):
         by_q.setdefault(qi, []).append(k)
@@ -320,8 +327,9 @@ def fused_probs(questions, owner, per_task, l1b_per_task, mlp, order, rank_model
             raise ValueError(f"question {questions[qi]['question_id']}: {len(missing)} games have no L1b scores in the shards")
         l1b = np.stack([l1b_per_task[k] for k in ks])
         if opponent:
+            hd = question_hd_features_from_games([task_games[k] for k in ks]) if with_hd else None
             p = fused_predict(mlp, hsl, l1b, n, order, opp_sums=np.stack([opp_per_task[k][1] for k in ks]),
-                              opp_n_moves=np.array([opp_per_task[k][0] for k in ks]), feature_set=feature_set)
+                              opp_n_moves=np.array([opp_per_task[k][0] for k in ks]), feature_set=feature_set, hd_feats=hd)
         else:
             p = fused_predict(mlp, hsl, l1b, n, order)
         if not np.isfinite(p).all():
@@ -510,6 +518,8 @@ def main(argv=None):
                     help="read a question whose num_games disagrees with its filled sgf columns from the non-empty columns, "
                          "with a warning in the report, instead of stopping (exit 4 unless --allow-input-warnings)")
     ap.add_argument("--allow-input-warnings", action="store_true", help="exit 0 despite --lenient-inputs warnings")
+    ap.add_argument("--allow-missing-hd", action="store_true", help="let a fused_opp_diff_hd --fused-model decide although some games carry no "
+                    "HD[] (their handicap features are zeros); without it such inputs are refused (exit 2)")
     ap.add_argument("--set-models", nargs="*", default=[], metavar="PT",
                     help="set models (.pt with .json sidecars, scripts/train_set_model.py) whose averaged probabilities decide")
     ap.add_argument("--set-base", default=None, help="the paired base of the set models (rank_model.json format); required with them")
@@ -584,8 +594,11 @@ def main(argv=None):
         if a.fused_model:
             fused_doc, fused_mlp = load_fused_model(a.fused_model)
             order = pairing_order(fused_doc, l1b_models)
+            if fused_doc["feature_set"] == "fused_opp_diff_hd" and hd_counts.get("absent", 0) and not a.allow_missing_hd:
+                raise ValueError(f"{a.fused_model} takes the handicap (HD) features but {hd_counts['absent']} of the games carry no HD[]: decide "
+                                 "with the fused_opp_diff document instead, or pass --allow-missing-hd to treat them as unknown (zeros)")
             set_probs, fused_info = fused_probs(questions, owner, per_task, l1b_per_task, fused_mlp, order, rank_model,
-                                                opp_per_task, fused_doc["opponent"], fused_doc["feature_set"])
+                                                opp_per_task, fused_doc["opponent"], fused_doc["feature_set"], {k: (sgf, c) for k, sgf, c in tasks})
     except (FileNotFoundError, ValueError) as e:
         print(e, file=sys.stderr)
         return EXIT_INPUTS
