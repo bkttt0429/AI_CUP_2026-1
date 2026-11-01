@@ -645,6 +645,22 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 02:00:00 -J ohc scripts/na
 
 預期：`fused_opp_diff` 0.6916（每折同 `error_analysis.json` 的 `mlp_diff`）。**預先指定** `fused_opp_diff_c vs fused_opp_diff`（條件 (1)(3)(4)）；只報告 `c2 vs fused_opp_diff`、`fused_c_diff vs fused_opp_diff`、`c2 vs c`、通道強度。貼回 issue #33：四列、四條比較、通道強度那一行；`opp_head_check.json` 與側檔進 git（新分支 + PR）。決策見 METHOD_NOTES §2.21。
 
+### 4.16 TSFEL 生成的每局時序特徵接在 fused_opp_diff 後面（2026-11-01，issue #36）
+
+提交管線不動、不碰 fold 0。先在 venv 裝 TSFEL（一次；會連帶裝 scikit-learn、statsmodels、PyWavelets、ipython、requests）：
+
+```bash
+pip install tsfel==0.2.0
+```
+
+然後一支 CPU 工作：第一次會算每折的 TSFEL 表（約 118k 局 × 2 條序列 × 11 ms，`--workers 12` 約 5 分）並快取到 `results/seq/tsfel/fold<F>.npz`（不進 git），接著五個特徵集 × 四折的 MLP 與局層級的 softmax 回歸（約 §4.10 的 2 倍）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 03:00:00 -J tsfelchk scripts/nano4/run.sbatch python -I scripts/tsfel_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --workers 12 --out results/seq/tsfel_check.json
+```
+
+預期：`fused_opp_diff` 0.6916（每折同 `error_analysis.json` 的 `mlp_diff`）。**預先指定** `fused_opp_diff_tsfel16 vs fused_opp_diff`（條件 (1)(3)(4)）；只報告 tsfel4／tsfel64／tsfel_all vs `fused_opp_diff`、局層級 softmax 的增益（mean-only vs mean + tsfel16）、每折保留欄數與 PCA 解釋變異。貼回 issue #36：五列（總分、NLL、by n、每折）、四條比較、`TSFEL:` 與 `game-level softmax:` 兩行；`tsfel_check.json` 進 git（新分支 + PR），`results/seq/tsfel/*.npz` 不進。決策見 METHOD_NOTES §2.22。
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：

@@ -413,6 +413,18 @@
 - **決策**：過 → 另開 issue 接進提交（分片多一趟 C heads 評對手，與現有對手趟共用局面、只多 head 前向，但 C 若有自己微調的 trunk 就多一次 trunk 前向；`fused` 文件新特徵集；`fused_opp_diff` 留作退路）。沒過 → 對手通道以現有資料結束，記在這裡。
 - **結果**：未跑（等 11/04 的 Public LB 對比）。
 
+### 2.22 TSFEL 生成的每局時序特徵（2026-11-01；issue #36；nano4 待跑）
+- **使用者決定（2026-11-01）**：「tsfel 去生成特徵」——不再手挑形狀統計量（§2.16）或直方圖（§2.20），讓 TSFEL（Time Series Feature Extraction Library 0.2.0）對每局的每手分數序列產生全部描述子，看有沒有加總看不到的訊號。
+- **做法**（`aicup.seqtsfel`、`scripts/tsfel_check.py`）：
+  - 每局兩條序列（§2.15 的）：pmi_t（每手 10 個 L1b log p 的後驗平均等級）與 s_t（最佳等級的 surprisal）。TSFEL 全部四個領域（statistical、temporal、spectral、fractal）各約 120 個特徵，名稱加前綴 `pmi_`／`s_`；四個 wavelet 特徵在 pandas 3 下壞掉（重複欄名），排除。手數 < 12 的局（LPCC／MFCC 的下限）或 TSFEL 算不出來的特徵給 NaN；部分特徵的輸出個數隨序列長度變，所以每折的表取名稱的聯集、缺的是 NaN。每局兩條約 11 ms，每折表快取成 `results/seq/tsfel/fold<F>.npz`（不進 git）。
+  - 每題：題內各局的 nanmean（與 §2.16／§2.20 同法）。**因為 §2.16／§2.20 都顯示 MLP 多加一塊欄位就退步**，這塊先用訓練題的統計量標準化、NaN 補訓練平均、再用只在訓練題上擬合的 PCA 降維：`fused_opp_diff_tsfel<k>`（k = 4、16、64）與 `fused_opp_diff_tsfel_all`（整塊標準化後直接接）。CV 與 `l1b_opp_check`／`error_analysis` 相同；`fused_opp_diff` 須重現 0.6916。
+  - 局層級診斷（§2.15 第 0 步的做法，只報告）：每局類別平衡 softmax 回歸，「只用平均」（pmi_Mean、log 手數）對「平均 + PCA-16 的 TSFEL 塊」（PCA 在訓練局上擬合），平衡準確率與 NLL 的增益 = TSFEL 在平均之外帶來的局層級資訊（§2.15 的形狀特徵是 +0.0085）。
+- **預先指定**：`fused_opp_diff_tsfel16 vs fused_opp_diff`（條件 (1)(3)(4)）。只報告：tsfel4、tsfel64、tsfel_all 各 vs `fused_opp_diff`；局層級增益；每折保留的欄數與 PCA 解釋變異。
+- **預期**：§2.16 的 8 個形狀統計量與 §2.20 的直方圖都在 ±0.005 內且 NLL 變差；TSFEL 多出來的是頻譜／分形／更多統計量，但同樣在落子通道、同樣是每局量的題內平均，估 −0.005 到 +0.005；PCA 降維是給它一個不被維度拖垮的機會。局層級診斷若比 §2.15 的 +0.0085 大很多（例如 > +0.02）而題目層級仍沒過，就把「接法」列為下一個問題。
+- **依賴**：`tsfel==0.2.0`（`requirements.txt`），會連帶裝 scikit-learn、statsmodels、PyWavelets、ipython、requests；nano4 的 venv 要 `pip install tsfel==0.2.0`。
+- **決策**：過 → 另開 issue 接進提交（分片已存每手 L1b 陣列，TSFEL 特徵與 PCA 在分片後算；PCA 與標準化統計量要存進文件）。沒過 → 記在這裡，自動特徵庫這條線結束。
+- **結果**：待 nano4（NANO4 §4.16）。
+
 ## 3. 成本：0B 實測（2026-10-16，lab01 單卡 RTX PRO 6000，torch 2.14.1+cu130，`scripts/bench_humansl.py` → `results/bench_0B.json`）
 
 | 量測 | 數字 |
