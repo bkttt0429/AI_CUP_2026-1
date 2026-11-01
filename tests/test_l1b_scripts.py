@@ -370,3 +370,96 @@ def test_train_cli_with_several_caches_and_an_excluded_fold(tmp_path, capsys):
     assert "not in the caches" in capsys.readouterr().err
     assert lt.main(["--cache", str(c1), str(c1), *base[3:], "--out", str(tmp_path / "y.pt")]) == 2
     assert "more than one" in capsys.readouterr().err
+
+
+def test_build_cache_cli_opponent_side(tmp_path, monkeypatch, capsys):
+    """--opponent: the other colour's positions, labelled with the target player's rank; meta side opponent (issue #33)."""
+    games_df, sgfs, folds_csv = _fake_data(tmp_path)
+    monkeypatch.setattr(bc, "player_games", lambda: games_df)
+    monkeypatch.setattr(bc, "load_games", lambda keys: {k: sgfs[k] for k in keys})
+    out = tmp_path / "cache_opp"
+    args = ["--folds", "1", "2", "--out", str(out), "--folds-csv", str(folds_csv), "--model-config", "b2c16", "--workers", "2",
+            "--part-size", "4", "--max-games", "40", "--min-games", "1", "--opponent"]
+    assert bc.main(args) == 0
+    assert "OPPONENT" in capsys.readouterr().out
+    games, arrays = fc.read_cache(out)
+    other = {"B": "W", "W": "B"}
+    want = {k: _target_moves(sgf, other[c]) for k, (sgf, c) in sgfs.items()}
+    g = games.set_index("game_key")
+    assert g["n_moves"].to_dict() == want and len(arrays["target"]) == sum(want.values())
+    assert g.loc["D:g0", "n_moves"] == 1 and g.loc["D:g0", "color"] == "W"  # the target was Black with no move; the opponent's one White move
+    assert all(g.loc[k, "color"] == other[c] for k, (_, c) in sgfs.items())
+    assert g["rank"].to_dict() == games_df.set_index("game_key")["rank"].to_dict()  # labels stay the target player's
+    meta = json.loads((out / "meta.json").read_text())
+    assert meta["side"] == "opponent" and meta["positions"] == sum(want.values())
+    # the default build says target, and metas of the two sides do not merge
+    out_t = tmp_path / "cache_t"
+    assert bc.main([*args[:3], "--out", str(out_t), *args[5:-1]]) == 0  # the same build without --opponent
+    assert json.loads((out_t / "meta.json").read_text())["side"] == "target"
+    import shutil
+    mixed = tmp_path / "mixed"
+    mixed.mkdir()
+    shutil.copy(out / "meta_s0.json", mixed / "meta_s0.json")
+    m1 = json.loads((out_t / "meta_s0.json").read_text())
+    m1["shards"] = [1]
+    (mixed / "meta_s1.json").write_text(json.dumps(m1))
+    import pytest
+    with pytest.raises(ValueError, match="side"):
+        bc.merge_meta(mixed)
+
+
+def test_train_sidecar_carries_the_cache_side(tmp_path, capsys):
+    from aicup import l1btrain
+    from tests.test_l1btrain import _tiny_cache_dir
+    cache = _tiny_cache_dir(tmp_path, name="cache_opp")
+    meta_path = cache / "meta.json"
+    meta_path.write_text(json.dumps({**json.loads(meta_path.read_text()), "side": "opponent"}))
+    out = tmp_path / "heads_opp.pt"
+    assert lt.main(["--cache", str(cache), "--out", str(out), "--model-config", "b2c16", "--device", "cpu", "--epochs", "1", "--batch", "8"]) == 0
+    assert json.loads(out.with_suffix(".json").read_text())["side"] == "opponent"
+    plain = _tiny_cache_dir(tmp_path, name="cache_plain")
+    out2 = tmp_path / "heads_plain.pt"
+    assert lt.main(["--cache", str(plain), "--out", str(out2), "--model-config", "b2c16", "--device", "cpu", "--epochs", "1", "--batch", "8"]) == 0
+    assert json.loads(out2.with_suffix(".json").read_text())["side"] == "target"
+    # caches of the two sides are refused together; two of the same side carry it
+    other = _tiny_cache_dir(tmp_path, name="cache_opp0", folds=(0,), ranks=("C", "3D"), players_per_rank=2, player_offset=100)
+    import pytest
+    with pytest.raises(ValueError, match="side"):
+        l1btrain.caches_meta([cache, other])
+    (other / "meta.json").write_text(json.dumps({**json.loads((other / "meta.json").read_text()), "side": "opponent"}))
+    assert l1btrain.caches_meta([cache, other])["side"] == "opponent" and l1btrain.caches_meta([plain])["side" if "side" in json.loads((plain / "meta.json").read_text()) else "folds"]
+
+
+def test_score_cli_refuses_opponent_side_heads_without_the_flag(tmp_path, monkeypatch, capsys):
+    import torch
+    from katago.train import modelconfigs
+    from katago.train.model_pytorch import Model
+
+    import l1b_score as ls
+    from aicup import l1b
+
+    games_df, sgfs, folds_csv = _fake_data(tmp_path)
+    monkeypatch.setattr(ls, "player_games", lambda: games_df)
+    monkeypatch.setattr(ls, "load_games", lambda keys: {k: sgfs[k] for k in keys})
+    torch.manual_seed(0)
+    model = Model(modelconfigs.config_of_name["b2c16"], 19)
+    model.initialize()
+    model.eval()
+    pt = tmp_path / "heads_c.pt"
+    l1b.save_heads(l1b.RankHeads(model.policy_head), pt, {"train_folds": [3, 4], "max_games": 40, "side": "opponent"})
+    base = ["--heads", str(pt), "--folds", "1", "--model-config", "b2c16", "--device", "cpu", "--workers", "1", "--part-size", "5",
+            "--min-games", "1", "--folds-csv", str(folds_csv)]
+    assert ls.main([*base, "--out", str(tmp_path / "sc")]) == 2 and "--opponent" in capsys.readouterr().err
+    assert ls.main([*base, "--out", str(tmp_path / "sc_opp"), "--opponent"]) == 0
+    meta = json.loads((tmp_path / "sc_opp" / "fold1" / "meta_s0.json").read_text())
+    assert meta["side"] == "opponent" and meta["heads"]["side"] == "opponent"
+    # target-side heads (and sidecars from before the side field) score either side
+    pt2 = tmp_path / "heads_t.pt"
+    l1b.save_heads(l1b.RankHeads(model.policy_head), pt2, {"train_folds": [3, 4], "max_games": 40})
+    assert ls.main(["--heads", str(pt2), *base[2:], "--out", str(tmp_path / "st"), "--opponent"]) == 0
+    assert json.loads((tmp_path / "st" / "fold1" / "meta_s0.json").read_text())["heads"]["side"] is None
+    import pytest
+    with pytest.raises(ValueError, match="opponent"):
+        ls.check_side({"side": "opponent"}, False)
+    ls.check_side({"side": "opponent"}, True)
+    ls.check_side({}, False)

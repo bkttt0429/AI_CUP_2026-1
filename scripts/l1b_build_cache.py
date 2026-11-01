@@ -17,6 +17,11 @@ games_sha256, provenance).
   python -I scripts/l1b_build_cache.py --folds 1 2 --out results/l1b/cache_A --workers 48
   bash scripts/nano4/shards.sh 8 python -I scripts/l1b_build_cache.py --folds 3 4 --out results/l1b/cache_B --workers 12
   python -I scripts/l1b_build_cache.py --out results/l1b/cache_B --merge-meta
+
+--opponent (issue #33, the opponent-head route): the positions before the OPPONENT's moves (the other colour) of the same
+games, labelled with the target player's rank -- the training data of heads that read the labelled player's rank off the
+opponent's play. The games table's color column is the side extracted (as in l1b_score.py --opponent) and the meta
+records side = "opponent"; the trainer carries it into the heads' sidecar.
 """
 import argparse
 import hashlib
@@ -60,8 +65,13 @@ def games_sha256(table):
     return h.hexdigest()
 
 
-def build_parts(table, out, shard, nshards, part_size, workers, config, log=print):
-    """Write the unfinished parts of this shard; returns the number of parts written."""
+def other_colour(c):
+    return "W" if c == "B" else "B"
+
+
+def build_parts(table, out, shard, nshards, part_size, workers, config, log=print, opponent=False):
+    """Write the unfinished parts of this shard; returns the number of parts written. opponent: extract the positions before
+    the other colour's moves instead of the target player's (the table's color column is the side extracted)."""
     mine = table.iloc[shard::nshards].reset_index(drop=True)
     keys = mine["game_key"].tolist()
     info = {r.game_key: (r.player_id, r.rank) for r in mine.itertuples()}
@@ -76,19 +86,20 @@ def build_parts(table, out, shard, nshards, part_size, workers, config, log=prin
     with ctx.Pool(workers, initializer=init_worker, initargs=(config,)) as pool:
         for k, part_keys in todo:
             t0 = time.time()
-            tasks = [(i, *sgfs[key]) for i, key in enumerate(part_keys)]
+            side = {key: (other_colour(sgfs[key][1]) if opponent else sgfs[key][1]) for key in part_keys}
+            tasks = [(i, sgfs[key][0], side[key]) for i, key in enumerate(part_keys)]
             got = dict(pool.imap_unordered(extract, tasks))
             parts = [pack_positions(got[i]) for i in range(len(part_keys))]
             games = pd.DataFrame({"game_key": part_keys, "player_id": [info[k_][0] for k_ in part_keys],
-                                  "rank": [info[k_][1] for k_ in part_keys], "color": [sgfs[k_][1] for k_ in part_keys],
+                                  "rank": [info[k_][1] for k_ in part_keys], "color": [side[k_] for k_ in part_keys],
                                   "n_moves": [len(p["target"]) for p in parts]})
             write_part(out, shard, k, games, parts)
             log(f"part {k}: {len(part_keys)} games, {int(games['n_moves'].sum())} positions, {time.time() - t0:.0f} s", flush=True)
     return len(todo)
 
 
-def shard_meta(out, shard, table, folds, max_games, min_games, nshards, n_players):
-    """Counts of this shard's finished parts from their games tables (no npz is read)."""
+def shard_meta(out, shard, table, folds, max_games, min_games, nshards, n_players, opponent=False):
+    """Counts of this shard's finished parts from their games tables (no npz is read); side = the colour extracted."""
     frames = [pd.read_csv(part_paths(out, s, k)[1], dtype=str, keep_default_na=False) for s, k in completed_parts(out) if s == shard]
     games = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["game_key", "rank", "n_moves"])
     n_moves = games["n_moves"].astype(int) if len(games) else pd.Series(dtype=int)
@@ -96,7 +107,7 @@ def shard_meta(out, shard, table, folds, max_games, min_games, nshards, n_player
     return {"folds": [int(f) for f in sorted(folds)], "max_games": int(max_games), "min_games": int(min_games), "nshards": int(nshards),
             "shards": [int(shard)], "players": int(n_players), "games_selected": int(len(table)), "games": int(len(games)),
             "positions": int(n_moves.sum()), "per_rank_positions": per_rank, "games_sha256": games_sha256(table),
-            "model_input_config": None, **environment("cpu")}
+            "side": "opponent" if opponent else "target", "model_input_config": None, **environment("cpu")}
 
 
 def merge_meta(out):
@@ -107,6 +118,8 @@ def merge_meta(out):
     for key in ("folds", "max_games", "min_games", "nshards", "players", "games_selected", "games_sha256"):
         if len({json.dumps(m[key]) for m in metas}) != 1:
             raise ValueError(f"the shard metas disagree on {key}")
+    if len({m.get("side", "target") for m in metas}) != 1:
+        raise ValueError("the shard metas disagree on side (target / opponent)")
     merged = {**metas[0], "shards": sorted(s for m in metas for s in m["shards"]), "games": sum(m["games"] for m in metas),
               "positions": sum(m["positions"] for m in metas),
               "per_rank_positions": {lv: sum(m["per_rank_positions"][lv] for m in metas) for lv in LEVELS}}
@@ -129,6 +142,7 @@ def main(argv=None):
     ap.add_argument("--model-config", default=DEFAULT_MODEL_CONFIG, help="KataGo config name (katago.train.modelconfigs) for the input features")
     ap.add_argument("--folds-csv", default=str(FOLDS_CSV))
     ap.add_argument("--merge-meta", action="store_true", help="only combine <out>/meta_s*.json into meta.json")
+    ap.add_argument("--opponent", action="store_true", help="the positions before the opponent's moves (the other colour), labelled with the target player's rank")
     a = ap.parse_args(argv)
     out = Path(a.out)
     if a.merge_meta:
@@ -143,10 +157,11 @@ def main(argv=None):
     from katago.train import modelconfigs
     config = modelconfigs.config_of_name[a.model_config]
     table, n_players = select_games(a.folds, a.max_games, a.min_games, a.folds_csv)
-    print(f"{n_players} players, {len(table)} games over folds {sorted(a.folds)} (<= {a.max_games} per player)", flush=True)
+    print(f"{n_players} players, {len(table)} games over folds {sorted(a.folds)} (<= {a.max_games} per player)"
+          + ("; the OPPONENT's positions, labelled with the target player's rank" if a.opponent else ""), flush=True)
     out.mkdir(parents=True, exist_ok=True)
-    build_parts(table, out, shard, a.nshards, a.part_size, a.workers, config)
-    meta = {**shard_meta(out, shard, table, a.folds, a.max_games, a.min_games, a.nshards, n_players), "model_input_config": a.model_config}
+    build_parts(table, out, shard, a.nshards, a.part_size, a.workers, config, opponent=a.opponent)
+    meta = {**shard_meta(out, shard, table, a.folds, a.max_games, a.min_games, a.nshards, n_players, opponent=a.opponent), "model_input_config": a.model_config}
     (out / f"meta_s{shard}.json").write_text(to_json(meta, indent=1) + "\n")
     if a.nshards == 1:
         merged = merge_meta(out)

@@ -368,9 +368,40 @@
   - CV 與 `l1b_opp_check`／`error_analysis` 完全相同（pilot 驗證題、`sample_questions` 32／人、`RandomState(42 + v)`、`MLPModel(hidden=32)`、玩家 bootstrap）；四個特徵集 `fused_opp`（須重現 0.6735）、`fused_opp_diff`（須重現 `error_analysis.json` 的 `mlp_diff` 0.6916）、`fused_opp_diff_hist`、`fused_opp_diff_hist2`。不碰 fold 0。
 - **預先指定**：`fused_opp_diff_hist vs fused_opp_diff`（條件 (1)(3)(4)）。只報告：`fused_opp_diff_hist2 vs fused_opp_diff`、`fused_opp_diff_hist2 vs fused_opp_diff_hist`、`fused_opp_diff vs fused_opp`（錨點，應為 +0.0181）。
 - **只報告、不作決策**：(i) 各等級依手數加權的合併 pmi_t 直方圖（驗證折全部目標局）與相鄰等級的重疊係數 Σ_i min(h_r, h_r+1)（1 = 相同、0 = 不相交）——就是使用者問的「各等級的分布範圍」。(ii) `fused_opp` 與 `fused_opp_diff` OOF 決策的殘差（`error_analysis.py` 的 `player_table`／`residual_analysis`／`opponent_channel`）：每人平均帶號殘差對 own_pmi／opp_pmi／(opp − own) 的 Spearman；`fused_opp` 那組應重現 §2.18 的 −0.213。**判讀規則（事先寫下）**：`fused_opp_diff` 的 |Spearman(mean e, opp − own)| ≥ 0.10 → 對手通道還有料，開 C 路線的 issue；< 0.10 → 以現有對手特徵看不到剩餘訊號，C 往後排但不排除（這個檢查只量得到線性、現有特徵能表達的那部分；C 的決定性檢驗是那個 head 本身）。
+  - **(ii) 的保留與補充診斷（2026-11-01，使用者核定）**：(ii) 的對手共變量是該玩家**全部**棋局的平均 (對手 − 自己)，模型只看得到題內 5–20 局的估計；題內估計有雜訊、模型會收縮，所以即使模型把題內差值用到極限，殘差對全局平均仍會留下一段相關（一部分是測試時拿不到的玩家層級資訊，不是「特徵沒吃完」）。`hist_check.py` 因此多報**題內**版本（`residual_diagnostics.<model>.question_level`）：殘差對模型看到的那三欄（`fused_opp_diff` 的 opp_minus_own／opp_pmi、own = opp − diff）的 Spearman，分每題（全部、按 n = 5／10／20）與每人（人的平均殘差對其題內共變量的平均）。讀法：題內相關仍在 → 是模型缺的成分（C 能撿）；只在全局平均上有、且從 n = 5 到 20 遞減 → 是題內估計的量測雜訊，從題內拿不到。nano4 第一次跑（未含此診斷）後重跑一次，結果檔以重跑的為準。
 - **預期**：§2.16 的形狀特徵（含 std_pmi）沒過且 NLL 變差；直方圖比 mean／std 多的是分布形狀（偏態、雙峰），估 −0.005 到 +0.005，門檻就是條件 (4) 的 0.005。相鄰重疊係數預期高（推論 0.8 以上），與 AUC 0.62–0.89 對應。
 - **決策**：過 → 另開 issue 接進提交（分片已存每手 L1b 陣列，直方圖在分片後算，不需重新評分；`fit_fused_model.py` 加 hist 欄）。沒過 → 「分布範圍」在這把尺上結束；A 只在使用者仍要做時排，順序：強網評分一次 → 靜態（損失按難度三桶 × 階段三段的平均與分位數，獨立通道）→ 序列版只在靜態過關後（序列輸入先減每局平均，encoder 只能學形狀；GRU 先、`ctm_seq` 當對照）。
-- **結果**：待 nano4（NANO4 §4.14）。
+- **結果（nano4，2026-11-01；PR #31 `7b5726a`，`results/seq/hist_check.json`，`git_head` `8bceb07`，39,327 題，實跑 297 s；cloud 對過 JSON，數字一致）**：**預先指定沒過，「分布範圍」在這把尺上結束，`fused_opp_diff` 維持最佳。** `fused_opp` 0.6735、`fused_opp_diff` 0.6916 重現（每折同 `error_analysis.json`），錨點 `fused_opp_diff vs fused_opp` +0.0181 [+0.0140, +0.0220]。
+
+  | 特徵集 | 維度 | 總分 | NLL | n=5 / 10 / 20 | 每折 1–4 |
+  | --- | --- | --- | --- | --- | --- |
+  | fused_opp_diff（基準） | 59 | 0.6916 | 1.1396 | 0.6432 / 0.6992 / 0.7324 | 0.6851 0.6832 0.7048 0.6933 |
+  | **fused_opp_diff_hist**（預先指定） | 69 | 0.6861 | 1.1555 | 0.6377 / 0.6943 / 0.7262 | 0.6779 0.6779 0.7003 0.6882 |
+  | fused_opp_diff_hist2 | 79 | 0.6853 | 1.1659 | 0.6384 / 0.6892 / 0.7284 | 0.6713 0.6795 0.6976 0.6930 |
+
+  | 比較 | 差 | 95% CI | 每折 | (1) (3) (4) |
+  | --- | --- | --- | --- | --- |
+  | **預先指定** hist vs fused_opp_diff | −0.0055 | [−0.0085, −0.0025] | −0.0072 −0.0053 −0.0045 −0.0051 | ✗ ✗ ✗ |
+  | 只報告 hist2 vs fused_opp_diff | −0.0063 | [−0.0094, −0.0032] | −0.0138 −0.0036 −0.0072 −0.0003 | ✗ ✗ ✗ |
+  | 只報告 hist2 vs hist | −0.0007 | [−0.0039, +0.0024] | −0.0067 +0.0016 −0.0027 +0.0048 | ✗ ✗ ✗ |
+
+  - **各等級的分布範圍**（驗證折全部目標局、依手數加權；格寬 0.9）：分布中心隨等級單調上移，但單手分數幾乎分不出相鄰等級，相鄰重疊係數 D|C 0.860、C|B 0.882、B|A 0.858、A|1D 0.899、**1D|2D 0.937、2D|3D 0.932**、3D|4D 0.919、4D|5D 0.893、5D|6D 0.899，最難分的兩對與 §2.4.1(d) 的 AUC（0.62、0.73）和 §2.18 的錯誤分布一致。直方圖比平均多出來的只有 10 個維度與過度擬合的空間（兩個加直方圖的集合 NLL 都變差）。限制：這把尺是 L1b 的分數，不能代表強網的勝率損失也沒用，但方向與 §2.20 開頭的推論一致。
+  - **殘差診斷（全局平均版）**：`fused_opp` 重現 §2.18（exact 0.529、within1 0.907、玩家間 0.636、mean e 對 (opp − own) −0.213）；`fused_opp_diff` exact 0.548、within1 0.919、玩家間 0.624，mean e 對 own_pmi −0.016、opp_pmi −0.047、**(opp − own) −0.130**。依事先寫下的判讀規則（|ρ| ≥ 0.10）對手通道「可能還有料」，但見上面的保留：題內版診斷待重跑（PR #32 的程式）後補記。
+  - **使用者決定（2026-11-01）**：(a) 加題內版診斷、nano4 重跑；(b) C 路線先寫程式、不訓練（§2.21），等 11/04 Public LB 的兩版對比再決定要不要跑。
+
+### 2.21 80 分路線 C：對手當老師——專門「從對手的棋預測這位玩家標籤」的 L1b head（2026-11-01；issue #33；程式完成、不訓練，等 11/04 Public LB）
+- **為什麼**：§2.18 的玩家間落差（61–64%）只有標籤那一側的資訊能補，對手通道是資料裡唯一的標籤側資訊（伺服器依標籤配對），`fused_opp`（+0.018）與 `fused_opp_diff`（+0.018）都來自它。現在的對手特徵是「預測**自己**等級的 L1b head 去看對手的棋」，沒有模型專門學「從對手的棋預測**這位玩家**的標籤」（含配對偏一級的不對稱）。§2.20 的殘差診斷：加差值後每人殘差對 (opp − own) 仍 −0.130（≥ 事先寫下的 0.10；保留見 §2.20，題內版診斷決定期望值）。
+- **使用者決定（2026-11-01）**：先寫程式、不訓練；要不要跑看 11/04 Public LB 上 `fused_opp_diff` 對 `fused_opp` 的兩版對比：對手通道在測試集成立 → 11/05 開跑；不成立 → 不跑。
+- **做法（與 heads3 同一套配方，只換資料）**：
+  - `scripts/l1b_build_cache.py --opponent`（`other_colour`）：同一批訓練局，取**對手**落子前的局面、對手那一手當 target，**標籤 = 這位玩家的等級**；games 表的 `color` 欄是被取的那一色（與 `l1b_score.py --opponent` 同慣例），meta 記 `side: opponent`；`merge_meta` 要求各 shard 的 side 一致。`cache_A_opp`（folds 1、2）、`cache_B_opp`（folds 3、4）。
+  - `aicup.l1btrain.caches_meta`：多包快取的 side 必須一致、回傳 `side`；側檔多記 `side`（舊快取沒有這個鍵 → `target`）。訓練程式不改：第 k 個 head 只用「夥伴等級 k」的對手落子訓練，鑑別式 CE 直接學「從對手的這一手分辨夥伴等級」。三階段照 heads3：凍結 trunk → `--trunk-lr 1e-5` → `--disc-weight 1`。
+  - `scripts/l1b_score.py`：側檔 `side: opponent` 的 heads 沒帶 `--opponent` 會被拒（exit 2，`check_side`）；target 側的 heads（含 issue #33 前的所有側檔）兩邊都能評（fused_opp 的做法）；fold meta 的 `heads` 多記 `side`。`scores3c_A_opp`（folds 3、4、0）、`scores3c_B_opp`（1、2、0）。
+  - `scripts/opp_head_check.py`：folds 1–4 CV（協定同 `l1b_opp_check`／`error_analysis`）：`fused_opp_diff`（59，須重現 0.6916）、`fused_opp_diff_c`（75：+ C heads 對手 16 維，`build_matrix`）、`fused_opp_diff_c2`（78：再 + C 的差值 3 維 mean(c_pmi − own_pmi)、mean(c_pmi)、std(c_pmi)）、`fused_c_diff`（59：C 的 16 維**取代** L1b 對手 16 維、差值用 C）。`--copp` 的每個 fold meta 須寫 `side: opponent` 且 `heads.side: opponent`（`check_c_scores`），否則拒絕。另報**通道強度**（玩家層級、驗證折全部局）：標籤對 own／opp／c pmi 的 Spearman、標籤對 own 迴歸的殘差對 (opp − own) 與 (c − own)、opp 對 c。
+- **預先指定**：`fused_opp_diff_c vs fused_opp_diff`（條件 (1)(3)(4)）。只報告：`c2 vs fused_opp_diff`、`fused_c_diff vs fused_opp_diff`、`c2 vs c`；通道強度（§2.18 的參考：標籤對 own 0.934、對 opp 0.948、殘差對 (opp − own) 0.452）；訓練側檔的 inner rank CE 與 heads3（2.137／2.111；ln 10 = 2.303）並列。
+- **預期**：對手通道兩次各 +0.018；這裡能撿的是 L1b head 間接估計沒拿到的部分（配對規則的不對稱、對手棋裡與夥伴標籤直接相關的型態）。§2.20 的題內版診斷決定期望值：題內殘差相關仍在 → 有東西可撿；接近 0 → 多半是量測雜訊，期望值小。保守估 +0.000 到 +0.010。
+- **成本（估）**：對手快取 CPU 48 核約 30 分 × 2；三階段訓練 8 卡每條鏈約 3 小時 × 2（heads3 的量）；評分每 fold 一側約 8 分 × 6；CV CPU 約 10 分。
+- **決策**：過 → 另開 issue 接進提交（分片多一趟 C heads 評對手，與現有對手趟共用局面、只多 head 前向，但 C 若有自己微調的 trunk 就多一次 trunk 前向；`fused` 文件新特徵集；`fused_opp_diff` 留作退路）。沒過 → 對手通道以現有資料結束，記在這裡。
+- **結果**：未跑（等 11/04 的 Public LB 對比）。
 
 ## 3. 成本：0B 實測（2026-10-16，lab01 單卡 RTX PRO 6000，torch 2.14.1+cu130，`scripts/bench_humansl.py` → `results/bench_0B.json`）
 

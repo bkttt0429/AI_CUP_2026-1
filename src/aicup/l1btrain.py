@@ -82,13 +82,20 @@ def caches_meta(cache_dirs, exclude_folds=()):
         raise ValueError(f"--exclude-folds {outside} are not in the caches' folds {sorted(seen)}")
     if len({json.dumps(m.get("max_games")) for m in metas}) != 1:
         raise ValueError(f"the caches disagree on max_games: {[m.get('max_games') for m in metas]}")
+    if len({cache_side(m) for m in metas}) != 1:
+        raise ValueError(f"the caches disagree on side (target / opponent positions): {[cache_side(m) for m in metas]}")
     folds = sorted(seen - set(exclude))
     if not folds:
         raise ValueError("every fold of the caches is excluded")
-    return {"folds": folds, "max_games": metas[0].get("max_games"), "min_games": metas[0].get("min_games"),
+    return {"folds": folds, "max_games": metas[0].get("max_games"), "min_games": metas[0].get("min_games"), "side": cache_side(metas[0]),
             "excluded_folds": exclude, "cache_dirs": [str(d) for d in dirs],
-            "caches": [{"dir": str(d), **{k: m.get(k) for k in ("folds", "players", "games", "positions", "games_sha256", "model_input_config")}}
+            "caches": [{"dir": str(d), **{k: m.get(k) for k in ("folds", "players", "games", "positions", "games_sha256", "model_input_config", "side")}}
                        for d, m in zip(dirs, metas)]}
+
+
+def cache_side(meta):
+    """"target" (the labelled player's positions, the default of caches built before issue #33) or "opponent"."""
+    return meta.get("side") or "target"
 
 
 @dataclass(frozen=True)
@@ -444,7 +451,7 @@ def train_heads(model, cache_dir, cfg, out_pt, log=print, resume=True, extra_met
         disc_init = disc_best = obj_init = obj_best = None
     heads.eval()
     per_rank = np.bincount(arrays["rank_idx"][train_idx], minlength=N_RANKS)
-    meta = {"train_cfg": asdict(cfg), "train_folds": cache_meta["folds"], "max_games": cache_meta.get("max_games"),
+    meta = {"train_cfg": asdict(cfg), "train_folds": cache_meta["folds"], "max_games": cache_meta.get("max_games"), "side": cache_side(cache_meta),
             "n_train_positions": int(len(train_idx)), "n_inner_positions": int(len(inner_idx)),
             "per_rank_positions": {lv: int(per_rank[k]) for k, lv in enumerate(LEVELS)},
             "inner_nll_init": nll_init, "inner_nll_best": nll_best, "inner_nll_best_by_rank": by_rank,

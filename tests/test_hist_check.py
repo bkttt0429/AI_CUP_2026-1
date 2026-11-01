@@ -84,7 +84,11 @@ def test_hist_check_cli(tmp_path, capsys):
         assert set(r["opponent_channel"]) == {"spearman_label_own_pmi", "spearman_label_opp_pmi", "spearman_label_resid_on_own_vs_opp_minus_own",
                                               "spearman_oof_mean_e_vs_opp_minus_own", "spearman_own_opp"}
         assert set(r["spearman_mean_e"]) == {"own_pmi", "opp_pmi", "opp_minus_own"} and 0 <= r["exact"] <= 1 and r["exact"] <= r["within1"] <= 1
+        q = r["question_level"]
+        assert set(q["spearman_e"]) == set(q["spearman_mean_e"]) == set(hist_check.Q_COVARIATES) == {"q_own_pmi", "q_opp_pmi", "q_opp_minus_own"}
+        assert set(q["spearman_e_by_n"]) <= {"5", "10", "20"} and all(set(v) == set(hist_check.Q_COVARIATES) for v in q["spearman_e_by_n"].values())
     assert "[pre_specified] fused_opp_diff_hist vs fused_opp_diff" in printed and "adjacent-rank overlap" in printed and "residuals of fused_opp_diff" in printed and "wrote" in printed
+    assert "question-level (what the model saw)" in printed
     with pytest.raises(SystemExit):
         hist_check.main(args + ["--folds", "0", "1"])
     assert hist_check.main(args[:2] + ["--opp", str(tmp_path / "missing")] + args[4:]) == 2
@@ -95,3 +99,15 @@ def test_hist_features_are_the_question_means_of_the_game_histograms():
     qs = pd.DataFrame({"game_keys": [["a", "b"], ["b"]]})
     X = ss.question_shape(table, qs, cols=ss.HIST)
     assert X.shape == (2, 10) and np.allclose(X[0], (np.eye(10)[0] + np.eye(10)[5]) / 2) and np.allclose(X[1], np.eye(10)[5])
+
+
+def test_question_level_spearmans_follow_the_covariate_the_model_saw():
+    # residual e = pred - y rises with q_opp_minus_own strictly (no ties) -> Spearman +1 per question, per n and per player; q_own_pmi = q_opp_pmi - q_opp_minus_own
+    oof = pd.DataFrame({"player_id": ["p1", "p1", "p2", "p2", "p3", "p3"], "n_games": [5, 20, 5, 20, 5, 20], "y": [4] * 6, "pred": [3, 4, 5, 6, 7, 8],
+                        "q_opp_minus_own": [-1.0, 0.0, 0.5, 1.0, 1.5, 2.0], "q_opp_pmi": [4.0, 4.5, 5.0, 5.5, 6.0, 6.5]})
+    oof["q_own_pmi"] = oof["q_opp_pmi"] - oof["q_opp_minus_own"]
+    q = hist_check.question_level(oof)
+    assert abs(q["spearman_e"]["q_opp_minus_own"] - 1) < 1e-12 and abs(q["spearman_e"]["q_opp_pmi"] - 1) < 1e-12
+    assert set(q["spearman_e_by_n"]) == {"5", "20"} and all(abs(v["q_opp_minus_own"] - 1) < 1e-12 for v in q["spearman_e_by_n"].values())
+    assert abs(q["spearman_mean_e"]["q_opp_minus_own"] - 1) < 1e-12
+    assert hist_check.COL_DIFF == 56 and hist_check.COL_OPP == 57
