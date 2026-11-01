@@ -1,0 +1,705 @@
+{
+ "folds": [
+  1,
+  2,
+  3,
+  4
+ ],
+ "questions": 39327,
+ "per_player": 32,
+ "hsl_dir": "/home/u2507115/BK_AICUP_2026-1/results/scores",
+ "l1b_dirs": [
+  "/home/u2507115/BK_AICUP_2026-1/results/l1b/scores3",
+  "/home/u2507115/BK_AICUP_2026-1/results/l1b/scores3_B"
+ ],
+ "opp_dirs": [
+  "/home/u2507115/BK_AICUP_2026-1/results/l1b/scores3_opp",
+  "/home/u2507115/BK_AICUP_2026-1/results/l1b/scores3_B_opp"
+ ],
+ "cache_dir": "/home/u2507115/BK_AICUP_2026-1-tsfelwt/results/seq/tsfel",
+ "pca": [
+  4,
+  16,
+  64
+ ],
+ "k_pre": 16,
+ "tsfel_feature_names": [
+  "pmi_Absolute energy",
+  "pmi_Area under the curve",
+  "pmi_Autocorrelation",
+  "pmi_Average power",
+  "pmi_Centroid",
+  "pmi_ECDF Percentile Count_0",
+  "pmi_ECDF Percentile Count_1",
+  "pmi_ECDF Percentile_0",
+  "pmi_ECDF Percentile_1",
+  "pmi_ECDF_0",
+  "pmi_ECDF_1",
+  "pmi_ECDF_2",
+  "pmi_ECDF_3",
+  "pmi_ECDF_4",
+  "pmi_ECDF_5",
+  "pmi_ECDF_6",
+  "pmi_ECDF_7",
+  "pmi_ECDF_8",
+  "pmi_ECDF_9",
+  "pmi_Entropy",
+  "pmi_Fundamental frequency",
+  "pmi_Histogram mode",
+  "pmi_Human range energy",
+  "pmi_Interquartile range",
+  "pmi_Kurtosis",
+  "pmi_LPCC_0",
+  "pmi_LPCC_1",
+  "pmi_LPCC_10",
+  "pmi_LPCC_11",
+  "pmi_LPCC_2",
+  "pmi_LPCC_3",
+  "pmi_LPCC_4",
+  "pmi_LPCC_5",
+  "pmi_LPCC_6",
+  "pmi_LPCC_7",
+  "pmi_LPCC_8",
+  "pmi_LPCC_9",
+  "pmi_MFCC_0",
+  "pmi_MFCC_1",
+  "pmi_MFCC_10",
+  "pmi_MFCC_11",
+  "pmi_MFCC_2",
+  "pmi_MFCC_3",
+  "pmi_MFCC_4",
+  "pmi_MFCC_5",
+  "pmi_MFCC_6",
+  "pmi_MFCC_7",
+  "pmi_MFCC_8",
+  "pmi_MFCC_9",
+  "pmi_Max",
+  "pmi_Max power spectrum",
+  "pmi_Maximum frequency",
+  "pmi_Mean",
+  "pmi_Mean absolute deviation",
+  "pmi_Mean absolute diff",
+  "pmi_Mean diff",
+  "pmi_Median",
+  "pmi_Median absolute deviation",
+  "pmi_Median absolute diff",
+  "pmi_Median diff",
+  "pmi_Median frequency",
+  "pmi_Min",
+  "pmi_Negative turning points",
+  "pmi_Neighbourhood peaks",
+  "pmi_Peak to peak distance",
+  "pmi_Positive turning points",
+  "pmi_Power bandwidth",
+  "pmi_Root mean square",
+  "pmi_Signal distance",
+  "pmi_Skewness",
+  "pmi_Slope",
+  "pmi_Spectral centroid",
+  "pmi_Spectral decrease",
+  "pmi_Spectral distance",
+  "pmi_Spectral entropy",
+  "pmi_Spectral kurtosis",
+  "pmi_Spectral positive turning points",
+  "pmi_Spectral roll-off",
+  "pmi_Spectral roll-on",
+  "pmi_Spectral skewness",
+  "pmi_Spectral slope",
+  "pmi_Spectral spread",
+  "pmi_Spectral variation",
+  "pmi_Spectrogram mean coefficient_0.02Hz",
+  "pmi_Spectrogram mean coefficient_0.03Hz",
+  "pmi_Spectrogram mean coefficient_0.04Hz",
+  "pmi_Spectrogram mean coefficient_0.05Hz",
+  "pmi_Spectrogram mean coefficient_0.06Hz",
+  "pmi_Spectrogram mean coefficient_0.07Hz",
+  "pmi_Spectrogram mean coefficient_0.08Hz",
+  "pmi_Spectrogram mean coefficient_0.09Hz",
+  "pmi_Spectrogram mean coefficient_0.0Hz",
+  "pmi_Spectrogram mean coefficient_0.11Hz",
+  "pmi_Spectrogram mean coefficient_0.12Hz",
+  "pmi_Spectrogram mean coefficient_0.13Hz",
+  "pmi_Spectrogram mean coefficient_0.14Hz",
+  "pmi_Spectrogram mean coefficient_0.15Hz",
+  "pmi_Spectrogram mean coefficient_0.16Hz",
+  "pmi_Spectrogram mean coefficient_0.17Hz",
+  "pmi_Spectrogram mean coefficient_0.18Hz",
+  "pmi_Spectrogram mean coefficient_0.19Hz",
+  "pmi_Spectrogram mean coefficient_0.1Hz",
+  "pmi_Spectrogram mean coefficient_0.21Hz",
+  "pmi_Spectrogram mean coefficient_0.22Hz",
+  "pmi_Spectrogram mean coefficient_0.23Hz",
+  "pmi_Spectrogram mean coefficient_0.24Hz",
+  "pmi_Spectrogram mean coefficient_0.25Hz",
+  "pmi_Spectrogram mean coefficient_0.26Hz",
+  "pmi_Spectrogram mean coefficient_0.27Hz",
+  "pmi_Spectrogram mean coefficient_0.28Hz",
+  "pmi_Spectrogram mean coefficient_0.29Hz",
+  "pmi_Spectrogram mean coefficient_0.2Hz",
+  "pmi_Spectrogram mean coefficient_0.31Hz",
+  "pmi_Spectrogram mean coefficient_0.32Hz",
+  "pmi_Spectrogram mean coefficient_0.33Hz",
+  "pmi_Spectrogram mean coefficient_0.34Hz",
+  "pmi_Spectrogram mean coefficient_0.35Hz",
+  "pmi_Spectrogram mean coefficient_0.36Hz",
+  "pmi_Spectrogram mean coefficient_0.37Hz",
+  "pmi_Spectrogram mean coefficient_0.38Hz",
+  "pmi_Spectrogram mean coefficient_0.39Hz",
+  "pmi_Spectrogram mean coefficient_0.3Hz",
+  "pmi_Spectrogram mean coefficient_0.41Hz",
+  "pmi_Spectrogram mean coefficient_0.42Hz",
+  "pmi_Spectrogram mean coefficient_0.43Hz",
+  "pmi_Spectrogram mean coefficient_0.44Hz",
+  "pmi_Spectrogram mean coefficient_0.45Hz",
+  "pmi_Spectrogram mean coefficient_0.46Hz",
+  "pmi_Spectrogram mean coefficient_0.47Hz",
+  "pmi_Spectrogram mean coefficient_0.48Hz",
+  "pmi_Spectrogram mean coefficient_0.4Hz",
+  "pmi_Spectrogram mean coefficient_0.5Hz",
+  "pmi_Standard deviation",
+  "pmi_Sum absolute diff",
+  "pmi_Variance",
+  "pmi_Wavelet entropy",
+  "pmi_Zero crossing rate",
+  "s_Absolute energy",
+  "s_Area under the curve",
+  "s_Autocorrelation",
+  "s_Average power",
+  "s_Centroid",
+  "s_ECDF Percentile Count_0",
+  "s_ECDF Percentile Count_1",
+  "s_ECDF Percentile_0",
+  "s_ECDF Percentile_1",
+  "s_ECDF_0",
+  "s_ECDF_1",
+  "s_ECDF_2",
+  "s_ECDF_3",
+  "s_ECDF_4",
+  "s_ECDF_5",
+  "s_ECDF_6",
+  "s_ECDF_7",
+  "s_ECDF_8",
+  "s_ECDF_9",
+  "s_Entropy",
+  "s_Fundamental frequency",
+  "s_Histogram mode",
+  "s_Human range energy",
+  "s_Interquartile range",
+  "s_Kurtosis",
+  "s_LPCC_0",
+  "s_LPCC_1",
+  "s_LPCC_10",
+  "s_LPCC_11",
+  "s_LPCC_2",
+  "s_LPCC_3",
+  "s_LPCC_4",
+  "s_LPCC_5",
+  "s_LPCC_6",
+  "s_LPCC_7",
+  "s_LPCC_8",
+  "s_LPCC_9",
+  "s_MFCC_0",
+  "s_MFCC_1",
+  "s_MFCC_10",
+  "s_MFCC_11",
+  "s_MFCC_2",
+  "s_MFCC_3",
+  "s_MFCC_4",
+  "s_MFCC_5",
+  "s_MFCC_6",
+  "s_MFCC_7",
+  "s_MFCC_8",
+  "s_MFCC_9",
+  "s_Max",
+  "s_Max power spectrum",
+  "s_Maximum frequency",
+  "s_Mean",
+  "s_Mean absolute deviation",
+  "s_Mean absolute diff",
+  "s_Mean diff",
+  "s_Median",
+  "s_Median absolute deviation",
+  "s_Median absolute diff",
+  "s_Median diff",
+  "s_Median frequency",
+  "s_Min",
+  "s_Negative turning points",
+  "s_Neighbourhood peaks",
+  "s_Peak to peak distance",
+  "s_Positive turning points",
+  "s_Power bandwidth",
+  "s_Root mean square",
+  "s_Signal distance",
+  "s_Skewness",
+  "s_Slope",
+  "s_Spectral centroid",
+  "s_Spectral decrease",
+  "s_Spectral distance",
+  "s_Spectral entropy",
+  "s_Spectral kurtosis",
+  "s_Spectral positive turning points",
+  "s_Spectral roll-off",
+  "s_Spectral roll-on",
+  "s_Spectral skewness",
+  "s_Spectral slope",
+  "s_Spectral spread",
+  "s_Spectral variation",
+  "s_Spectrogram mean coefficient_0.02Hz",
+  "s_Spectrogram mean coefficient_0.03Hz",
+  "s_Spectrogram mean coefficient_0.04Hz",
+  "s_Spectrogram mean coefficient_0.05Hz",
+  "s_Spectrogram mean coefficient_0.06Hz",
+  "s_Spectrogram mean coefficient_0.07Hz",
+  "s_Spectrogram mean coefficient_0.08Hz",
+  "s_Spectrogram mean coefficient_0.09Hz",
+  "s_Spectrogram mean coefficient_0.0Hz",
+  "s_Spectrogram mean coefficient_0.11Hz",
+  "s_Spectrogram mean coefficient_0.12Hz",
+  "s_Spectrogram mean coefficient_0.13Hz",
+  "s_Spectrogram mean coefficient_0.14Hz",
+  "s_Spectrogram mean coefficient_0.15Hz",
+  "s_Spectrogram mean coefficient_0.16Hz",
+  "s_Spectrogram mean coefficient_0.17Hz",
+  "s_Spectrogram mean coefficient_0.18Hz",
+  "s_Spectrogram mean coefficient_0.19Hz",
+  "s_Spectrogram mean coefficient_0.1Hz",
+  "s_Spectrogram mean coefficient_0.21Hz",
+  "s_Spectrogram mean coefficient_0.22Hz",
+  "s_Spectrogram mean coefficient_0.23Hz",
+  "s_Spectrogram mean coefficient_0.24Hz",
+  "s_Spectrogram mean coefficient_0.25Hz",
+  "s_Spectrogram mean coefficient_0.26Hz",
+  "s_Spectrogram mean coefficient_0.27Hz",
+  "s_Spectrogram mean coefficient_0.28Hz",
+  "s_Spectrogram mean coefficient_0.29Hz",
+  "s_Spectrogram mean coefficient_0.2Hz",
+  "s_Spectrogram mean coefficient_0.31Hz",
+  "s_Spectrogram mean coefficient_0.32Hz",
+  "s_Spectrogram mean coefficient_0.33Hz",
+  "s_Spectrogram mean coefficient_0.34Hz",
+  "s_Spectrogram mean coefficient_0.35Hz",
+  "s_Spectrogram mean coefficient_0.36Hz",
+  "s_Spectrogram mean coefficient_0.37Hz",
+  "s_Spectrogram mean coefficient_0.38Hz",
+  "s_Spectrogram mean coefficient_0.39Hz",
+  "s_Spectrogram mean coefficient_0.3Hz",
+  "s_Spectrogram mean coefficient_0.41Hz",
+  "s_Spectrogram mean coefficient_0.42Hz",
+  "s_Spectrogram mean coefficient_0.43Hz",
+  "s_Spectrogram mean coefficient_0.44Hz",
+  "s_Spectrogram mean coefficient_0.45Hz",
+  "s_Spectrogram mean coefficient_0.46Hz",
+  "s_Spectrogram mean coefficient_0.47Hz",
+  "s_Spectrogram mean coefficient_0.48Hz",
+  "s_Spectrogram mean coefficient_0.4Hz",
+  "s_Spectrogram mean coefficient_0.5Hz",
+  "s_Standard deviation",
+  "s_Sum absolute diff",
+  "s_Variance",
+  "s_Wavelet entropy",
+  "s_Zero crossing rate"
+ ],
+ "blocks": {
+  "1": {
+   "kept_columns": 268,
+   "pca": {
+    "4": {
+     "components": 4,
+     "explained": 0.49442968656726105
+    },
+    "16": {
+     "components": 16,
+     "explained": 0.665465969772395
+    },
+    "64": {
+     "components": 64,
+     "explained": 0.8647615289447721
+    }
+   }
+  },
+  "2": {
+   "kept_columns": 268,
+   "pca": {
+    "4": {
+     "components": 4,
+     "explained": 0.4939653871782323
+    },
+    "16": {
+     "components": 16,
+     "explained": 0.6644903475722911
+    },
+    "64": {
+     "components": 64,
+     "explained": 0.8645808948759731
+    }
+   }
+  },
+  "3": {
+   "kept_columns": 268,
+   "pca": {
+    "4": {
+     "components": 4,
+     "explained": 0.49230007724754515
+    },
+    "16": {
+     "components": 16,
+     "explained": 0.6637363657567895
+    },
+    "64": {
+     "components": 64,
+     "explained": 0.8640429977163497
+    }
+   }
+  },
+  "4": {
+   "kept_columns": 267,
+   "pca": {
+    "4": {
+     "components": 4,
+     "explained": 0.49552440191529334
+    },
+    "16": {
+     "components": 16,
+     "explained": 0.6670409849884851
+    },
+    "64": {
+     "components": 64,
+     "explained": 0.8636079578531225
+    }
+   }
+  }
+ },
+ "scores": {
+  "fused_opp_diff": {
+   "balanced_mean_over_n": 0.6915922706543135,
+   "nll_balanced": 1.13955058085618,
+   "n_features": 59,
+   "balanced_by_n": {
+    "5": 0.6432307094673829,
+    "10": 0.6991925288589288,
+    "20": 0.7323535736366289
+   },
+   "per_class": {
+    "D": 0.8299731098987859,
+    "C": 0.7162408302085326,
+    "B": 0.7066091020891986,
+    "A": 0.6875307873560502,
+    "1D": 0.5544082986530143,
+    "2D": 0.5168770252002648,
+    "3D": 0.5535924638189967,
+    "4D": 0.6173914575775515,
+    "5D": 0.6857545372094389,
+    "6D": 0.8457719480002832
+   },
+   "per_fold": [
+    0.6850865697176891,
+    0.6831662630617726,
+    0.7048198026154852,
+    0.693299240681803
+   ]
+  },
+  "fused_opp_diff_tsfel4": {
+   "balanced_mean_over_n": 0.6901985772891722,
+   "nll_balanced": 1.1507200158347333,
+   "n_features": 63,
+   "balanced_by_n": {
+    "5": 0.6410765107385336,
+    "10": 0.6936501704756579,
+    "20": 0.7358690506533254
+   },
+   "per_class": {
+    "D": 0.8244782543599205,
+    "C": 0.7245954542931566,
+    "B": 0.6972087305421828,
+    "A": 0.6857055212426836,
+    "1D": 0.5553946819209172,
+    "2D": 0.5031727798268782,
+    "3D": 0.5546286819084059,
+    "4D": 0.6192448834132469,
+    "5D": 0.679046800959897,
+    "6D": 0.8468738190901169
+   },
+   "per_fold": [
+    0.6825835212296439,
+    0.6786624762641562,
+    0.7020457052271961,
+    0.6975318329278282
+   ]
+  },
+  "fused_opp_diff_tsfel16": {
+   "balanced_mean_over_n": 0.6787556111434557,
+   "nll_balanced": 1.2053334056021674,
+   "n_features": 75,
+   "balanced_by_n": {
+    "5": 0.6283338995107981,
+    "10": 0.686975002358803,
+    "20": 0.720957931560766
+   },
+   "per_class": {
+    "D": 0.8156901810300177,
+    "C": 0.7174841349643343,
+    "B": 0.7026377708037213,
+    "A": 0.6664687295257551,
+    "1D": 0.5304808473757614,
+    "2D": 0.4900833844641025,
+    "3D": 0.5429524126734587,
+    "4D": 0.6115923240973502,
+    "5D": 0.6601801925373268,
+    "6D": 0.8389023235284634
+   },
+   "per_fold": [
+    0.6685631606881522,
+    0.6716736956887407,
+    0.6919830634908574,
+    0.6828072093094238
+   ]
+  },
+  "fused_opp_diff_tsfel64": {
+   "balanced_mean_over_n": 0.6541005949894517,
+   "nll_balanced": 1.4280847301418715,
+   "n_features": 123,
+   "balanced_by_n": {
+    "5": 0.5971969013426666,
+    "10": 0.6608171293901008,
+    "20": 0.7042877542355876
+   },
+   "per_class": {
+    "D": 0.7970650515789197,
+    "C": 0.6951552932517487,
+    "B": 0.6787437153113104,
+    "A": 0.6244507266071707,
+    "1D": 0.5060999130185532,
+    "2D": 0.4682675781537418,
+    "3D": 0.5022604955748722,
+    "4D": 0.5675501458991544,
+    "5D": 0.6317618759922614,
+    "6D": 0.8250438944434947
+   },
+   "per_fold": [
+    0.6509631206571195,
+    0.6442122321987162,
+    0.668941681732611,
+    0.6523212044961305
+   ]
+  },
+  "fused_opp_diff_tsfel_all": {
+   "balanced_mean_over_n": 0.6305527254970094,
+   "nll_balanced": 1.726459790554253,
+   "n_features": 326,
+   "balanced_by_n": {
+    "5": 0.5805984449607748,
+    "10": 0.6363910685652467,
+    "20": 0.6746686629650064
+   },
+   "per_class": {
+    "D": 0.7704345388129517,
+    "C": 0.6880803195038713,
+    "B": 0.6444848231522372,
+    "A": 0.6127752229401914,
+    "1D": 0.4623562355474748,
+    "2D": 0.4547790470016019,
+    "3D": 0.47730759452203486,
+    "4D": 0.5655094566447383,
+    "5D": 0.6051413932965303,
+    "6D": 0.8091450618245505
+   },
+   "per_fold": [
+    0.6242457638438889,
+    0.6303721824275816,
+    0.6408135839743392,
+    0.6267780451320801
+   ]
+  }
+ },
+ "comparisons": {
+  "pre_specified": {
+   "fused_opp_diff_tsfel16 vs fused_opp_diff": {
+    "diff": -0.012836659510857773,
+    "ci95": [
+     -0.016671240371884166,
+     -0.009018027755839935
+    ],
+    "by_n": {
+     "5": -0.014896809956584822,
+     "10": -0.012217526500125753,
+     "20": -0.011395642075862855
+    },
+    "per_fold_diff": [
+     -0.016523409029536862,
+     -0.011492567373031948,
+     -0.012836739124627794,
+     -0.010492031372379196
+    ],
+    "conditions": {
+     "1": false,
+     "3": false,
+     "4": false
+    },
+    "pass": false
+   }
+  },
+  "report_only": {
+   "fused_opp_diff_tsfel4 vs fused_opp_diff": {
+    "diff": -0.0013936933651412797,
+    "ci95": [
+     -0.004342091115022801,
+     0.0015004019141401594
+    ],
+    "by_n": {
+     "5": -0.002154198728849366,
+     "10": -0.0055423583832708845,
+     "20": 0.003515477016696522
+    },
+    "per_fold_diff": [
+     -0.0025030484880451676,
+     -0.004503786797616427,
+     -0.002774097388289043,
+     0.004232592246025124
+    ],
+    "conditions": {
+     "1": false,
+     "3": false,
+     "4": false
+    },
+    "pass": false
+   },
+   "fused_opp_diff_tsfel64 vs fused_opp_diff": {
+    "diff": -0.03749167566486178,
+    "ci95": [
+     -0.04232776697433278,
+     -0.032615597955814014
+    ],
+    "by_n": {
+     "5": -0.04603380812471636,
+     "10": -0.03837539946882795,
+     "20": -0.028065819401041248
+    },
+    "per_fold_diff": [
+     -0.03412344906056963,
+     -0.03895403086305649,
+     -0.03587812088287412,
+     -0.04097803618567253
+    ],
+    "conditions": {
+     "1": false,
+     "3": false,
+     "4": false
+    },
+    "pass": false
+   },
+   "fused_opp_diff_tsfel_all vs fused_opp_diff": {
+    "diff": -0.06103954515730414,
+    "ci95": [
+     -0.06671002484079858,
+     -0.055091792508865436
+    ],
+    "by_n": {
+     "5": -0.06263226450660808,
+     "10": -0.06280146029368205,
+     "20": -0.057684910671622514
+    },
+    "per_fold_diff": [
+     -0.06084080587380025,
+     -0.052794080634191,
+     -0.06400621864114597,
+     -0.06652119554972291
+    ],
+    "conditions": {
+     "1": false,
+     "3": false,
+     "4": false
+    },
+    "pass": false
+   }
+  }
+ },
+ "game_level": {
+  "k": 16,
+  "per_game_logistic": {
+   "mean_only": [
+    {
+     "fold": 1,
+     "balanced_acc": 0.2603279295380275,
+     "balanced_nll": 1.862762495251897,
+     "n_games": 29598
+    },
+    {
+     "fold": 2,
+     "balanced_acc": 0.2594643918043384,
+     "balanced_nll": 1.8512095099825785,
+     "n_games": 29539
+    },
+    {
+     "fold": 3,
+     "balanced_acc": 0.26723273959937155,
+     "balanced_nll": 1.8442931357021746,
+     "n_games": 29513
+    },
+    {
+     "fold": 4,
+     "balanced_acc": 0.2671196013961052,
+     "balanced_nll": 1.8534200263306222,
+     "n_games": 29481
+    }
+   ],
+   "mean_plus_tsfel": [
+    {
+     "fold": 1,
+     "balanced_acc": 0.2720415976696354,
+     "balanced_nll": 1.826019634688204,
+     "n_games": 29598
+    },
+    {
+     "fold": 2,
+     "balanced_acc": 0.26946529030492095,
+     "balanced_nll": 1.815172893715533,
+     "n_games": 29539
+    },
+    {
+     "fold": 3,
+     "balanced_acc": 0.27879140474092695,
+     "balanced_nll": 1.8052003239841767,
+     "n_games": 29513
+    },
+    {
+     "fold": 4,
+     "balanced_acc": 0.27121329366025837,
+     "balanced_nll": 1.814681535161275,
+     "n_games": 29481
+    }
+   ]
+  },
+  "gain": {
+   "balanced_acc": [
+    0.011713668131607902,
+    0.010000898500582556,
+    0.011558665141555402,
+    0.0040936922641531814
+   ],
+   "balanced_nll": [
+    0.036742860563693025,
+    0.036036616267045574,
+    0.03909281171799783,
+    0.03873849116934713
+   ],
+   "mean_balanced_acc": 0.00934173100947476,
+   "mean_balanced_nll": 0.03765269492952089
+  }
+ },
+ "min_diff": 0.005,
+ "seconds": 611.5866508483887,
+ "git_head": "ef10885",
+ "git_dirty": false,
+ "code_sha256": "8cf8dbbd0a7e9024e4ed529c7a55497b48b8f487944f4fceec2567d9f644a2f7",
+ "code_files": [
+  "src/aicup/gamevec.py",
+  "src/aicup/ladder_data.py",
+  "src/aicup/aggregators.py",
+  "src/aicup/settrain.py",
+  "src/aicup/rankmodel.py",
+  "src/aicup/qfeatures.py",
+  "src/aicup/metric.py"
+ ],
+ "torch_version": "2.14.1+cu126",
+ "device_name": "cpu"
+}
