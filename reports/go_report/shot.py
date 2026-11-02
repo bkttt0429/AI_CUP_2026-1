@@ -48,7 +48,7 @@ with sync_playwright() as p:
         ctx.keyboard.press("ArrowRight"); ctx.wait_for_timeout(120)
     for w, tag in ((1366, "desk"), (400, "phone")):
         v = b.new_page(viewport={"width": w, "height": 800})
-        for name in ["index"] + [f"ch{k:02d}" for k in range(1, 9)]:
+        for name in ["index"] + [f"ch{k:02d}" for k in range(1, 10)]:
             v.goto((SITE / f"{name}.html").as_uri() + "?mode=read"); v.wait_for_timeout(250)
             over = v.evaluate("document.documentElement.scrollWidth - innerWidth")
             res[f"{tag} {name}"] = [f"body overflow {over}px"] if over > 1 else []
