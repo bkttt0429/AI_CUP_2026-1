@@ -375,7 +375,7 @@ def test_fit_fused_model_cli_no_fold0(tmp_path, capsys):
     assert len(doc["state"]["params"]["0.weight"][0]) == 59
     # the fit itself is the same as with the check: same training questions, same MLP
     out2 = tmp_path / "models" / "with_fold0.json"
-    assert ffm.main([*args[:-3], str(out2)]) == 0
+    assert ffm.main([*args[:-3], "--out", str(out2)]) == 0
     doc2, _ = fused.load_fused_model(out2)
     assert doc2["state"]["params"] == doc["state"]["params"] and doc2["questions_sha256"] == doc["questions_sha256"] and "skipped" not in doc2["fold0_check"]
     with pytest.raises(SystemExit):
