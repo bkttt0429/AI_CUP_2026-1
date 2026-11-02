@@ -1,0 +1,181 @@
+{
+ "folds": [
+  1,
+  2,
+  3,
+  4
+ ],
+ "seed": 11,
+ "hd_table": "/home/u2507115/BK_AICUP_2026-1/results/data/hd_table.csv",
+ "summary": {
+  "10": {
+   "base59": {
+    "median_split_half_corr": 0.922220782226291,
+    "mean_ratio_W_over_between": 0.16888949885264112,
+    "mean_W": 0.13822543079317948
+   },
+   "hsl24": {
+    "median_split_half_corr": 0.956696981208432,
+    "mean_ratio_W_over_between": 0.09459142387683546,
+    "mean_W": 0.08125850243737942
+   },
+   "l1b16": {
+    "median_split_half_corr": 0.9091238835580645,
+    "mean_ratio_W_over_between": 0.17689716899287192,
+    "mean_W": 0.1479106159974388
+   },
+   "opp16": {
+    "median_split_half_corr": 0.8913672699178004,
+    "mean_ratio_W_over_between": 0.2121573923003274,
+    "mean_W": 0.17324136238303464
+   },
+   "diff3": {
+    "median_split_half_corr": 0.5776225585260405,
+    "mean_ratio_W_over_between": 0.4898044261901963,
+    "mean_W": 0.3555549014043026
+   },
+   "shape": {
+    "median_split_half_corr": 0.7049288294928286,
+    "mean_ratio_W_over_between": 0.47077735919779135,
+    "mean_W": 0.3461956454453257,
+    "per_feature_corr": {
+     "ac1_pmi": 0.52,
+     "ac1_s": 0.218,
+     "ac2_pmi": 0.484,
+     "half_diff_pmi": 0.664,
+     "mean_pmi": 0.956,
+     "mean_s": 0.828,
+     "slope_pmi": 0.738,
+     "std_pmi": 0.81
+    }
+   },
+   "tsfel": {
+    "median_split_half_corr": 0.13803144005871107,
+    "mean_ratio_W_over_between": 1.2997238922650953,
+    "mean_W": 0.6990616296935779,
+    "per_feature_corr": {
+     "pc1": 0.877,
+     "pc10": 0.343,
+     "pc11": 0.034,
+     "pc12": 0.043,
+     "pc13": 0.095,
+     "pc14": 0.006,
+     "pc15": 0.203,
+     "pc16": 0.044,
+     "pc2": 0.521,
+     "pc3": 0.786,
+     "pc4": 0.596,
+     "pc5": 0.147,
+     "pc6": 0.283,
+     "pc7": 0.127,
+     "pc8": 0.113,
+     "pc9": 0.012
+    }
+   },
+   "hd": {
+    "median_split_half_corr": 0.8454700160757009,
+    "mean_ratio_W_over_between": 0.18227876593788064,
+    "mean_W": 0.16327271302076454,
+    "per_feature_corr": {
+     "hd_even": 0.806,
+     "hd_gap_down": 0.916,
+     "hd_gap_up": 0.839,
+     "hd_sente": 0.744,
+     "hd_stones": 0.873
+    }
+   }
+  },
+  "5": {
+   "base59": {
+    "median_split_half_corr": 0.8641920042761597,
+    "mean_ratio_W_over_between": 0.276509689034862,
+    "mean_W": 0.21836781839135092
+   },
+   "hsl24": {
+    "median_split_half_corr": 0.9218635974032894,
+    "mean_ratio_W_over_between": 0.1592731624902348,
+    "mean_W": 0.13166850481315104
+   },
+   "l1b16": {
+    "median_split_half_corr": 0.8271614109261702,
+    "mean_ratio_W_over_between": 0.29877711174003774,
+    "mean_W": 0.23882855459187627
+   },
+   "opp16": {
+    "median_split_half_corr": 0.7985638906073806,
+    "mean_ratio_W_over_between": 0.35303207512624724,
+    "mean_W": 0.28044157228062805
+   },
+   "diff3": {
+    "median_split_half_corr": 0.4128778096830319,
+    "mean_ratio_W_over_between": 0.687522921143553,
+    "mean_W": 0.4717783798713365
+   },
+   "shape": {
+    "median_split_half_corr": 0.5464355527070284,
+    "mean_ratio_W_over_between": 0.7129503334250027,
+    "mean_W": 0.48700349262963366,
+    "per_feature_corr": {
+     "ac1_pmi": 0.339,
+     "ac1_s": 0.11,
+     "ac2_pmi": 0.308,
+     "half_diff_pmi": 0.495,
+     "mean_pmi": 0.913,
+     "mean_s": 0.702,
+     "slope_pmi": 0.582,
+     "std_pmi": 0.667
+    }
+   },
+   "tsfel": {
+    "median_split_half_corr": 0.07006259275894727,
+    "mean_ratio_W_over_between": 1.4812927744007662,
+    "mean_W": 0.8137694061738904,
+    "per_feature_corr": {
+     "pc1": 0.689,
+     "pc10": 0.242,
+     "pc11": -0.01,
+     "pc12": 0.015,
+     "pc13": 0.03,
+     "pc14": 0.031,
+     "pc15": 0.042,
+     "pc16": 0.003,
+     "pc2": 0.478,
+     "pc3": 0.663,
+     "pc4": 0.407,
+     "pc5": 0.06,
+     "pc6": 0.111,
+     "pc7": 0.13,
+     "pc8": 0.07,
+     "pc9": 0.026
+    }
+   },
+   "hd": {
+    "median_split_half_corr": 0.7329164582809304,
+    "mean_ratio_W_over_between": 0.3352193611986397,
+    "mean_W": 0.2829366282161556,
+    "per_feature_corr": {
+     "hd_even": 0.668,
+     "hd_gap_down": 0.848,
+     "hd_gap_up": 0.725,
+     "hd_sente": 0.583,
+     "hd_stones": 0.773
+    }
+   }
+  }
+ },
+ "seconds": 87.1693947315216,
+ "git_head": "f52166e",
+ "git_dirty": false,
+ "code_sha256": "087f80e747ba6b925fda3dc0ea30d6c3c79966a62a7f90e053ba495b9a7c0cb7",
+ "code_files": [
+  "src/aicup/gamevec.py",
+  "src/aicup/ladder_data.py",
+  "src/aicup/aggregators.py",
+  "src/aicup/settrain.py",
+  "src/aicup/rankmodel.py",
+  "src/aicup/qfeatures.py",
+  "src/aicup/metric.py"
+ ],
+ "torch_version": "2.14.1+cu126",
+ "device_name": "cpu"
+}
