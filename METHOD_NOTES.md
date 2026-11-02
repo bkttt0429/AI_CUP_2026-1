@@ -505,6 +505,28 @@
 - **穩定性**：HD 五欄的 split-half 相關中位數 0.845（n=10）／0.733（n=5），每欄 0.58–0.92（§2.22 的重抽穩定性檢查，PR #48）；不是 TSFEL 那種抽樣雜訊，和 l1b／opp 塊同級。
 - **結果**：待使用者同意 fold 0 與 nano4 的擬合（NANO4 §4.20）。
 
+### 2.26 R-full (a)：固定 7.5 的一致版本——只重建 HD≥2 的 L1b 快取、head 重訓、全量重評、重擬（2026-11-02；issue #51；使用者 2026-11-03 核定「架構 v2 §6.1」的執行範圍；程式與 runbook 已寫，nano4 跑）
+- **為什麼**：§2.24 的 `_hd` 只修了評分端（Human SL 與 L1b 的分數）與推論端的重播，L1b head 仍是在舊重播的快取上訓的（快取裡 HD≥2 的局面缺子、評的是對手的棋）。R-full (a) 把訓練端也補齊，但**維持 whiteKomi 7.5**（貼目敏感度抽樣見下；改貼目是 (b)，不在本輪），版本名 R-full-a。Human SL 的 `_hd` 分數重用（設定未變，不重評 18 個 profile）。
+- **貼目敏感度抽樣（nano4，2026-11-02，report only；`results/seq/komi_sensitivity.json`、`scripts/komi_sensitivity.py`，PR #50 `2813c40`）**：folds 1–4 的 n=5 題按讓子內容分三組各 60 題（A 全互先、B 含讓先、C 含讓子），同一局在 7.5 與資料約定貼目（HD0 6.5、HD≥1 0）下各評一次，一路量到 `_r` 文件的決策。每手 |Δlog p|：Human SL 0.021–0.027（p95 0.07–0.10），L1b head 0.090–0.100（p95 0.45）——L1b 比 Human SL 敏感四倍（head 在 7.5 下訓）；每局 |Δsum| Human SL 0.6–0.7、L1b 7；題目特徵位移中位 0.015 sd（p95 0.15–0.18，最敏感的是對手−自己 pmi 差）；max |Δp| 0.03–0.04；**決策改變 9／4／3 of 60（5–15%）**。讀法：這量的是推論端單獨換貼目的錯配，不是哪個貼目較好；要走資料約定貼目必須整套一致重建（快取、head、全量分數），排在 (a) 之後、不在本輪。
+- **步驟與程式**（NANO4 §4.21）：(1) **快取補丁**：`scripts/l1b_patch_cache.py --cache results/l1b/cache_A --game-keys results/data/hd2_keys.csv`（`cache_B` 同）——就地、逐 part：只有表裡含清單局的 part 才重寫，那些局用修正後的重播重新抽平面並打包，其他局的列逐位搬過去（`featcache.patch_part`：寫前算未換局面的 sha256、寫後重讀比對，不同就中止），`n_moves` 跟著新局面，寫法沿用 `write_part` 的 tmp → rename，中斷只留舊 part、重跑接著做；`patch_meta.json` 記每個 part 的前後局面數與清單檔雜湊，`meta.json`／`meta_s*.json` 的 `positions`／`per_rank_positions` 重算（`games_sha256` 只雜湊 key／player／rank，不變）。約 37 萬個局面，CPU 48 核幾分鐘，磁碟只多一個 part 的 tmp。(2) **heads4_A／heads4_B**：與 heads3 完全相同的三段配方（凍結 trunk → `--trunk-lr 1e-5` → `--disc-weight 1 --epochs 2`），只換快取；側檔 provenance 由 `l1b_train.py` 記（快取 `meta.json` 的 `patched` 一併進側檔的 cache 摘要）。(3) **全量重評**：`l1b_score.py --heads heads4_{A,B}` 兩側五折 → `results/l1b/scores4`、`scores4_B`、`scores4_opp`、`scores4_B_opp`（約 2.2 億局面，8 卡 8–9 小時）。(4) **重擬**：`fit_fused_model.py --diff --no-fold0` 於 `scores4*` + `results/scores_hd` → `rank_model_fused_opp_diff_full.json`；加 `--hd-table` → `_hd_full.json`。(5) `hist_check`／`hd_check` 在 `scores4*` 上各跑一次（E 四格的 full 版；對照 §2.24 的 `_hd` 版）。
+- **不在範圍**：貼目改資料約定、fold 0 的任何使用、G／BERT。
+- **結果**：待 nano4。
+
+### 2.27 按 n 條件化標準化：`fused_opp_diff_nstd`（2026-11-02；issue #53；使用者核定「本輪唯一的 CPU 便宜項」；程式已寫，nano4 跑）
+- **起因**：§2.22 的指紋檢查 v2——訓練題固定 5 局後 TSFEL 塊對新玩家的傷害從 −0.0157 縮到 −0.0049，base 在 n=5 題 0.6628 vs 混合訓練 0.6603（未檢定）；同一欄在 5 局題與 20 局題的尺度不同（少局的平均更吵），全局標準化讓雜訊塊在少局題上權重過大。題目層已有 `log n` 輸入，但那只讓 MLP「知道」n，沒有改尺度。
+- **做法**（`aicup.nstd.NStdMLP`、`scripts/nstd_check.py`）：對照 = 現行 `fused_opp_diff`（59 維、`MLPModel(hidden=32)` 的全局標準化）；候選 = 同一份特徵、同一個 MLP、同一批訓練題、同種子與訓練次數，只把標準化改成**按題目局數 n 分組**（n = 5…20 各一組；統計只用訓練題）估均值與尺度；三個 `log_games` 欄（Human SL／L1b／對手塊各一，索引 22／38／54）在組內是常數，保留全局標準化；零變異欄尺度設 1（`rankmodel._standardise` 現行做法）；測試時 n 在 5–20 用對應組、組外用最近的 n。`MLPModel(standardise=False)` 讓模型吃已標準化的輸入（預設 True 逐位元不變）。先列每組 n 的訓練題數與各欄標準差（JSON `groups`，每個驗證折一份），再比整體與 n=5／10／20 分開的增益（各自的玩家 bootstrap CI）、每折、CI。**預先指定：`fused_opp_diff_nstd` vs `fused_opp_diff`**（條件 (1)(3)(4)）。
+- **不在範圍**：重加權訓練題的 n 分布、按 n 分模型、乘法收縮、帶狀效用損失、temperature——一次只回答一個問題。
+- **結果**：待 nano4（`results/seq/nstd_check.json`）。
+
+### 2.28 S00／S01：r3_pma 在 R-hdpatch 的每局訊號上重測（2026-11-02；issue #52；使用者核定「架構 v2 Stage 2 的第一條」；程式已寫，nano4 跑）
+- **問題**：§2.7 的聚合器梯子在 10/19 的每局向量上沒有過門檻（集合模型對 r2_mlp24 的增益在雜訊內）；當時的每局訊號只有 Human SL。現在每局多了 L1b 兩側的加總、對手−自己的 pmi 差與 HD 五欄，而且分數是修正後的（R-hdpatch）。問題是：**同一組每局訊號**，集合模型（學到的池化）比固定統計 + MLP 多榨出多少？
+- **每局 token**（`scripts/s01_check.py`）：梯子的 staged Human SL 向量（`gamevec`：4 個手數分段 × 75 欄 = 300；`scripts/ladder_build_vectors.py --scores results/scores_hd`）+ log1p(目標手數)（梯子 token 的第 301 欄）+ L1b 目標側加總 10 + 對手側加總 10 + 該局 pmi 差（對手 − 自己）1 + `game_hd_features` 5 = **327 維**；qglob 同梯子（log m、log n、各分段手數的 log1p）。issue 寫「128 維定義」，梯子實際的 r3_pma 輸入是 staged 300（+1），這裡照程式。
+- **S01**：`r3_pma`（`SetTransformer(layers=0)`：GameEncoder → PMA 一個 seed → 接 qglob → MLP → Δ），`ladder.train_cfg("r3_pma", seed, device)` 的 10/19 設定（內層按玩家分層留出 10%、每 epoch 評 4 次、連續 8 次不改善停、AdamW 1e-3、cosine、10 epoch、batch 512），3 個 seed；Δ 加在**交叉擬合的 S00 base logits** 上（`settrain.crossfit_base_logits`，與梯子對 r2_mlp24 的做法相同；驗證 base 就是 S00 本身），損失從整題回傳，輸出 10 類機率。
+- **S00（對照）**：同一組每局訊號經固定統計進現行 `MLPModel(hidden=32)`，即 `fused_opp_diff_hd` 的 64 維（§2.25 的 `hd_check.features`）——集合模型沒有看到對照沒有的訊號。S00 在 `_hd` 上應重現 `hd_check_hd.json` 的 0.7026。
+- **協定**：同題、同抽樣、同種子（folds 1–4 留一折；每人 32 題；pilot 驗證題；`l1b_cv.TRAIN_SEED + v`）；S01 的每題分數 = 3 個 seed 的平均（梯子的 `summarize` 規則）；玩家 bootstrap 5,000。**預先指定：`S01 vs S00`**（條件 (1)(3)(4)）；只報告：每個 seed 對 S00、每折、每種 n、各等級、HD 三桶（§2.24）。fold 0 不用。集合模型權重與側檔由 `setmodel_io.save_set_model` 存（`--models-dir`，`extra` 記 split、token 欄名與向量目錄）。
+- **不在範圍**：SAB／cross-attn／CTM、TCN、把 r3_pma 接進提交（通過後另議）。
+- **結果**：待 nano4（`results/seq/s01_check.json`）。
+
 ## 3. 成本：0B 實測（2026-10-16，lab01 單卡 RTX PRO 6000，torch 2.14.1+cu130，`scripts/bench_humansl.py` → `results/bench_0B.json`）
 
 | 量測 | 數字 |

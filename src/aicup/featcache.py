@@ -9,6 +9,7 @@ only when both files exist. read_cache concatenates every finished part with glo
 rank index of each position (read_caches: several directories as one cache, optionally without the games
 of given players); plan_parts lists the parts a shard still has to write.
 """
+import hashlib
 import re
 from pathlib import Path
 
@@ -99,6 +100,60 @@ def plan_parts(keys, part_size, cache_dir, shard):
     """[(k, keys of part k)] of the parts a shard has not finished; part k holds keys[k*part_size:(k+1)*part_size]."""
     done = {k for s, k in completed_parts(cache_dir) if s == shard}
     return [(k, keys[k * part_size:(k + 1) * part_size]) for k in range(-(-len(keys) // part_size)) if k not in done]
+
+
+def read_part(cache_dir, shard, k):
+    """(games, arrays) of one finished part; game_row is local to the part."""
+    npz, csv = part_paths(cache_dir, shard, k)
+    games = pd.read_csv(csv, dtype={"game_key": str, "player_id": str, "rank": str, "color": str}, keep_default_na=False)
+    with np.load(npz, allow_pickle=False) as z:
+        arrays = {key: z[key] for key in (*ARRAYS, "game_row")}
+    return games, arrays
+
+
+def positions_by_game(arrays, n_games):
+    """The part's positions split per game, in table order: [{key: rows of game g} for g in range(n_games)] (the rows of a
+    game in their stored order), as write_part takes them."""
+    row = np.asarray(arrays["game_row"], dtype=np.int64)
+    order = np.argsort(row, kind="stable")
+    bounds = np.searchsorted(row[order], np.arange(n_games + 1))
+    return [{key: np.asarray(arrays[key])[order[bounds[g]:bounds[g + 1]]] for key in ARRAYS} for g in range(n_games)]
+
+
+def _rows_sha256(blocks):
+    h = hashlib.sha256()
+    for b in blocks:
+        for key in ARRAYS:
+            h.update(np.ascontiguousarray(b[key]).tobytes())
+    return h.hexdigest()
+
+
+def patch_part(cache_dir, shard, k, new_positions):
+    """Rewrite part k with the positions of the games in `new_positions` ({game_key: packed arrays of pack_positions})
+    replaced and every other game's rows bit-identical (issue #42 (b) / #51: the HD >= 2 games replayed with their
+    handicap stones and actual colours). The table keeps its rows and order; n_moves follows the new positions. Written
+    as write_part writes (tmp, npz renamed before csv), then read back: the untouched games' rows must hash the same,
+    otherwise RuntimeError. Returns {"games": n in the part, "patched": n replaced, "positions_before", "positions_after",
+    "untouched_sha256"}; a part without any listed game is left alone (patched = 0, nothing written)."""
+    games, arrays = read_part(cache_dir, shard, k)
+    hit = [i for i, key in enumerate(games["game_key"]) if key in new_positions]
+    before = int(len(arrays["target"]))
+    if not hit:
+        return {"games": int(len(games)), "patched": 0, "positions_before": before, "positions_after": before, "untouched_sha256": None}
+    blocks = positions_by_game(arrays, len(games))
+    untouched = [b for i, b in enumerate(blocks) if i not in set(hit)]
+    sha = _rows_sha256(untouched)
+    for i in hit:
+        blocks[i] = {key: np.asarray(new_positions[games.at[i, "game_key"]][key]) for key in ARRAYS}
+    games = games.copy()
+    games["n_moves"] = [int(len(b["target"])) for b in blocks]
+    write_part(cache_dir, shard, k, games, blocks)
+    games2, arrays2 = read_part(cache_dir, shard, k)
+    blocks2 = positions_by_game(arrays2, len(games2))
+    if _rows_sha256([b for i, b in enumerate(blocks2) if i not in set(hit)]) != sha or games2["game_key"].tolist() != games["game_key"].tolist():
+        raise RuntimeError(f"part s{shard} p{k}: the untouched games' rows changed on rewrite")
+    return {"games": int(len(games)), "patched": len(hit), "positions_before": before, "positions_after": int(len(arrays2["target"])),
+            "untouched_sha256": sha}
 
 
 def read_cache(cache_dir, drop_players=None):

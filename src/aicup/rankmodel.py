@@ -59,7 +59,8 @@ class SoftmaxModel:
     def fit(self, X, y, w=None):
         X, y = np.asarray(X, dtype=float), np.asarray(y, dtype=int)
         w = class_weights(y) if (w is None and self.balanced) else (np.ones(len(y)) if w is None else np.asarray(w, float))
-        self.mean, self.std = _standardise(X)
+        # standardise=False (issue #53): the caller standardised the inputs (e.g. per question size); the net sees X as given
+        self.mean, self.std = _standardise(X) if self.standardise else (np.zeros(X.shape[1]), np.ones(X.shape[1]))
         Xt = torch.tensor((X - self.mean) / self.std, dtype=torch.float64)
         yt, wt = torch.tensor(y), torch.tensor(w, dtype=torch.float64)
         W = torch.zeros(X.shape[1], N_CLASSES, dtype=torch.float64, requires_grad=True)
@@ -95,9 +96,9 @@ class MLPModel:
     balanced cross-entropy on `val` every `eval_every` epochs, keeps the parameters of the best evaluation and stops after
     `patience` evaluations in a row without improvement (best_epoch records where it stopped; epochs is the cap)."""
 
-    def __init__(self, hidden=64, l2=1e-4, epochs=300, lr=1e-2, seed=0, balanced=True, label_smoothing=0.0, l1=0.0):
+    def __init__(self, hidden=64, l2=1e-4, epochs=300, lr=1e-2, seed=0, balanced=True, label_smoothing=0.0, l1=0.0, standardise=True):
         self.hidden, self.l2, self.epochs, self.lr, self.seed, self.balanced = hidden, l2, epochs, lr, seed, balanced
-        self.label_smoothing, self.l1 = float(label_smoothing), float(l1)
+        self.label_smoothing, self.l1, self.standardise = float(label_smoothing), float(l1), bool(standardise)
         self.best_epoch = None
         if not 0.0 <= self.label_smoothing < 1.0:
             raise ValueError(f"label_smoothing must be in [0, 1), got {label_smoothing}")
@@ -112,7 +113,8 @@ class MLPModel:
     def fit(self, X, y, w=None, val=None, eval_every=10, patience=5):
         X, y = np.asarray(X, dtype=float), np.asarray(y, dtype=int)
         w = class_weights(y) if (w is None and self.balanced) else (np.ones(len(y)) if w is None else np.asarray(w, float))
-        self.mean, self.std = _standardise(X)
+        # standardise=False (issue #53): the caller standardised the inputs (e.g. per question size); the net sees X as given
+        self.mean, self.std = _standardise(X) if self.standardise else (np.zeros(X.shape[1]), np.ones(X.shape[1]))
         Xt = torch.tensor((X - self.mean) / self.std, dtype=torch.float64)
         yt, wt = torch.tensor(y), torch.tensor(w, dtype=torch.float64)
         self.net = self._net(X.shape[1])
@@ -158,7 +160,7 @@ class MLPModel:
 
     def state_dict(self):
         return {"type": "mlp", "hidden": self.hidden, "l2": self.l2, "epochs": self.epochs, "lr": self.lr, "seed": self.seed,
-                "label_smoothing": self.label_smoothing, "l1": self.l1, "best_epoch": self.best_epoch, "mean": self.mean.tolist(), "std": self.std.tolist(),
+                "label_smoothing": self.label_smoothing, "l1": self.l1, "standardise": self.standardise, "best_epoch": self.best_epoch, "mean": self.mean.tolist(), "std": self.std.tolist(),
                 "params": {k: v.tolist() for k, v in self.net.state_dict().items()}}
 
 
@@ -189,7 +191,7 @@ def from_state(d):
         return m
     if d["type"] == "mlp":
         m = MLPModel(hidden=d["hidden"], l2=d["l2"], epochs=d["epochs"], lr=d["lr"], seed=d["seed"], label_smoothing=d.get("label_smoothing", 0.0),
-                     l1=d.get("l1", 0.0))
+                     l1=d.get("l1", 0.0), standardise=d.get("standardise", True))
         m.best_epoch = d.get("best_epoch")
         m.mean, m.std = np.array(d["mean"], dtype=float), np.array(d["std"], dtype=float)
         m.net = m._net(len(m.mean))

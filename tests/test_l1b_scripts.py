@@ -76,6 +76,68 @@ def test_build_cache_cli(tmp_path, monkeypatch, capsys):
     assert set(games2["game_key"]) == set(sgfs)
 
 
+HD2_SGF = "(;SZ[19]HD[2];B[qf];W[cf];B[qq];W[cc];B[nc])"  # a v1.1 handicap record: White (the upper hand) is marked B
+
+
+def test_patch_cache_cli(tmp_path, monkeypatch, capsys):
+    """scripts/l1b_patch_cache.py (issue #51): the listed games' positions are replayed again (here as handicap records), every other
+    game's rows stay bit-identical, n_moves and the metas follow, the run resumes and a dry run changes nothing."""
+    import numpy as np
+    from katago.game.features import Features
+    from katago.train import modelconfigs
+
+    import l1b_patch_cache as pc
+    from aicup.pilot import game_positions
+
+    games_df, sgfs, folds_csv = _fake_data(tmp_path)
+    monkeypatch.setattr(bc, "player_games", lambda: games_df)
+    monkeypatch.setattr(bc, "load_games", lambda keys: {k: sgfs[k] for k in keys})
+    out = tmp_path / "cache"
+    assert bc.main(["--folds", "1", "2", "--out", str(out), "--folds-csv", str(folds_csv), "--model-config", "b2c16", "--workers", "2",
+                    "--part-size", "4", "--max-games", "40", "--min-games", "1"]) == 0
+    games0, arrays0 = fc.read_cache(out)
+    blocks0 = fc.positions_by_game(arrays0, len(games0))
+    meta0 = json.loads((out / "meta.json").read_text())
+    patched = ["D:g1", "6D:g9"]  # both played as W: the handicap record gives W three positions (D:g1 had two, 6D:g9 three)
+    keys_csv = tmp_path / "hd2_keys.csv"
+    pd.DataFrame({"game_key": patched + ["Z:nope"], "color": ["W", "W", "B"], "hd": [2, 2, 3]}).to_csv(keys_csv, index=False)
+    monkeypatch.setattr(pc, "load_games", lambda keys: {k: (HD2_SGF, sgfs[k][1]) for k in keys})
+    base = ["--cache", str(out), "--game-keys", str(keys_csv), "--model-config", "b2c16", "--workers", "2"]
+    mtimes = lambda: {p.name: p.stat().st_mtime_ns for p in out.glob("cache_s*")}  # noqa: E731
+    m0 = mtimes()
+    assert pc.main([*base, "--dry-run"]) == 0 and mtimes() == m0 and not (out / "patch_meta.json").exists()
+    assert "hold 2 of the 3 listed games" in capsys.readouterr().out
+    assert pc.main(base) == 0
+    printed = capsys.readouterr().out
+    assert "games replaced" in printed and "meta files recounted" in printed
+    pm = json.loads((out / "patch_meta.json").read_text())
+    assert pm["summary"]["games"] == 2 and 1 <= pm["summary"]["parts"] <= 2 and len(pm["game_keys_sha256"]) == 64
+    games1, arrays1 = fc.read_cache(out)
+    blocks1 = fc.positions_by_game(arrays1, len(games1))
+    assert games1["game_key"].tolist() == games0["game_key"].tolist() and games1["color"].tolist() == games0["color"].tolist()
+    features = Features(modelconfigs.config_of_name["b2c16"], 19)
+    for key in patched:
+        g = games1.index[games1["game_key"] == key][0]
+        want = fc.pack_positions(game_positions(HD2_SGF, "W", features))
+        assert games1.at[g, "n_moves"] == 3 == len(want["target"])
+        for arr in fc.ARRAYS:
+            np.testing.assert_array_equal(blocks1[g][arr], want[arr])
+    assert games0.set_index("game_key").at["D:g1", "n_moves"] == 2
+    for g, key in enumerate(games1["game_key"]):
+        if key not in patched:
+            assert games1.at[g, "n_moves"] == games0.at[g, "n_moves"]
+            for arr in fc.ARRAYS:
+                np.testing.assert_array_equal(blocks1[g][arr], blocks0[g][arr])
+    meta1 = json.loads((out / "meta.json").read_text())
+    assert meta1["positions"] == len(arrays1["target"]) == meta0["positions"] + 1 and sum(meta1["per_rank_positions"].values()) == meta1["positions"]
+    assert meta1["per_rank_positions"]["D"] == meta0["per_rank_positions"]["D"] + 1 and meta1["patched"]["games"] == 2 and meta1["games_sha256"] == meta0["games_sha256"]
+    assert json.loads((out / "meta_s0.json").read_text())["positions"] == meta1["positions"]
+    # the same command again: every part is already patched, nothing is rewritten
+    m1 = mtimes()
+    assert pc.main(base) == 0 and mtimes() == m1 and "nothing to do" in capsys.readouterr().out
+    assert pc.main(["--cache", str(tmp_path / "missing"), "--game-keys", str(keys_csv)]) == 2
+
+
 def test_train_cli_and_check_init(tmp_path, capsys):
     from tests.test_l1btrain import _tiny_cache_dir
     cache = _tiny_cache_dir(tmp_path)

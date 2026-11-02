@@ -763,6 +763,78 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 02:00:00 -J mockhd scripts
 
 mock-40 的 fold-0 表對照（`check_fused_submission.py --set fused_opp_diff_hd_avg`）**不會**逐題相等——離線表的 HD 特徵來自 HD 表、mock 的全 0——所以 mock 只看管線不崩、報告 `decision_model` 是 `fused_opp_diff_hd`、`handicap` 計數為 `absent`。真正的逐題對照要用帶 `HD[` 的 mock：nano4 已從 v1.1 的 `data/training` 做了 `data/mock_tests/fold0_40_v11/`（題目與舊 fixture 不同批，SGF 帶 HD；不進 git），`--inputs` 換成它的兩個 CSV、`--answers` 換成它的 `answers.csv`，再跑上面兩條（不加 `--allow-missing-hd`）。11/04：`predict_submission.py ... --fused-model results/models/rank_model_fused_opp_diff_hd.json`（報告 `handicap` 沒有 `absent` 才算成立；有 `absent` 會直接拒絕，換 `rank_model_fused_opp_diff.json`）。
 
+### 4.21 R-full (a)：快取補丁 → heads4 → 全量重評 → 重擬（2026-11-02，issue #51；設計在 METHOD_NOTES §2.26）
+
+前提：`results/data/hd2_keys.csv`（§4.19 步 1）、`results/scores_hd`（§4.19 步 4）都在。**步 1（CPU，幾分鐘；先 `--dry-run` 看數量）：就地補 `cache_A`／`cache_B` 裡 HD≥2 的局**。磁碟只多一個 part 的 tmp（約 25 MB）；中斷重跑會接著做；`patch_meta.json` 進 git（`results/l1b/cache_*/` 的 json 不在 .gitignore 的排除項裡，若被擋就 `-f`）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 48 -t 02:00:00 -J patchA scripts/nano4/run.sbatch python -I scripts/l1b_patch_cache.py --cache results/l1b/cache_A --game-keys results/data/hd2_keys.csv --workers 48
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 48 -t 02:00:00 -J patchB scripts/nano4/run.sbatch python -I scripts/l1b_patch_cache.py --cache results/l1b/cache_B --game-keys results/data/hd2_keys.csv --workers 48
+```
+
+貼回 issue #51：每個快取的 `summary`（parts、games、positions before → after）與 log 裡每個 part 的「positions a -> b」；`meta.json` 的 `positions` 應等於 after 的總和。
+
+**步 2（GPU）：heads4_A／heads4_B**，與 heads3 完全相同的三段配方（§4.7 x5 鏈的旗標），只換快取（A 在 `cache_A`、B 在 `cache_B`）。側檔 `heads4*_{A,B}.json` 進 git：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 06:00:00 -J h4s1A scripts/nano4/run.sbatch torchrun --standalone --nproc_per_node 8 scripts/l1b_train.py --cache results/l1b/cache_A --out results/l1b/heads4s1_A.pt --batch 32
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 06:00:00 -J h4s2A scripts/nano4/run.sbatch torchrun --standalone --nproc_per_node 8 scripts/l1b_train.py --cache results/l1b/cache_A --out results/l1b/heads4s2_A.pt --trunk-lr 1e-5 --init-heads results/l1b/heads4s1_A.pt --batch 128
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 06:00:00 -J h4A scripts/nano4/run.sbatch torchrun --standalone --nproc_per_node 8 scripts/l1b_train.py --cache results/l1b/cache_A --out results/l1b/heads4_A.pt --trunk-lr 1e-5 --init-heads results/l1b/heads4s2_A.pt --disc-weight 1 --epochs 2 --batch 128
+```
+
+（B：`--cache results/l1b/cache_B`、`heads4s1_B` → `heads4s2_B` → `heads4_B`。）貼回每段側檔的 `inner_nll_init/best`、`inner_disc_init/best`、`best_epoch`、`wall_seconds`，與 heads3 擺在一起。
+
+**步 3（GPU，約 2.2 億局面，8 卡一節點 8–9 小時；可照 §4.4 用 `shards.sh 8` 分片）：heads4 全量重評兩側五折。** A 評 0 3 4、B 評 0 1 2（`check_unseen` 會擋錯的）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 10:00:00 -J s4A scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 8 python -I scripts/l1b_score.py --heads results/l1b/heads4_A.pt --folds 0 3 4 --out results/l1b/scores4 --workers 12
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 10:00:00 -J s4Ao scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 8 python -I scripts/l1b_score.py --heads results/l1b/heads4_A.pt --folds 0 3 4 --opponent --out results/l1b/scores4_opp --workers 12
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 10:00:00 -J s4B scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 8 python -I scripts/l1b_score.py --heads results/l1b/heads4_B.pt --folds 0 1 2 --out results/l1b/scores4_B --workers 12
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -p 8gpus --gres=gpu:8 -c 96 -t 10:00:00 -J s4Bo scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 8 python -I scripts/l1b_score.py --heads results/l1b/heads4_B.pt --folds 0 1 2 --opponent --out results/l1b/scores4_B_opp --workers 12
+```
+
+**步 4（CPU，各約 15 分）：重擬**，Human SL 用 `results/scores_hd`，都不碰 fold 0：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 02:00:00 -J fitfull scripts/nano4/run.sbatch python -I scripts/fit_fused_model.py --l1b A:results/l1b/scores4:results/l1b/heads4_A.json B:results/l1b/scores4_B:results/l1b/heads4_B.json --opp A:results/l1b/scores4_opp B:results/l1b/scores4_B_opp --hsl results/scores_hd --diff --no-fold0 --out results/models/rank_model_fused_opp_diff_full.json
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 02:00:00 -J fithdfull scripts/nano4/run.sbatch python -I scripts/fit_fused_model.py --l1b A:results/l1b/scores4:results/l1b/heads4_A.json B:results/l1b/scores4_B:results/l1b/heads4_B.json --opp A:results/l1b/scores4_opp B:results/l1b/scores4_B_opp --hsl results/scores_hd --diff --hd-table results/data/hd_table.csv --no-fold0 --out results/models/rank_model_fused_opp_diff_hd_full.json
+```
+
+**步 5（CPU，各約 1 小時）：E 四格的 full 版**，與 §2.24 的 `_hd` 版擺在一起：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 8 -t 03:00:00 -J histfull scripts/nano4/run.sbatch python -I scripts/hist_check.py --l1b results/l1b/scores4 results/l1b/scores4_B --opp results/l1b/scores4_opp results/l1b/scores4_B_opp --hsl results/scores_hd --out results/seq/hist_check_full.json
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 8 -t 03:00:00 -J hdfull scripts/nano4/run.sbatch python -I scripts/hd_check.py --l1b results/l1b/scores4 results/l1b/scores4_B --opp results/l1b/scores4_opp results/l1b/scores4_B_opp --hsl results/scores_hd --hd-table results/data/hd_table.csv --out results/seq/hd_check_full.json
+```
+
+提交端：`predict_submission.py ... --l1b-heads results/l1b/heads4_A.pt results/l1b/heads4_B.pt --fused-model results/models/rank_model_fused_opp_diff_full.json`（文件的 `l1b_models` 記的是 heads4 的 sha256，配對檢查會擋 heads3 的 shard）。
+
+### 4.22 按 n 條件化標準化（2026-11-02，issue #53；設計在 METHOD_NOTES §2.27）
+
+CPU 約 1 小時，用 R-hdpatch 的 `_hd` 目錄、現有分數、不重評：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 8 -t 03:00:00 -J nstd scripts/nano4/run.sbatch python -I scripts/nstd_check.py --l1b results/l1b/scores3_hd results/l1b/scores3_B_hd --opp results/l1b/scores3_opp_hd results/l1b/scores3_B_opp_hd --hsl results/scores_hd --out results/seq/nstd_check.json
+```
+
+貼回 issue #53：`fused_opp_diff` 須重現 `hd_check_hd.json` 的 0.6929；`groups`（split 1 每組 n 的題數、n=5／10／20 的欄標準差中位數）；預先指定 `fused_opp_diff_nstd vs fused_opp_diff` 的差、CI、每折、`by_n`；JSON 進 git。
+
+### 4.23 S00／S01：r3_pma 在 R-hdpatch 每局訊號上重測（2026-11-02，issue #52；設計在 METHOD_NOTES §2.28）
+
+步 1（CPU，約 10 分）：從 `_hd` 的 Human SL 分數建梯子向量（只要 folds 1–4）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 01:00:00 -J vechd scripts/nano4/run.sbatch python -I scripts/ladder_build_vectors.py --folds 1 2 3 4 --scores results/scores_hd --out results/ladder/vectors_hd
+```
+
+步 2（GPU 1 張；四折 × 3 seed，每個 fit 幾分鐘，訓練 token 約 150k 題 × 20 × 327 float32 ≈ 4 GB RAM）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] --gres=gpu:1 -c 12 -t 04:00:00 -J s01 scripts/nano4/run.sbatch python -I scripts/s01_check.py --vectors results/ladder/vectors_hd --l1b results/l1b/scores3_hd results/l1b/scores3_B_hd --opp results/l1b/scores3_opp_hd results/l1b/scores3_B_opp_hd --hsl results/scores_hd --hd-table results/data/hd_table.csv --models-dir results/models/s01 --out results/seq/s01_check.json
+```
+
+貼回 issue #52：`S00` 須重現 `hd_check_hd.json` 的 `fused_opp_diff_hd` 0.7026；預先指定 `S01 vs S00` 的差、CI、每折、`by_n`；`per_seed`；`per_split` 的 `inner_ce_init → inner_ce_best`、`best_epoch`、`n_params`；`buckets`。`s01_check.json` 與 `results/models/s01/*.json` 側檔進 git，`.pt` 不進。
+
 ## 5. 同步程式碼、取回結果
 
 在本機改完程式後，用 Git Bash 同步（走 2222 埠的傳輸節點）。只會傳程式碼（src、scripts、tests、viz、pyproject.toml、requirements.txt），不會傳資料：
