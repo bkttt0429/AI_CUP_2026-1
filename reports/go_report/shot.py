@@ -20,6 +20,7 @@ PROBE = """() => {
   if (fig && cause && hit(R(fig), R(cause))) out.push('fig overlaps cause');
   if (fig && left && hit(R(fig), R(left))) out.push('fig overlaps text');
   if (left && cause && hit(R(left), R(cause))) out.push('text overlaps cause');
+  if (left && left.scrollHeight > left.clientHeight + 1) out.push('text overflows its column');
   if (btn && cause) cause.querySelectorAll('.pair,.bridge-text').forEach(p => { if (hit(R(p), R(btn))) out.push('button overlaps cause'); });
   if (fig) { const st = fig.querySelector('.stage'), sr = R(st);
     [...st.children].forEach(c => { const r = R(c); if (r.bottom > sr.bottom + 2 || r.top < sr.top - 2 || r.right > sr.right + 2) out.push('stage child overflows: ' + c.tagName + ' ' + Math.round(r.height) + ' in ' + Math.round(sr.height)); });
@@ -30,22 +31,33 @@ PROBE = """() => {
         for (let j = i + 1; j < rs.length; j++) if (hit(r, rs[j])) out.push('svg text collides: ' + ts[i].textContent + ' / ' + ts[j].textContent); }); }); }
   const art = page.querySelector('.cv-art'), head = page.querySelector('.cv-head');
   if (art && head) { if (hit(R(art), R(head))) out.push('cover art overlaps title'); page.querySelectorAll('.cv-head>*').forEach(e => { if (R(e).bottom > pr.bottom + 1) out.push('cover text cut: ' + e.className); }); }
-  return { id: page.id, issues: [...new Set(out)] };
+  return { id: page.id, issues: [...new Set(out)], fit: left ? left.style.fontSize : '' };
 }"""
+# The stack asks for "Noto Sans TC"; give the page that face so wrapping matches a viewer who has it.
+FONT = """@font-face{font-family:"Noto Sans TC";font-weight:400;src:local("Noto Sans CJK TC")}
+@font-face{font-family:"Noto Sans TC";font-weight:700;src:local("Noto Sans CJK TC Bold")}"""
+def walk(pg, tag, res, shots=None):
+    pg.goto((SITE / "talk.html").as_uri())
+    pg.add_style_tag(content=FONT)
+    pg.evaluate("""() => Promise.all(['400 20px "Noto Sans TC"', '700 20px "Noto Sans TC"'].map(f => document.fonts.load(f)))""")
+    pg.evaluate("window.dispatchEvent(new Event('resize'))")
+    pg.wait_for_timeout(600)
+    n = pg.evaluate("document.querySelectorAll('.page').length")
+    for i in range(n):
+        r = pg.evaluate(PROBE)
+        res[f"{tag} {i+1:02d} {r['id']}"] = r["issues"]
+        if r["fit"]:
+            print(tag, i + 1, r["id"], "fit", r["fit"])
+        if shots is not None:
+            f = OUT / f"talk{i+1:02d}.png"
+            pg.screenshot(path=str(f)); shots.append(f)
+        pg.keyboard.press("ArrowRight"); pg.wait_for_timeout(120)
 with sync_playwright() as p:
     b = p.chromium.launch()
     res = {}
-    ctx = b.new_page(viewport={"width": 1366, "height": 768})
-    ctx.goto((SITE / "talk.html").as_uri())
-    ctx.wait_for_timeout(600)
-    n = ctx.evaluate("document.querySelectorAll('.page').length")
     shots = []
-    for i in range(n):
-        r = ctx.evaluate(PROBE)
-        res[f"{i+1:02d} {r['id']}"] = r["issues"]
-        f = OUT / f"talk{i+1:02d}.png"
-        ctx.screenshot(path=str(f)); shots.append(f)
-        ctx.keyboard.press("ArrowRight"); ctx.wait_for_timeout(120)
+    walk(b.new_page(viewport={"width": 1366, "height": 768}), "1366", res, shots)
+    walk(b.new_page(viewport={"width": 1757, "height": 855}), "1757", res)
     for w, tag in ((1366, "desk"), (400, "phone")):
         v = b.new_page(viewport={"width": w, "height": 800})
         for name in ["index"] + [f"ch{k:02d}" for k in range(1, 10)]:

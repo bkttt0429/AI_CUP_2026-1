@@ -29,7 +29,6 @@ SE = js("results/l1b/se_check.json")
 QUAL = js("results/quality/quality_check.json")
 LAD = js("results/ladder/cv_summary.json")
 VIZ = js("results/viz_examples.json")
-STACK3 = js("results/l1b/stack_check3.json")
 HD = js("results/seq/hd_check.json")
 ERR = js("results/l1b/error_analysis.json")
 FP2 = js("results/seq/fingerprint_check_v2.json")
@@ -58,7 +57,7 @@ def comparison(d, name):
 # Guards: the prose below quotes these numbers, so a changed result file must stop the build.
 assert round(score(OPP, "fused_opp"), 4) == 0.6735 and round(score(FOLD0, "fused_opp_avg"), 4) == 0.6716
 assert round(score(XFIT, "fused_opp_x5c"), 4) == 0.6704 and round(score(XFIT, "fused_opp_c"), 4) == 0.6683
-assert round(score(STACK3, "ens_top3"), 4) == 0.6327 and round(score(OPP, "fused"), 4) == 0.6545
+assert round(score(OPP, "fused"), 4) == 0.6545
 assert round(score(ERR, "mlp_diff"), 4) == 0.6916 and round(score(HD, "fused_opp_diff_hd"), 4) == 0.6987 and round(score(DIFF0, F0D_KEY), 4) == 0.6888
 assert round(score(FOLD0, "hsl") - 0.440, 2) == 0.17 and round(score(OPP, "fused") - score(OPP, "hsl"), 3) == 0.035 and round(score(ERR, "mlp_diff") - score(OPP, "fused"), 3) == 0.037
 
@@ -124,10 +123,10 @@ def legend(items, x, y):
 
 def chart_progress():
     rows = [("官方 baseline", None, 0.440), ("Human SL + MLP", score(OPP, "hsl"), score(FOLD0, "hsl")),
-            ("聚合器集成 ens_top3", score(STACK3, "ens_top3"), None), ("加鑑別式 L1b（fused）", score(OPP, "fused"), score(FOLD0, "fused_avg")),
+            ("加鑑別式 L1b（fused）", score(OPP, "fused"), score(FOLD0, "fused_avg")),
             ("加對手落子（fused_opp）", score(OPP, "fused_opp"), score(FOLD0, "fused_opp_avg")), ("加差值（fused_opp_diff）", score(ERR, "mlp_diff"), score(DIFF0, F0D_KEY)),
             ("加讓子 HD 5 維（候選）", score(HD, "fused_opp_diff_hd"), None)]
-    W, H, L, R, top = 640, 342, 178, 60, 40
+    W, H, L, R, top = 640, 302, 178, 60, 40
     xs = lambda v: L + (v - 0.40) / (0.70 - 0.40) * (W - L - R)
     b = [legend([("folds 1–4 CV", ACCENT, "dot"), ("fold 0 留出", WARN, "open")], L, 18)]
     for v in (0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70):
@@ -145,7 +144,7 @@ def chart_progress():
         lab = max(v for v in (cv, f0) if v is not None)
         txt = f"{cv:.4f}" if cv is not None else f"{f0:.3f}"
         b.append(t(xs(lab) + 11, y + 4, txt, 12, INK, "start", 700 if last else None))
-    return svg(W, H, b, "七個里程碑的離線分數：官方 baseline 0.440，Human SL 0.6192，ens_top3 0.6327，fused 0.6545，fused_opp 0.6735，fused_opp_diff 0.6916，加 HD 0.6987")
+    return svg(W, H, b, "六個里程碑的離線分數：官方 baseline 0.440，Human SL 0.6192，fused 0.6545，fused_opp 0.6735，fused_opp_diff 0.6916，加 HD 0.6987")
 
 
 def board_svg(prof, size=236):
@@ -298,13 +297,13 @@ def chart_forest():
             ("MLP h128", h128_c, False),
             ("MLP L1 1e-3", L1, False)]
     W, L, R, top = 600, 186, 58, 14
-    H = top + len(rows) * 26 + 40
+    H = top + len(rows) * 26 + 48
     xs = lambda v: L + (v + 0.035) / 0.065 * (W - L - R)
     b = []
     for v in (-.03, -.02, -.01, 0, .01, .02, .03):
         c = MUTED if v == 0 else LINE
-        b += [line(xs(v), top, xs(v), H - 36, c), t(xs(v), H - 20, f"{v:+.2f}".replace("-", "−") if v else "0", 11, MUTED, "middle")]
-    b.append(line(xs(.005), top, xs(.005), H - 36, WARN, 1, "4 3"))
+        b += [line(xs(v), top, xs(v), H - 44, c), t(xs(v), H - 28, f"{v:+.2f}".replace("-", "−") if v else "0", 11, MUTED, "middle")]
+    b.append(line(xs(.005), top, xs(.005), H - 44, WARN, 1, "4 3"))
     b.append(t(xs(.005) + 4, H - 4, "門檻 +0.005", 11, WARN))
     for j, (n, c, ok) in enumerate(rows):
         y = top + 13 + j * 26
@@ -403,18 +402,18 @@ CHAPTERS = [
 <p>官方只說每題 5–20 局、以 num_games 給定；實際分布要等測試集釋出才知道。官方 baseline（Tutorial notebook：整局畫成平面進 ResNet，逐局 softmax 平均）在 Public 是 0.4631。</p>
 <p>本報告的主要指標是「各級平均官方分」：先按 5、10、20 局分開算，每種題長在 10 個等級間等權平均，再取三種題長的平均；與官方同口徑的直接平均（每題等權）比它低約 0.007（提交候選：平衡版 0.6916、直接平均 0.6845），因為平衡版讓三種題長與各等級等權，直接平均則照內部驗證題的組成。兩種口徑都會報，差值與信賴區間一律用同一份配對預測表。</p>""",
     take="任務是十類有序分類，但計分讓「差一級」仍值 0.368 分；決策規則要照計分來，不是照準確率。"),
-   dict(id="card-data", q="訓練資料裡有什麼、沒有什麼？", h="100 萬局、8,007 位玩家、每級 10 萬局；每局只有一方是標籤玩家，沒有勝負、用時、對手等級；v1.1 補了讓子數 HD[n]",
+   dict(id="card-data", q="訓練資料裡有什麼、沒有什麼？", h="100 萬局、8,007 位玩家；每局只有一方有標籤，沒有勝負與對手等級",
     formula="train_{rank}.csv：player_id、game_id、rank、color、sgf_content",
-    bullets=["每位玩家只屬一個等級，平均 125 局；對手不在資料集中，等級未知；game_id 在同人同色內是隨機排列，沒有時間序", "SGF 只有雙方著手與棋盤大小，沒有 RE、用時、目數；v1.1 加了 HD[n]：HD0 互先 79.3%、HD1 讓先 17.1%、HD2–9 讓子 3.6%（36,421 局、3,474 人）", "讓子局的讓子石未記錄、著手 B/W 標記相反，color 欄是實際顏色（上手執白）；舊流程因此把 3.6% 的局在缺子棋盤上拿對手的手評分"],
-    fig=fig(table(["欄位或事實", "內容"], [["局數、玩家", "1,000,000 局、8,007 人；每級 100,000 局"], ["每局", "一方是標籤玩家（player_id、rank、color），另一方未知"], ["沒有的", "勝負、目數、用時、玩家名、對手等級、時間序"], ["讓子（v1.1）", "HD0 79.3%、HD1 17.1%、HD2–9 3.6%；讓子石未記錄，B/W 相反"], ["貼目", "資料約定 HD0 6.5、HD≥1 0；舊流程一律輸入 7.5（第 2 章）"], ["評分時取樣", "每位玩家只取 20 局（全量評分 7,948 人、147,780 局）"]], num_from=9), "資料集 v1.1（2026-11-01），issue #42 的普查", "data/training、results/data/hd_table.csv"),
+    bullets=["每位玩家只屬一個等級，平均 125 局；對手等級未知，對局沒有時間序", "v1.1 加了讓子數 HD[n]：互先 79.3%、讓先 17.1%、讓子 3.6%（36,421 局）", "讓子局沒有記錄讓子石、B/W 標記相反，color 欄是實際顏色"],
+    fig=fig(table(["欄位或事實", "內容"], [["每局", "一方是標籤玩家（player_id、rank、color），另一方未知"], ["沒有的", "勝負、目數、用時、玩家名、對手等級、時間序"], ["讓子（v1.1）", "HD0 79.3%、HD1 17.1%、HD2–9 3.6%；讓子石未記錄，B/W 相反"], ["貼目", "資料約定 HD0 6.5、HD≥1 0；特徵一律輸入 7.5（第 2 章）"], ["評分時取樣", "每位玩家只取 20 局（全量評分 7,948 人、147,780 局）"]], num_from=9), "資料集 v1.1（2026-11-01），issue #42 的普查", "data/training、results/data/hd_table.csv"),
     cause=("要知道哪些訊號根本不在資料裡", "逐欄盤點，讓子資訊另外普查", "離線分數怎樣才可信？"),
     sec="1.2 資料與棋譜",
     body="""<p>這些事實決定了後面的路：沒有勝負與目數，所以「這盤誰贏」不能當特徵；對手等級未知，但線上配對依實力，對手的落子仍帶有目標玩家的資訊（第 5 章）；讓子數由配對系統依兩人等級差決定，是資料裡唯一直接寫著「標籤側」的欄位（第 5 章的 HD 特徵）。</p>
-<p>讓子局的三個問題（缺子、B/W 相反、實際顏色）在 v1.1 之前無從得知；修正寫在 <code>aicup.sgf.setup_and_moves</code>，只重評那 3.6% 的局正在進行（第 8 章）。</p>""",
+<p>讓子局的修正寫在 <code>aicup.sgf.setup_and_moves</code>，只需重評那 3.6% 的局（第 8 章）。</p>""",
     take="資料只給落子、執色、讓子數；凡是需要勝負或對手等級的方法，一開始就排除。"),
    dict(id="card-protocol", q="離線分數怎樣才可信？", h="所有實驗依玩家整人留出，通過條件事先指定，fold 0 只作採用前的單次檢查",
     formula="(1) CI 下界 &gt; 0　(3) ≥ 3／4 折為正　(4) 差 ≥ 0.005",
-    bullets=["同一人不會同時出現在訓練與驗證；folds 1–4 留一折 CV，39,327 題", "fold 0：9,872 題、1,594 人；已用四次（r3_pma、fused、fused_opp、fused_opp_diff），再用要使用者本人同意", "驗證題每人 1×20 + 2×10 + 4×5 局是內部設計；官方只說 5–20 局，實際分布 11/04 才知道"],
+    bullets=["同一人不會同時出現在訓練與驗證；folds 1–4 留一折 CV，39,327 題", "fold 0：9,872 題、1,594 人；已用四次，再用要使用者本人同意", "驗證題每人 1×20 + 2×10 + 4×5 局是內部設計；官方只說 5–20 局，實際分布 11/04 才知道"],
     fig=fig(table(["項目", "設定"], [["切分", "依 player_id 分 5 折（seed 42）"], ["驗證題", "每人 1 題 20 局、2 題 10 局、4 題 5 局"], ["訓練題", "每人 32 題，5–20 局隨機；約 152,000 題"], ["不確定性", "玩家層級 bootstrap，5,000 次，兩模型共用抽樣"], ["學習式特徵", "PCA、標準化、校準、選特徵都只在訓練內玩家擬合"]], num_from=9), "條件編號沿用聚合器梯子；條件 (2) 是多 seed 一致，單次確定性擬合的模型不適用", "METHOD_NOTES §2.1"),
     cause=("反覆比較容易選到運氣", "條件事先指定，fold 0 只當檢查", "我們用什麼工具把棋譜變成數字？"),
     sec="1.3 驗證協議",
@@ -449,12 +448,12 @@ CHAPTERS = [
     take="遠距等級靠累積就能分開；相鄰等級的訊號小一個量級，這是後面每一章的主要困難。"),
    dict(id="card-replay", q="重播與評分用什麼設定？成本多少？", h="所有局用 RULES_CHINESE、whiteKomi 7.5 重播；每手只存實際落子那一格；Human SL 18 次前向、L1b 一次前向出 10 維",
     formula="每局 → 每手 (18 + 10 + 10) 個 log p → 每局加總 → 每題統計",
-    bullets=["貼目：資料約定 HD0 6.5、HD≥1 0，但舊流程一律輸入 7.5；這是特徵抽取設定，訓練與推論一致，只改推論端會錯配", "L1b 評分約 900 局面／秒／卡；全量兩側約 2.2 億局面，8 卡一節點約 8–9 小時；Human SL 18 profile 是另一遍、更貴", "每手只存實際落子的 log p（不存 362 維分布、value、trunk 向量）；每手 10 個 head 的 log p 存在 moves_*.npz，可直接做逐手統計"],
-    fig=fig(table(["設定", "值"], [["重播", "KataGo Board／GameState，RULES_CHINESE，whiteKomi 7.5（所有局）"], ["讓子修正（v1.1）", "HD≥2：補標準星位、B/W 對調、目標取 color；重評分進行中"], ["Human SL", "18 個 profile，各一次前向，目標手的 log p"], ["L1b", "凍結 trunk + 10 個 head，一次前向；目標手與對手手各 10 維"], ["精度", "bf16 autocast；分片與單卡決策一致，每手差 ≤ 4×10⁻³ nats"], ["儲存", "每手實際落子的 log p；每局加總；題目層 59（+5）維"]], num_from=9), "docs/NANO4.md §4.4、§4.19；results/l1b/scores3/fold3 的 meta", "nano4 實測"),
+    bullets=["貼目一律輸入 7.5：這是特徵抽取設定，訓練與推論一致，只改推論端會錯配", "L1b 評分約 900 局面／秒／卡；全量兩側約 2.2 億局面，8 卡一節點約 8–9 小時", "每手只存實際落子的 log p（不存 362 維分布、value、trunk 向量）；每手 10 個 head 的 log p 存在 moves_*.npz，可直接做逐手統計"],
+    fig=fig(table(["設定", "值"], [["重播", "KataGo Board／GameState，RULES_CHINESE，whiteKomi 7.5（所有局）"], ["讓子修正（v1.1）", "HD≥2：補標準星位、B/W 對調、目標取 color"], ["Human SL", "18 個 profile，各一次前向，目標手的 log p"], ["L1b", "凍結 trunk + 10 個 head，一次前向；目標手與對手手各 10 維"], ["精度", "bf16 autocast；分片與單卡決策一致，每手差 ≤ 4×10⁻³ nats"], ["儲存", "每手實際落子的 log p；每局加總；題目層 59（+5）維"]], num_from=9), "docs/NANO4.md §4.4、§4.19；results/l1b/scores3/fold3 的 meta", "nano4 實測"),
     cause=("特徵要可重現、可對帳", "固定規則與貼目、只存需要的量", "這些數字怎麼接成提交模型？"),
     sec="2.3 重播與評分",
     body="""<p>貼目是網路的全域輸入之一，所以 7.5 一律的設定會影響每手 log p；但它對訓練與推論一致。是否改成資料約定的貼目，要先抽樣量到十類機率與決策（第 8 章），不用「每手差 ±0.001」當判準。</p>
-<p>讓子局在 v1.1 之前是在缺子棋盤上拿對手的手當目標評分；修正後只重評那 36,421 局（R-hdpatch），head 不變；head 一旦重訓，全量分數都要重算。</p>""",
+<p>讓子修正只重評那 36,421 局（R-hdpatch），head 不變；head 一旦重訓，全量分數都要重算。</p>""",
     take="評分設定固定且可對帳，之後所有比較才有同一個基準。"),
   ]),
  dict(n=3, title="現行架構：提交候選", hook="從棋譜到十類機率，<br>現在的模型是怎麼接的？",
@@ -465,8 +464,8 @@ CHAPTERS = [
   cards=[
    dict(id="card-pipeline", q="從棋譜到十類機率，現在的管線是什麼？", h="三路每手證據加差值接成 59 維，A、B 兩個 MLP 平均，再做期望得分決策；每一層都按玩家 cross-fit",
     formula="p = ½ [ MLP(x<sub>A</sub>) + MLP(x<sub>B</sub>) ]，x = hsl<sub>24</sub> ⊕ l1b<sub>16</sub> ⊕ opp<sub>16</sub> ⊕ diff<sub>3</sub>",
-    bullets=["Stage 1 表示：每手 Human SL 18 個 profile 的 log p、L1b 10 個 head 對目標手與對手手的 log p；trunk 凍結", "Stage 2 聚合：每局各維度加總，題內做統計（相對曲線、峰值、posterior-mean index、log 局數、log 總手數…）→ 59 維；HD 5 維是待採用的第 60–64 維", "Stage 3 分類：MLP h32、300 epoch、l2 1e-4、類別平衡；A、B 機率平均；argmax 期望得分"],
-    fig=fig(chart_pipeline(), "退路依序為 fused_opp、fused、ens_top3、rank_model，共用同一組分片檔，不必重新評分", "docs/NANO4.md §4.13；架構圖頁 claude.ai/artifact/YAJNakFnSxj99rbJMkwWC5"),
+    bullets=["Stage 1 表示：每手 Human SL 18 個 profile 的 log p、L1b 10 個 head 對目標手與對手手的 log p；trunk 凍結", "Stage 2 聚合：每局各維度加總，題內做統計（相對曲線、峰值、posterior-mean index、log 局數、log 總手數…）→ 59 維", "Stage 3 分類：MLP h32、類別平衡；A、B 機率平均；argmax 期望得分"],
+    fig=fig(chart_pipeline(), "退路 fused_opp 共用同一組分片檔，不必重新評分", "docs/NANO4.md §4.13；架構圖頁 claude.ai/artifact/YAJNakFnSxj99rbJMkwWC5"),
     cause=("前面兩章的工具", "把每手證據聚合成題目層特徵，再分類", "這一版的分數與成本？"),
     sec="3.1 管線",
     body="""<p>Cross-fit：L1b 的 head A 用 folds 1、2 的玩家訓練，評 folds 0、3、4；head B 用 3、4 訓練，評 0、1、2。每位玩家的特徵都來自沒看過這位玩家的模型；fold 0 兩個模型都沒看過。題目層的 MLP 也只用訓練折的題，標準化與任何學習式特徵都只在訓練內玩家擬合。</p>
@@ -474,7 +473,7 @@ CHAPTERS = [
     take="三層各自可換，但每一層的學習式輸出都必須是 out-of-fold 的，否則題目層會學到洩漏。"),
    dict(id="card-progress", q="這一版的分數怎麼來的？代價多少？", h="從官方 baseline 0.44 到 0.69：Human SL 映射 +0.17，鑑別式 L1b +0.035，對手通道兩步 +0.037，讓子 5 維再 +0.007（候選）",
     formula="CV（folds 1–4 留一折）與 fold 0（只在採用前查一次）兩個數",
-    bullets=["+0.17 是 fold 0 同題比較（0.6113 − 0.440），其餘是 CV；L1b 之後的三版 fold 0 略低於 CV（−0.001 到 −0.003），hsl 低 0.008，都與折間變異相容；fold 0 已用四次，再用要使用者同意", "fused_opp_diff：命中 0.548、±1 內 0.919；到 0.80 若 ±1 內不變，命中要 73.1%", "推論成本：mock 40 題單卡 298 秒；正式 800 題單卡約 2–3 小時、8 卡約 20 分"],
+    bullets=["+0.17 是 fold 0 同題比較，其餘是 CV；L1b 之後的三版 fold 0 只比 CV 低 0.001–0.003", "fused_opp_diff：命中 0.548、±1 內 0.919；到 0.80 若 ±1 內不變，命中要 73.1%", "推論成本：mock 40 題單卡 298 秒；正式 800 題單卡約 2–3 小時、8 卡約 20 分"],
     fig=fig(chart_progress(), "實心點是 folds 1–4 CV，空心點是 fold 0；HD 5 維只有 CV", "results/l1b/opp_check.json、opp_fold0_check.json、error_analysis.json、rank_model_fused_opp_diff.json、hd_check.json"),
     cause=("要知道每一塊各值多少", "同一套協定逐步加", "每手證據是怎麼演進的？"),
     sec="3.2 分數與成本",
@@ -494,7 +493,7 @@ CHAPTERS = [
     fig=fig(chart_compression(), "每級 20 人、每人 20 局；3D 的峰值落在 2k、1k 之間，畫在中點", "results/pilot_humansl.json", "fold 0 pilot，200 人"),
     cause=("預訓練模型能零樣本判斷嗎？", "每級 20 人掃 18 個 profile", "尺度要學，怎麼學？"),
     sec="4.1 Pilot：零樣本的結果",
-    body="""<p>Pilot 從 fold 0 與 fold 1 各取 200 人（每級 20 人）× 20 局，每手算 18 個 profile。Python 直讀權重與 KataGo 引擎對照過：20 個局面的目標落子最大差 3.8×10⁻⁴，argmax 全部一致。用 fold 1 擬合單調門檻再測 fold 0，分數升到 n=5 0.586、n=10 0.601、n=20 0.647。</p>""",
+    body="""<p>Pilot 從 fold 0 與 fold 1 各取 200 人（每級 20 人）× 20 局，每手算 18 個 profile。</p>""",
     take="Human SL 的序數訊號可用，等級尺度不能照搬，必須用本資料學映射。"),
    dict(id="card-mlp", q="用本資料學映射能到多少？", h="24 維題目特徵加 MLP 到 CV 0.6192，比官方 baseline 高約 0.17",
     formula="x(Q) ∈ ℝ<sup>24</sup> → MLP(h = 32) → q(k | Q)",
@@ -511,20 +510,19 @@ CHAPTERS = [
     cause=("Human SL 不是為本資料的等級訓練", "在 trunk 上訓 head，保持 out-of-fold；直接訓練 head 之間的等級鑑別力", "目標玩家的落子用完了，還有別的證據嗎？"),
     sec="4.3 L1b：結構、鑑別式目標與洩漏檢查",
     body=f"""<p>metadata 用 humanv0 訓練時見過的「等級未知」列，等級資訊只經由 10 個 head 注入，所以一次 trunk 前向就得到 10 個等級的 log p。生成式 NLL 要每個 head 把自己等級的落子預測好，但判斷等級需要的是 head 之間的差異；鑑別式目標把 10 個 head 對實際落子的 log p 當 logits 預測玩家等級，選模看 NLL + CE。</p>
-<p>增幅遠大於所有聚合器實驗，所以先查洩漏：A、B 的訓練與出特徵 folds 沒有交叉；再用兩個模型都沒看過的 fold 0 檢查（經使用者核准、不作選擇）：fused_A 0.6479、fused_B 0.6510、平均 0.6535，與 CV 一致。測試時 A、B 各出一套特徵、各走一次 MLP，機率平均。</p>
-<p>每手只存實際落子那一格的 log p：目標手 18 個 profile 與 10 個 head、對手手 10 個 head。重評分約 900 局面／秒／卡；全量兩側約 2.2 億局面，8 卡一節點約 8–9 小時。</p>""",
+<p>增幅遠大於所有聚合器實驗，所以先查洩漏：A、B 的訓練與出特徵 folds 沒有交叉；再用兩個模型都沒看過的 fold 0 檢查（經使用者核准、不作選擇）：fused_A 0.6479、fused_B 0.6510、平均 0.6535，與 CV 一致。測試時 A、B 各出一套特徵、各走一次 MLP，機率平均。</p>""",
     take="對這個計分，目標函數比模型容量重要；每手層級的 NLL 進步不保證傳到題目層級（第 6 章還會看到兩次）。"),
   ]),
  dict(n=5, title="聚合與第二份證據", hook="同樣的逐局證據，<br>換聚合器或加對手的落子，能再往上嗎？",
   lead="本章先比一整條聚合器梯子，說明增益上限；再加入對手的落子、對手與自己的差值、讓子資訊，L1b 之後通過門檻的只有這三步。",
   meta="fused_opp_diff：59 維 = 24 + 16 + 16 + 3 · HD 再加 5 維", route=["聚合器", "對手", "差值與讓子"],
-  conclusion="單一聚合器的增益上限約 0.01，三者平均最多約 +0.014；對手通道兩步共 +0.037，HD 5 維再 +0.0071。提交候選 fused_opp_diff：CV 0.6916、fold 0 0.6888。",
+  conclusion="單一聚合器的增益上限約 0.01，三者平均 +0.011；對手通道兩步共 +0.037，HD 5 維再 +0.0071。提交候選 fused_opp_diff：CV 0.6916、fold 0 0.6888。",
   next_q="其他方向為什麼都沒過？第 6 章列出全部比較。", refs=[REF_CTM, REF_REPO],
   cards=[
-   dict(id="card-ladder", q="換更強的聚合器能多拿分嗎？", h="所有結構都落在 0.60–0.63：整題監督的集合模型比 MLP 多 +0.005 到 +0.009，單一結構上限約 0.01",
+   dict(id="card-ladder", q="換更強的聚合器能多拿分嗎？", h="所有結構都落在 0.60–0.63：集合模型只比 MLP 多 +0.005 到 +0.009",
     formula="CTM − 基準 = +0.0087　　ens_top3 − 基準 = +0.0113",
-    bullets=["PMA、cross-attention、CTM 兩兩差 ≤ 0.0005；三者機率平均 ens_top3 0.6306（逐 seed）；三個 seed 全部再平均是 0.6327", "fold 0：r3_pma 0.6233 [0.6093, 0.6371]，對當時提交 +0.0102", "相鄰等級 AUC 從 5 局到 20 局只升 ≤ 0.05：瓶頸是每手證據的解析度，不是證據量"],
-    fig=fig(chart_ladder(), "虛線是 24 維 + MLP 基準。集合模型都是 3 個 seed 分數的平均，ens_top3 也是", "results/ladder/cv_summary.json、stack_check3.json", "folds 1–4"),
+    bullets=["PMA、cross-attention、CTM 兩兩差 ≤ 0.0005；三者機率平均 ens_top3 0.6306", "相鄰等級 AUC 從 5 局到 20 局只升 ≤ 0.05：瓶頸是每手證據的解析度，不是證據量"],
+    fig=fig(chart_ladder(), "虛線是 24 維 + MLP 基準。集合模型都是 3 個 seed 分數的平均", "results/ladder/cv_summary.json、stack_check3.json", "folds 1–4"),
     cause=("更強的聚合器能多拿分嗎？", "同輸入同題目比一整條梯子", "增益這麼小，別的證據在哪？"),
     sec="5.1 聚合器梯子",
     body=f"""<p>四個事先指定的門檻都不成立；只看長度的 <code>r2_length_only</code> 是 {num(LAD['rungs']['r2_length_only']['balanced_mean_over_n'])}。這條線之後被 L1b 取代，集合模型沒有在新的 59 維特徵上重測；第 8 章把「<code>r3_pma</code> 接現行每局訊號」列為待排的對照。</p>
@@ -542,7 +540,7 @@ CHAPTERS = [
     take="對手特徵的增益和鑑別式 L1b 同一量級。"),
    dict(id="card-diff", q="對手減自己的差值、讓子資訊，還能加分嗎？", h=f"能：差值 3 維 {signed(diff_c['diff'])} 到 {num(score(ERR,'mlp_diff'))}；HD 5 維再 {signed(hd_c['diff'])} 到 {num(score(HD,'fused_opp_diff_hd'))}",
     formula="diff = pmi<sub>opp</sub> − pmi<sub>own</sub>（每局，取題內統計）",
-    bullets=[f"差值 3 維：{signed(diff_c['diff'])} {ci(diff_c)}，四折全正；fold 0 {num(score(DIFF0,F0D_KEY))}，對 fused_opp {signed(f0diff['diff'])} {ci(f0diff)}", f"HD 5 維（互先／讓先／讓子比例、有號讓子數 up／down）：{signed(hd_c['diff'])} {ci(hd_c)}，增益集中在有讓子局的題", "v1.1 的讓子局：讓子石未記錄、B/W 相反，36,421 局（3.6%）目前是在缺子棋盤上拿對手的手評分，重評中"],
+    bullets=[f"差值 3 維：{signed(diff_c['diff'])} {ci(diff_c)}，四折全正；fold 0 {num(score(DIFF0,F0D_KEY))}，對 fused_opp {signed(f0diff['diff'])} {ci(f0diff)}", f"HD 5 維（互先／讓先／讓子比例、有號讓子數 up／down）：{signed(hd_c['diff'])} {ci(hd_c)}，增益集中在有讓子局的題"],
     fig=fig(table(["題目分組", "題數", "fused_opp", "fused_opp_diff", "+ HD 5"], [[n, f"{HD['buckets'][k]['questions']:,}", num(HD['buckets'][k]['fused_opp']), num(HD['buckets'][k]['fused_opp_diff']), num(HD['buckets'][k]['fused_opp_diff_hd'])] for n, k in (("只有互先局", "no_hd"), ("含讓先、無讓子", "sente_only"), ("含讓子局", "stones"))]), "按題內是否含讓先／讓子局分組的各級平均官方分", "results/seq/hd_check.json、error_analysis.json", "folds 1–4"),
     cause=("殘差對（對手 − 自己）仍有 −0.213 的相關", "把差值直接當特徵；讓子是配對系統給的標籤側資訊", "其他方向為什麼都沒過？"),
     sec="5.3 差值特徵與讓子資訊",
@@ -556,17 +554,17 @@ CHAPTERS = [
   conclusion="L1b 之後通過門檻的只有對手、差值、讓子三步；每手層級的進步常傳不到題目層級，題目層多加一塊欄位常變差。",
   next_q="錯誤到底在哪裡？第 7 章切開每題機率，並用三個診斷找原因。", refs=[REF_SE, REF_MS, REF_CORAL, REF_REPO],
   cards=[
-   dict(id="card-forest", q="哪些方向試過、結果如何？", h="圖上 15 列（含一條純雜訊對照）只有對手、差值、讓子三步過門檻；最差的是 TSFEL 全塊（−0.061）與 CORAL（−0.026）",
+   dict(id="card-forest", q="哪些方向試過、結果如何？", h="圖上 15 列只有對手、差值、讓子三步過門檻；最差的是 TSFEL 全塊與 CORAL",
     formula="所有比較對當時的現行模型，玩家 bootstrap 95% CI",
     bullets=[f"棋力標量 {signed(se_c['diff'])}、落子品質 {signed(q_c['diff'])}、CORAL {signed(coral_c['diff'])}、成對 BT {signed(bt_c['diff'])}、x5 {signed(C('fused_opp_x5 vs fused_opp')['diff'])}", f"每局形狀 8 維 {signed(shape_c['diff'])}、直方圖 10 維 {signed(hist_c['diff'])}、TSFEL PCA-16 {signed(TSFEL16['diff'])}（4／64／全：−0.0014／−0.0375／−0.0610）", f"xgboost 代 MLP {signed(gbm_c['diff'])}；MLP h128 {signed(h128_c['diff'])}、L2×100 −0.0189、softmax −0.0245、提早停止 −0.0043、L1 {signed(L1['diff'])}"],
-    fig=fig(chart_forest(), "點是差值，線段是玩家 bootstrap 95% CI；綠色是過門檻的三步（HD 還沒進提交）。TSFEL 64／全塊超出軸範圍，L2、softmax、提早停止只列在左欄，未畫", "results/l1b、results/seq、results/gbdt 的 *_check.json", "folds 1–4"),
+    fig=fig(chart_forest(), "點是差值，線段是玩家 bootstrap 95% CI；綠色是過門檻的三步；其中一列是純雜訊對照。TSFEL 64／全塊超出軸範圍，未畫", "results/l1b、results/seq、results/gbdt 的 *_check.json", "folds 1–4"),
     cause=("每個方向各有道理", "同一套協定逐項比", "為什麼每手變好、題目不變？"),
     sec="6.1 全部比較",
     body=f"""<p>論文方法：Chen 等的 Bradley–Terry 棋力標量 head 訓練成功（成對準確率 0.52 → 0.74），但接上 fused_opp 顯著變差；L1b 已有一個有序標量 <code>pmi_sum</code>，兩者只差訓練目標。落子品質（humanv0 9d 的勝率與目數損失）接上 Human SL 有幫助，接上 fused_opp 沒有。CORAL 共用一個標量與 9 個門檻，20 局題差最多（−0.041）：官方分是半徑 1 的帶狀獎勵，差 2 級和差 9 級一樣是 0，全局有序距離不是對的目標。</p>
 <p>資料量：五折交叉擬合讓每個 head 多看一倍玩家，每手 rank CE 確實變好（2.100–2.110 對 2.137／2.111），題目層卻 {signed(C('fused_opp_x5 vs fused_opp')['diff'])}；刻度校正後相同，刻度假設不成立。</p>
 <p>樹模型：同一份特徵上 xgboost 比 MLP 差；ens_top3 + xgb 對 ens_top3 {signed(ens_tree_c['diff'])} {ci(ens_tree_c)}，但對 ens_top3 + 多一個 MLP 是 {signed(ens_tree_mlp_c['diff'])} {ci(ens_tree_mlp_c)}——多一個成員的功勞不能算在樹上。</p>""",
     take="在已有多等級似然的前提下，標量、品質、有序輸出、更多資料、更大模型都沒有額外價值。"),
-   dict(id="card-noise", q="題目層多加一塊欄位為什麼常變差？", h="多數是少局題上的抽樣雜訊，不是模型脆弱：16 欄純雜訊只掉 −0.0014，TSFEL 16 欄掉 −0.0128",
+   dict(id="card-noise", q="題目層多加一塊欄位為什麼常變差？", h="多半是特徵本身的雜訊：16 欄純雜訊只掉 −0.0014，TSFEL 16 欄掉 −0.0128",
     formula="退步隨維度單調放大：+4 → −0.001，+16 → −0.013，+64 → −0.038，+267 → −0.061",
     bullets=[f"純雜訊對照 {signed(NOISE16['diff'])} {ci(NOISE16)}：MLP 對多餘欄位有抵抗力", "TSFEL 塊只有 pc1–pc4 可靠，pc5–pc16 的 split-half 相關 0.0–0.34（第 7 章）", "h16、L2、L1、提早停止都救不回 TSFEL；問題在特徵，不在正則化"],
     fig=fig(table(["加在 fused_opp_diff 上的塊", "維度", "差值", "95% CI"], [["純雜訊", "16", signed(NOISE16['diff']), ci(NOISE16)], ["每局形狀（對 fused_opp）", "8", signed(shape_c['diff']), ci(shape_c)], ["每手 pmi 直方圖", "10", signed(hist_c['diff']), ci(hist_c)], ["TSFEL PCA", "16", signed(TSFEL16['diff']), ci(TSFEL16)], ["TSFEL PCA", "64", "−0.0375", "[−0.0423, −0.0326]"], ["TSFEL 全塊", "267", "−0.0610", "[−0.0667, −0.0551]"]]), "同一套 CV；TSFEL 與雜訊對照來自 PR #39／#43 的結果檔", "results/seq/{shape,hist}_check.json、tsfel_check.json、qmodel_check.json", "folds 1–4"),
@@ -589,7 +587,7 @@ CHAPTERS = [
     sec="7.1 錯誤結構",
     body="""<p>同一人多題全對或全錯的比例都是獨立假設的 3–4 倍（18.4% 對 5.1%、14.1% 對 3.8%）：伺服器等級與這些局下出來的棋力之間，每人有一個固定落差。對手通道能抵一部分（第 5 章），但加差值後殘差對（對手 − 自己）仍有 −0.130 的相關。</p>""",
     take="短期的分數空間在把差一級變成命中；要往上，需要能估每人固定落差的新證據。"),
-   dict(id="card-fingerprint", q="新特徵塊是在記玩家嗎？", h=f"部分是：同 n=5 下 TSFEL 對已見玩家比新玩家少掉 {signed(D5['base_tsfel16']['D_plain'])}，CI 不含 0；但對已見玩家也仍是負增益",
+   dict(id="card-fingerprint", q="新特徵塊是在記玩家嗎？", h=f"部分是：TSFEL 對已見玩家少掉 {signed(D5['base_tsfel16']['D_plain'])}，但仍是負增益",
     formula="D(5) = gain(已見玩家留出局) − gain(新玩家 n=5)",
     bullets=[f"TSFEL：D(5) {signed(D5['base_tsfel16']['D_plain'])} {ci(dict(ci95=D5['base_tsfel16']['D_plain_ci95']))}（直接平均）；類別平衡 {signed(D5['base_tsfel16']['D_balanced'])} {ci(dict(ci95=D5['base_tsfel16']['D_balanced_ci95']))}", f"形狀 8 {signed(D5['base_shape8']['D_plain'])}、純雜訊 {signed(D5['base_noise16']['D_plain'])}：未偵測到已見玩家相對優勢", f"訓練題固定 5 局後，TSFEL 對新玩家從 {signed(D5['base_tsfel16']['gain_new_plain'])} 縮到 {signed(D5['fixed5_base_tsfel16']['gain_new_plain'])}，D(5) 縮到 {signed(D5['fixed5_base_tsfel16']['D_plain'])}（CI 跨 0）"],
     fig=fig(table(["特徵塊", "新玩家增益", "已見玩家增益", "D(5)", "95% CI"], [[n, signed(D5[k]['gain_new_plain']), signed(D5[k]['gain_seen_plain']), signed(D5[k]['D_plain']), ci(dict(ci95=D5[k]['D_plain_ci95']))] for n, k in (("形狀 8", "base_shape8"), ("TSFEL PCA-16", "base_tsfel16"), ("純雜訊 16", "base_noise16"), ("TSFEL，訓練題固定 5 局", "fixed5_base_tsfel16"))]), "訓練玩家每人 20 局留 5 局組成「已見玩家」題；全域 player_id 整包 bootstrap 5,000 次，兩組共用抽樣", "results/seq/fingerprint_check_v2.json", "folds 1–4，直接平均"),
@@ -609,7 +607,7 @@ CHAPTERS = [
     take="新特徵塊先做 split-half 診斷：低可靠度成分限維、縮小試驗或整塊消融；採用仍看新玩家增益、CI 與分折穩定性。"),
   ]),
  dict(n=8, title="架構 v2 與規則", hook="證據怎麼變成規則？<br>接下來要做哪幾件事？",
-  lead="與 GPT 三輪、Gemini 一輪審查後收斂的單一版本：表示 → 聚合 → 分類三層，主線保留現行 MLP，先完成重播與快取修正，新訊號各自小規模驗證，樹只作對照與融合候選。五張架構圖另有頁面。",
+  lead="架構分表示 → 聚合 → 分類三層，主線保留現行 MLP，先完成重播與快取修正，新訊號各自小規模驗證，樹只作對照與融合候選。五張架構圖另有頁面。",
   meta="reports/architecture_v2_2026-11-02.md · 架構圖 claude.ai/artifact/YAJNakFnSxj99rbJMkwWC5", route=["三層", "規則", "基準與支線"],
   conclusion="架構凍結；下一批最有價值的結果是修正後基準的 E10／E11，與 r3_pma 在同一份特徵上的增量。",
   next_q="模型定案之後，提交流程與未確認事項是什麼？第 9 章說明。", refs=[REF_REPO],
@@ -620,8 +618,7 @@ CHAPTERS = [
     fig=fig(table(["層", "現行", "候選（都待核定）"], [["重播", "KataGo RULES_CHINESE，whiteKomi 7.5 一律", "讓子局補星位、B/W 對調、目標取 color"], ["Stage 1 表示", "Human SL 18 + L1b 10（目標、對手）", "policy 摘要、跨 head 敏感度加權與截斷、Q、G"], ["Stage 2 聚合", "每局加總 → 59 維 + HD 5", "逐局讓子校準、按 n 處理、r3_pma"], ["Stage 3 分類", "MLP h32，A／B 機率平均，期望得分決策", "樹對照／融合、帶狀效用損失、以官方分選 temperature"]], num_from=9), "每一層第 k 折的學習式輸出只來自沒看過第 k 折玩家的模型", "架構設計 v2 §4"),
     cause=("前面七章的證據", "把有效的、無效的、未測的各放到一層", "採用與否怎麼判？"),
     sec="8.1 三層",
-    body="""<p>時間對齊規格只有一版：每 ply 一列，28 維分數（Human SL 18 只在目標手有觀測，L1b 10 是當前落子者），加角色、t/T、有效遮罩；缺值不以 0 進標準化。每局的學習式輸出用 10 類機率或 log-softmax，各折獨立訓的 encoder 隱藏向量不拼成同一張表。</p>
-<p>刪掉的指示：全域玩家 ID 對抗、自監督為主、等級 CE 權重 0.1、「時序成功才測新訊號」、樹為唯一主比較、每層指紋否決、「相關 < 0.3 就刪」的硬門檻、文件內的時程。</p>""",
+    body="""<p>時間對齊規格只有一版：每 ply 一列，28 維分數（Human SL 18 只在目標手有觀測，L1b 10 是當前落子者），加角色、t/T、有效遮罩；缺值不以 0 進標準化。每局的學習式輸出用 10 類機率或 log-softmax，各折獨立訓的 encoder 隱藏向量不拼成同一張表。</p>""",
     take="三層只是放東西的位置；真正固定的是下一張卡的規則。"),
    dict(id="card-rules", q="一個新候選怎樣才算通過？", h="同題同抽樣同種子的四格比較，CI 下界 > 0、四折至少三折正、差 ≥ 0.005；穩定性與 D(5) 只作診斷",
     formula="{MLP, 樹} × {R, R + 新塊}；E／S／D 三組四格",
@@ -631,10 +628,10 @@ CHAPTERS = [
     sec="8.2 規則",
     body="""<p>純 CPU 的待核定項（都在 R 上、一次只改一項）：按 n 條件化標準化；以玩家內／玩家間變異比做乘法收縮 x／(1 + 10·r／n)；逐局對手讓子校準再聚合；跨 10 個 head 的每手標準差加權與 [−2.5, 2.5] 截斷加總（每手 10 head 的 log p 已存在，不必重評分）；帶狀效用損失與直接以官方分選 temperature。「訓練題只抽 5／10／20」因官方是 5–20 局而不採。</p>""",
     take="規則固定之後，候選可以依結果退出，不必每次失敗再加補救。"),
-   dict(id="card-R", q="修正後的基準 R 與支線是什麼？", h="R-hdpatch：維持 7.5、只重評 HD≥2 的 36,421 局，是 11/04 前做得完的過渡版；R-full 要重訓 head 並全量重評，時點由使用者決定",
+   dict(id="card-R", q="修正後的基準 R 與支線是什麼？", h="R-hdpatch 只重評 HD≥2 的 36,421 局，是過渡版；R-full 要重訓 head 並全量重評",
     formula="R-hdpatch ≈ 0.65 節點小時（L1b 兩側）；R-full (a) ≈ 68 GPU 小時 + Human SL",
-    bullets=["貼目：舊流程對所有局輸入 7.5（資料約定 HD0 6.5、HD≥1 0），訓練與推論一致；敏感度抽樣要一路量到十類機率與決策，不用「每手 ±0.001」當判準", "R-full (a) 維持 7.5、head 在修正資料上重訓；(b) 改資料約定貼目則 cache_A 1,015 萬局面全部受影響", "支線 Q（強網棋損，先 100 局工程試驗）與 G（BERT 式後續著手預測增益，五個視圖控制）各自小規模；雙頭只在三條件同時成立時啟動"],
-    fig=fig(table(["待使用者決定", "內容"], [["1", "步 3 重評 HD≥2（五支 GPU 工作）— 進行中（11/02：四支 L1b 已完成，Human SL 在跑）"], ["2", "fold 0 第五次使用：擬合 HD 版提交文件（GPT 建議暫緩）"], ["3", "強網權重是否下載；Q 支線沒有它無法開始"], ["4", "貼目：維持 7.5 一致版到 11/04，或列入全部重建"], ["5", "純 CPU 便宜項是否核定（第 8.2 節）"]], num_from=9), "磁碟：五個評分目錄共 2.6 GB，補丁併回再加一份；home 剩 15 GB", "架構設計 v2 §6–§8"),
+    bullets=["貼目維持 7.5（訓練與推論一致）；要改先抽樣量到十類機率與決策", "R-full (a) 維持 7.5、head 在修正資料上重訓；(b) 改資料約定貼目則 cache_A 1,015 萬局面全部受影響", "支線 Q（強網棋損，先 100 局工程試驗）與 G（BERT 式後續著手預測增益，五個視圖控制）各自小規模；雙頭只在三條件同時成立時啟動"],
+    fig=fig(table(["待使用者決定", "內容"], [["1", "fold 0 第五次使用：擬合 HD 版提交文件"], ["2", "強網權重是否下載；Q 支線沒有它無法開始"], ["3", "貼目：維持 7.5 一致版到 11/04，或列入全部重建"], ["4", "純 CPU 便宜項是否核定（第 8.2 節）"]], num_from=9), "R-hdpatch 重評後不劣（下降 ≤ 0.002）才重擬合文件", "架構設計 v2 §6–§8"),
     cause=("3.6% 的局在錯的棋盤上評分", "先出過渡版，再決定完整修復的範圍", "提交流程與風險呢？"),
     sec="8.3 基準版本、支線與待決事項",
     body="""<p>E 四格：E00 舊重播、E01 舊重播 + HD 5、E10 新重播、E11 新重播 + HD 5；必報 E10−E00、E11−E10、E11−E01 與交互。G 支線的固定規格：小型 Transformer 4 層、錨點前 ≤ 32 ply 後 ≤ 8 ply、實際手永遠換成 MASK、不在被遮手座標抽向量；Past／Own／Opp／Shuffle／Both 五個視圖都要在訓練中出現，Own ≈ Shuffle 就只是局部座標資訊。</p>""",
@@ -642,14 +639,14 @@ CHAPTERS = [
   ]),
  dict(n=9, title="提交流程與未確認事項", hook="模型定案之後，<br>提交流程與風險是什麼？",
   lead="提交候選是 A、B 兩個 L1b 加 Human SL、再加差值 3 維的 fused_opp_diff。本章說明管線、已完成的對帳，以及 11/04 之前無法確認的事項。",
-  meta="main ef10885 · 提交文件 rank_model_fused_opp_diff.json", route=["對帳", "未確認"],
+  meta="提交文件 rank_model_fused_opp_diff.json", route=["對帳", "未確認"],
   conclusion="管線與離線路徑逐項對上；排行榜分數、測試集的局數分布、HD 欄位與配對來源仍待 11/04 確認。",
   next_q="11/04 測試集公布後，先看 num_games 與 HD 計數、跑合法性檢查，再評分與提交。", refs=[REF_REPO],
   cards=[
    dict(id="card-checks", q="提交路徑和離線路徑一致嗎？", h="一致：mock test 與離線路徑 40／40 決策相同，每局 L1b 總和對帳通過；單卡與分片也相同",
     formula="p = ½ [ MLP(x<sub>A</sub>) + MLP(x<sub>B</sub>) ]",
-    bullets=["375／375 局的每手 L1b 總和對帳通過；fused_opp_diff 的 mock-40 最大機率差 5.1×10⁻⁴，0 題決策不同", "單卡與 4 卡分片也 40／40 相同；單卡 800 題約 2–3 小時", "權重 tar 不進 git，sha256 記錄在 release/；必要時上傳成 GitHub Release 資產"],
-    fig=fig(table(["檢查", "結果"], [["pytest（PR #40 head）", "344 passed、3 skipped"], ["fold 0 重現", "對 opp_fold0_check.json 差 0"], ["每局對帳：目標與對手", "375／375 局，每手 ≤ 7×10⁻³ nats"], ["管線 vs 離線（fused_opp_diff）", "40／40，max |Δp| 5.1×10⁻⁴"], ["單卡 vs 4 卡", "40／40，max |Δp| 2.7×10⁻⁴"], ["帶 HD[] 的 mock-40", "data/mock_tests/fold0_40_v11，報告列每局 HD 計數"]], num_from=9), "退路依序為 fused_opp、fused、ens_top3、rank_model，共用同一組分片檔", "docs/NANO4.md §4.13"),
+    bullets=["375／375 局的每手 L1b 總和對帳通過；fused_opp_diff 的 mock-40 最大機率差 5.1×10⁻⁴，0 題決策不同", "單卡與 4 卡分片也 40／40 相同"],
+    fig=fig(table(["檢查", "結果"], [["fold 0 重現", "對 opp_fold0_check.json 差 0"], ["每局對帳：目標與對手", "375／375 局，每手 ≤ 7×10⁻³ nats"], ["管線 vs 離線（fused_opp_diff）", "40／40，max |Δp| 5.1×10⁻⁴"], ["單卡 vs 4 卡", "40／40，max |Δp| 2.7×10⁻⁴"], ["帶 HD[] 的 mock-40", "data/mock_tests/fold0_40_v11，報告列每局 HD 計數"]], num_from=9), "退路 fused_opp 共用同一組分片檔", "docs/NANO4.md §4.13"),
     cause=("離線分數要能在提交路徑重現", "用 fold 0 做 40 題官方格式的假測試", "還有什麼沒辦法事先確認？"),
     sec="9.1 對帳",
     body="""<p>每局棋跑 18 個 Human SL profile 與 2 個 L1b trunk（目標與對手），分片評分後合併，再做特徵與決策。帶 HD[] 的 mock-40（data/mock_tests/fold0_40_v11）已準備，HD 版文件的 predict_submission 報告會列每局 HD 值的計數，測試檔有沒有帶 HD 一跑就知道。</p>""",
@@ -660,7 +657,7 @@ CHAPTERS = [
     fig=fig(table(["11/04 的檢查順序", "看什麼"], [["1", "num_games 分布、每題是否帶 HD[]、SGF 合法性（check_legal）"], ["2", "玩家是否與訓練集重疊、各級題數是否相近"], ["3", "fused_opp_diff 與 fused_opp 各上傳一次，做 Public 榜對照"], ["4", "R-hdpatch 的 E10／E11 出來後，決定 HD 版文件是否進場"]], num_from=9), "上傳每天 5 次，以最後一次計分", "AIdea 競賽頁面"),
     cause=("離線驗證到此為止", "把未知列清楚，並準備退路", "11/04 後依序驗證"),
     sec="9.2 未確認事項與退路",
-    body="""<p>A、B 各只看過 40% 的玩家，全量模型是否更好只有間接證據（第 6 章的 x5 沒有比較好）。R-hdpatch 是過渡版（head 不變）；重評後不劣（下降 ≤ 0.002）才重擬合文件，這要再用一次 fold 0。11/04 用哪個文件由使用者決定，採用過渡版時要標明；完整修復的版本名要不同，每筆比較註明用哪個 R。</p>""",
+    body="""<p>A、B 各只看過 40% 的玩家，全量模型是否更好只有間接證據（第 6 章的 x5 沒有比較好）。R-hdpatch 是過渡版（head 不變），重擬合文件要再用一次 fold 0；11/04 用哪個文件由使用者決定；完整修復的版本名要不同，每筆比較註明用哪個 R。</p>""",
     take="目前的最佳估計只是離線分數；測試集公布後，第一件事是驗證這些假設。"),
   ]),
 ]
@@ -820,7 +817,7 @@ def index_page():
 <div class="fig">{chart_progress()}</div>
 <p class="note">這些都是離線題上的分數，不能直接和排行榜比；官方 baseline 在 Public 是 0.4631。</p>
 </div>
-<h3>已完成的章節</h3>
+<h3>章節</h3>
 <ul class="index-list">{lst}</ul>
 <div class="prose"><h2>章節架構</h2>
 <p>各章以一個研究問題開場，以報告卡回答；每張卡的「推導 ▸」開啟對應一節的完整推導，每張卡的「限制」就是下一張卡要回答的問題。</p>
@@ -942,6 +939,21 @@ JS = """/* The rank strip of chapter 1: pick the true level, read what each pred
   }
   btns.forEach((b, i) => b.addEventListener('click', () => paint(i)));
   paint(6);
+})();
+/* Present mode: shrink a card's text column until it clears the row below, whatever font the viewer has. */
+(function () {
+  function fit() {
+    document.querySelectorAll('.report>div:first-child').forEach(e => { e.style.fontSize = ''; });
+    const left = document.querySelector('.page.card.cur .report>div:first-child');
+    if (!left || !document.body.classList.contains('m-present')) return;
+    for (let s = 97; s >= 76 && left.scrollHeight > left.clientHeight + 1; s -= 3) left.style.fontSize = s + '%';
+  }
+  const watch = new MutationObserver(fit);
+  watch.observe(document.querySelector('main'), { subtree: true, attributes: true, attributeFilter: ['class'] });
+  watch.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  window.addEventListener('resize', fit);
+  document.fonts?.ready.then(fit);
+  fit();
 })();
 """
 
