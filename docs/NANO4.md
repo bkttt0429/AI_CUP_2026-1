@@ -743,7 +743,7 @@ nano4 在完整資料上的全套 pytest：`f431660` 342 passed／3 skipped（jo
 
 前提：§4.19 步 1 的 `results/data/hd_table.csv` 已有；(b) 的 `_hd` 目錄 2026-11-02 已做好（步 3–5 完成，§2.24），**五個評分目錄都換成 `_hd` 版**（`results/scores_hd`、`results/l1b/scores3_hd`、`scores3_B_hd`、`scores3_opp_hd`、`scores3_B_opp_hd`）。
 
-**先做（不碰 fold 0）：現行 59 維文件在 `_hd` 上重擬**，讓 11/04 推論端的新重播與訓練特徵一致（`--no-fold0`：文件記 `fold0_check.skipped`，沒有 fold-0 表，mock 檢查只能 run-vs-run）：
+**先做（不碰 fold 0）：現行 59 維文件在 `_hd` 上重擬**，讓 11/04 推論端的新重播與訓練特徵一致（`--no-fold0`：文件記 `fold0_check.skipped`，沒有 fold-0 表，mock 檢查只能 run-vs-run）。**已做：job 676071，`results/models/rank_model_fused_opp_diff_r.json`（PR #50），帶 HD 的 mock-40 走過（job 676157，40／40、exit 0）；11/04 主提交用它，舊文件留作退路（§2.24）。**
 
 ```bash
 sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 02:00:00 -J fitdiffhd scripts/nano4/run.sbatch python -I scripts/fit_fused_model.py --l1b A:results/l1b/scores3_hd:results/l1b/heads3_A.json B:results/l1b/scores3_B_hd:results/l1b/heads3_B.json --opp A:results/l1b/scores3_opp_hd B:results/l1b/scores3_B_opp_hd --hsl results/scores_hd --diff --no-fold0 --out results/models/rank_model_fused_opp_diff_r.json
