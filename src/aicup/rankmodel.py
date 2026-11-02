@@ -59,8 +59,7 @@ class SoftmaxModel:
     def fit(self, X, y, w=None):
         X, y = np.asarray(X, dtype=float), np.asarray(y, dtype=int)
         w = class_weights(y) if (w is None and self.balanced) else (np.ones(len(y)) if w is None else np.asarray(w, float))
-        # standardise=False (issue #53): the caller standardised the inputs (e.g. per question size); the net sees X as given
-        self.mean, self.std = _standardise(X) if self.standardise else (np.zeros(X.shape[1]), np.ones(X.shape[1]))
+        self.mean, self.std = _standardise(X)
         Xt = torch.tensor((X - self.mean) / self.std, dtype=torch.float64)
         yt, wt = torch.tensor(y), torch.tensor(w, dtype=torch.float64)
         W = torch.zeros(X.shape[1], N_CLASSES, dtype=torch.float64, requires_grad=True)

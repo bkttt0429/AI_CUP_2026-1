@@ -53,8 +53,8 @@ def test_game_extra_and_pack_tokens(tmp_path):
     import pandas as pd
     from aicup.scoring import read_scored_games
 
-    l1b_dir, hsl_dir, _ = _synthetic_scores(tmp_path, folds=(1,), moves=6, players_per_rank=1, games_per_player=4)
-    opp_dir = _opponent_scores(tmp_path, name="opp_ab")
+    l1b_dir, hsl_dir, _ = _synthetic_scores(tmp_path, folds=(1,), moves=6)
+    opp_dir = _opponent_scores(tmp_path, name="opp_ab")  # folds 0-4 of the same synthetic keys: fold 1 matches
     hd_path = tmp_path / "hd.csv"
     _hd_table(hsl_dir, (1,), hd_path)
     from aicup.handicap import read_hd_table
