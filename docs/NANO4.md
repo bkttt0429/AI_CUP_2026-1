@@ -711,7 +711,7 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 8 -t 03:00:00 -J hdcheck s
 
 貼回 issue #42：`scores`（`fused_opp` 須 0.6735、`fused_opp_diff` 0.6916）、`comparisons`（預先指定 `fused_opp_diff_hd vs fused_opp_diff`）、`coverage`、`buckets`、`residual`；`hd_check.json` 進 git。
 
-**步 3（GPU；(b)）：只重評 HD≥2 的局，進補丁目錄。** 五個評分目錄各跑一次，`--game-keys` 直接吃 `hd2_keys.csv`（有 `game_key` 欄）；fold 的選局不變，只評清單上的局，所以每折只有幾百到幾千局。A 的 heads（訓練 folds 1、2）評 0、3、4，B 的評 0、1、2（`check_unseen` 會擋錯的）：
+**步 3（GPU；(b)）：只重評 HD≥2 的局，進補丁目錄。**（已跑：2026-11-02 jobs 674256–674260，Human SL 1 小時 9 分、L1b 四支各 9 分；步 4 674851；步 5 674852／674854，結果見 §2.24） 五個評分目錄各跑一次，`--game-keys` 直接吃 `hd2_keys.csv`（有 `game_key` 欄）；fold 的選局不變，只評清單上的局，所以每折只有幾百到幾千局。A 的 heads（訓練 folds 1、2）評 0、3、4，B 的評 0、1、2（`check_unseen` 會擋錯的）：
 
 ```bash
 # Human SL 18 profiles（原目錄 results/scores）
@@ -737,17 +737,25 @@ python -I scripts/patch_scored.py --base results/l1b/scores3_B_opp --patch resul
 
 **步 5（CPU）：修正後的 CV 與提交文件。** 用 `_hd` 目錄跑一次 `hist_check.py`（有 `fused_opp`／`fused_opp_diff` 兩組與殘差診斷；比較 `fused_opp_diff` 與修正前的 0.6916，下降不超過 0.002 視為不劣）和 `hd_check.py`（(a) 在修正後的分數上）；不劣就照 §4.13 的 `fitdiff` 命令、把五個目錄換成 `_hd`、`--out results/models/rank_model_fused_opp_diff_hd.json --fold0-proba results/l1b/fold0_fused_opp_diff_hd_proba.csv`，fold 0 的 `--reference` 對照照舊。11/04 用哪個文件由使用者決定；`predict_submission.py` 的報告有 `handicap`（每局 HD 值的計數），測試檔有沒有帶 `HD[` 一跑就知道。
 
-### 4.20 讓子特徵的提交文件 `rank_model_fused_opp_diff_hd.json`（2026-11-01，issue #47；**fold 0 第三次使用，要使用者本人同意才跑**）
+### 4.20 讓子特徵的提交文件 `rank_model_fused_opp_diff_hd.json`（2026-11-01，issue #47；**fold 0 第五次使用（前四次 r3_pma、fused、fused_opp、fused_opp_diff），要使用者本人同意才跑**）
 
 nano4 在完整資料上的全套 pytest：`f431660` 342 passed／3 skipped（job 670321）、`cf0008c` 344 passed／3 skipped（job 670747）。
 
-前提：§4.19 步 1 的 `results/data/hd_table.csv` 已有；若 (b) 的補丁目錄已做好且要採用，五個評分目錄換成 `_hd` 版。擬合與 fold 0 檢查（CPU，約 10 分）：
+前提：§4.19 步 1 的 `results/data/hd_table.csv` 已有；(b) 的 `_hd` 目錄 2026-11-02 已做好（步 3–5 完成，§2.24），**五個評分目錄都換成 `_hd` 版**（`results/scores_hd`、`results/l1b/scores3_hd`、`scores3_B_hd`、`scores3_opp_hd`、`scores3_B_opp_hd`）。
+
+**先做（不碰 fold 0）：現行 59 維文件在 `_hd` 上重擬**，讓 11/04 推論端的新重播與訓練特徵一致（`--no-fold0`：文件記 `fold0_check.skipped`，沒有 fold-0 表，mock 檢查只能 run-vs-run）：
 
 ```bash
-sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 04:00:00 -J fithd scripts/nano4/run.sbatch python -I scripts/fit_fused_model.py --l1b A:results/l1b/scores3:results/l1b/heads3_A.json B:results/l1b/scores3_B:results/l1b/heads3_B.json --opp A:results/l1b/scores3_opp B:results/l1b/scores3_B_opp --diff --hd-table results/data/hd_table.csv --out results/models/rank_model_fused_opp_diff_hd.json --fold0-proba results/l1b/fold0_fused_opp_diff_hd_proba.csv --reference results/l1b/opp_fold0_check.json
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 02:00:00 -J fitdiffhd scripts/nano4/run.sbatch python -I scripts/fit_fused_model.py --l1b A:results/l1b/scores3_hd:results/l1b/heads3_A.json B:results/l1b/scores3_B_hd:results/l1b/heads3_B.json --opp A:results/l1b/scores3_opp_hd B:results/l1b/scores3_B_opp_hd --hsl results/scores_hd --diff --no-fold0 --out results/models/rank_model_fused_opp_diff_r.json
 ```
 
-貼回 issue #47：`fold 0 fused_opp_diff_hd_avg vs fused_opp_diff_avg` 的差與 95% CI（採用條件：下界 > 0）、`hsl`／`fused_opp_avg`／`fused_opp_diff_avg` 與 §4.13 的數字是否重現（`--reference` 應印 0）；文件與 fold-0 表進 git。管線檢查用 mock-40（它的 SGF 沒有 `HD[`，所以要加 `--allow-missing-hd`，特徵全 0，只驗管線一致）：
+**使用者同意 fold 0 第五次使用後**：HD 版文件的擬合與 fold 0 檢查（CPU，約 10 分；下面的命令已換成 `_hd` 目錄）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 04:00:00 -J fithd scripts/nano4/run.sbatch python -I scripts/fit_fused_model.py --l1b A:results/l1b/scores3_hd:results/l1b/heads3_A.json B:results/l1b/scores3_B_hd:results/l1b/heads3_B.json --opp A:results/l1b/scores3_opp_hd B:results/l1b/scores3_B_opp_hd --hsl results/scores_hd --diff --hd-table results/data/hd_table.csv --out results/models/rank_model_fused_opp_diff_hd.json --fold0-proba results/l1b/fold0_fused_opp_diff_hd_proba.csv
+```
+
+貼回 issue #47：`fold 0 fused_opp_diff_hd_avg vs fused_opp_diff_avg` 的差與 95% CI（採用條件：下界 > 0）、`hsl`／`fused_opp_avg`／`fused_opp_diff_avg`（在 `_hd` 上與 §4.13 的舊重播數字不會相同，不加 `--reference`）；文件與 fold-0 表進 git。管線檢查用 mock-40（它的 SGF 沒有 `HD[`，所以要加 `--allow-missing-hd`，特徵全 0，只驗管線一致）：
 
 ```bash
 sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 02:00:00 -J mockhd scripts/nano4/run.sbatch python -I scripts/predict_submission.py --inputs tests/fixtures/mock_fold0_40/rank_prediction_test_public.csv tests/fixtures/mock_fold0_40/rank_prediction_test_private.csv --expect-rows 40 --expect-public 20 --expect-private 20 --out results/mock_fold0_40_hd/submission_rank.csv --l1b-heads results/l1b/heads3_A.pt results/l1b/heads3_B.pt --fused-model results/models/rank_model_fused_opp_diff_hd.json --allow-missing-hd

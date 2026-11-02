@@ -21,6 +21,8 @@ average over all five has no held-out check (the document says so in fold0_check
 With --opp NAME:OPP_SCORES_DIR --diff (issue #25) the document's MLP is the fused_opp_diff one (59 features: fused_opp + the three
 opponent-minus-own pmi differences of aicup.fused.diff_features), the fold-0 table also carries fused_opp_diff_* and
 fused_opp_diff_avg vs fused_opp_avg, and the default output is rank_model_fused_opp_diff.json.
+--no-fold0 skips the fold-0 check altogether (fold0_check.skipped = true in the document; no --fold0-proba / --reference): for a refit
+that must not spend another look at fold 0, such as the current feature set on the re-scored handicap games (issue #42 (b)).
 With --opp ... --diff --hd-table HD_TABLE_CSV (issue #47; scripts/hd_table.py's table of dataset v1.1's HD[n]) the document's MLP is
 the fused_opp_diff_hd one (64 features: + aicup.handicap's five handicap question features, looked up per game), the fold-0
 table also carries fused_opp_diff_hd_* and fused_opp_diff_hd_avg vs fused_opp_diff_avg, the fused_opp_diff MLP's state is kept
@@ -234,6 +236,8 @@ def main(argv=None):
     ap.add_argument("--out", default=None, help=f"default {DEFAULT_OUT['fused'].name}, {DEFAULT_OUT['fused_opp'].name} with --opp, "
                     f"{DEFAULT_OUT['fused_opp_diff'].name} with --opp --diff")
     ap.add_argument("--fold0-proba", default=None, help="write fold 0's per-question probabilities (CSV) here")
+    ap.add_argument("--no-fold0", action="store_true", help="skip the fold-0 check (the document records fold0_check.skipped = true): a refit that must not "
+                    "spend another look at fold 0, e.g. the same feature set on re-scored data (issue #42 (b)); incompatible with --fold0-proba / --reference")
     ap.add_argument("--reference", default=None,
                     help="results/l1b/fold0_check.json (its runs[--reference-run]) or results/l1b/opp_fold0_check.json to compare the fold-0 numbers with")
     ap.add_argument("--reference-run", default="disc")
@@ -244,6 +248,8 @@ def main(argv=None):
         ap.error("--diff needs --opp (the differences are between the opponent's and the target's L1b sums)")
     if a.hd_table and not a.diff:
         ap.error("--hd-table needs --opp --diff (the handicap features are appended to fused_opp_diff)")
+    if a.no_fold0 and (a.fold0_proba or a.reference):
+        ap.error("--no-fold0 skips the fold-0 check, so --fold0-proba and --reference have nothing to write or compare")
     kind = "fused_opp_diff_hd" if a.hd_table else "fused_opp_diff" if a.diff else "fused_opp" if opponent else "fused"
     out = Path(a.out) if a.out else DEFAULT_OUT[kind]
     if out.exists() and not a.overwrite:
@@ -264,7 +270,11 @@ def main(argv=None):
             cov = hd_summary(hd)
             print(f"HD table {a.hd_table}: {cov['games']} games, HD>=1 {cov['share_hd1']:.3f}, HD>=2 {cov['share_hd2']:.3f}, absent {cov['hd'].get('absent', 0)}", flush=True)
         mlps, info = fit(models, a.hsl, folds, a.per_player, folds_df, opp_dirs=opp_dirs, diff=a.diff, hd=hd)
-        check, table = fold0(models, a.hsl, mlps, folds_df, a.n_boot, opp_dirs=opp_dirs, diff=a.diff, hd=hd)
+        if a.no_fold0:
+            check, table = {"skipped": True, "reason": "--no-fold0: fold 0 not evaluated by this fit", "scores": {}, "vs_hsl": {}, "models_seen_fold0": []}, None
+            print("fold 0: skipped (--no-fold0); the document carries no fold-0 check", flush=True)
+        else:
+            check, table = fold0(models, a.hsl, mlps, folds_df, a.n_boot, opp_dirs=opp_dirs, diff=a.diff, hd=hd)
     except (FileNotFoundError, ValueError, KeyError) as e:
         print(e, file=sys.stderr)
         return 2
@@ -276,13 +286,13 @@ def main(argv=None):
         extra = f"  vs hsl {d['diff']:+.4f} [{d['ci95'][0]:+.4f}, {d['ci95'][1]:+.4f}]" if d else ""
         print(f"fold 0 {k:14s} {v['balanced_mean_over_n']:.4f}  NLL {v['nll_balanced']:.4f}  by n "
               + " ".join(f"{m}: {v['balanced_by_n'][str(m)]:.4f}" for m in SIZES) + extra, flush=True)
-    if opponent:
+    if opponent and not a.no_fold0:
         d = check["fused_opp_avg_vs_fused_avg"]
         print(f"fold 0 fused_opp_avg vs fused_avg: {d['diff']:+.4f} [{d['ci95'][0]:+.4f}, {d['ci95'][1]:+.4f}]", flush=True)
-    if a.diff:
+    if a.diff and not a.no_fold0:
         d = check["fused_opp_diff_avg_vs_fused_opp_avg"]
         print(f"fold 0 fused_opp_diff_avg vs fused_opp_avg: {d['diff']:+.4f} [{d['ci95'][0]:+.4f}, {d['ci95'][1]:+.4f}]", flush=True)
-    if a.hd_table:
+    if a.hd_table and not a.no_fold0:
         d = check["fused_opp_diff_hd_avg_vs_fused_opp_diff_avg"]
         print(f"fold 0 fused_opp_diff_hd_avg vs fused_opp_diff_avg: {d['diff']:+.4f} [{d['ci95'][0]:+.4f}, {d['ci95'][1]:+.4f}]", flush=True)
     if a.reference:
@@ -305,7 +315,7 @@ def main(argv=None):
     doc = fused.fused_document(mlps[kind], records, folds, a.per_player, info["n_train"], info["questions_sha256"], extra=extra, feature_set=kind)
     fused.save_fused_model(doc, out)
     print(f"wrote {out}: {doc['name']}, {info['n_train']} training questions, L1b models {[r['name'] for r in records]}")
-    if a.fold0_proba:
+    if a.fold0_proba and table is not None:
         Path(a.fold0_proba).parent.mkdir(parents=True, exist_ok=True)
         table.to_csv(a.fold0_proba, index=False)
         print(f"wrote {a.fold0_proba} ({len(table)} fold-0 questions)")

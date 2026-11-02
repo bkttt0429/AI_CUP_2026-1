@@ -355,3 +355,30 @@ def test_fit_fused_model_cli_with_hd_table(tmp_path, capsys):
     short = tmp_path / "short.csv"
     pd.read_csv(hd_path, dtype=str, keep_default_na=False).iloc[:100].to_csv(short, index=False)
     assert ffm.main([*l1b_args, "--diff", "--hd-table", str(short), *rest, "--overwrite"]) == 2
+
+
+def test_fit_fused_model_cli_no_fold0(tmp_path, capsys):
+    """--no-fold0: the fit without the fold-0 check (a refit on re-scored data that must not spend another look at fold 0)."""
+    l1b_dir, hsl_dir, _ = _synthetic_scores(tmp_path, folds=(0, 1, 2, 3, 4), l1b_name="l1b_all")
+    opp_dir = _opponent_scores(tmp_path)
+    side_a = _sidecar(tmp_path / "heads3_A.json", "a" * 64, "1" * 64, [1, 2])
+    side_b = _sidecar(tmp_path / "heads3_B.json", "b" * 64, "2" * 64, [3, 4])
+    folds_csv = _folds_csv(tmp_path)
+    out = tmp_path / "models" / "rank_model_fused_opp_diff.json"
+    args = ["--l1b", f"A:{l1b_dir}:{side_a}", f"B:{l1b_dir}:{side_b}", "--opp", f"A:{opp_dir}", f"B:{opp_dir}", "--diff", "--hsl", str(hsl_dir),
+            "--per-player", "2", "--folds-csv", str(folds_csv), "--out", str(out), "--no-fold0"]
+    assert ffm.main(args) == 0
+    printed = capsys.readouterr().out
+    assert "fold 0: skipped" in printed and "fold 0 fused" not in printed
+    doc, mlp = fused.load_fused_model(out)
+    assert doc["name"] == fused.NAME_OPP_DIFF and doc["fold0_check"]["skipped"] is True and doc["fold0_check"]["scores"] == {}
+    assert len(doc["state"]["params"]["0.weight"][0]) == 59
+    # the fit itself is the same as with the check: same training questions, same MLP
+    out2 = tmp_path / "models" / "with_fold0.json"
+    assert ffm.main([*args[:-3], str(out2)]) == 0
+    doc2, _ = fused.load_fused_model(out2)
+    assert doc2["state"]["params"] == doc["state"]["params"] and doc2["questions_sha256"] == doc["questions_sha256"] and "skipped" not in doc2["fold0_check"]
+    with pytest.raises(SystemExit):
+        ffm.main(args + ["--fold0-proba", str(tmp_path / "p.csv"), "--overwrite"])
+    with pytest.raises(SystemExit):
+        ffm.main(args + ["--reference", str(tmp_path / "ref.json"), "--overwrite"])
