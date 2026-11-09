@@ -10,7 +10,6 @@ import numpy as np
 import torch
 from katago.game.board import Board
 from katago.game.features import Features
-from katago.game.gamestate import GameState
 from katago.game.sgfmetadata import SGFMetadata
 from katago.train.load_model import load_model
 
@@ -143,13 +142,15 @@ def _masked_policy_logp(model, features, gs, meta):
     return torch.log_softmax(logits, dim=0).cpu().numpy()
 
 
-def target_move_logps(model, features, moves, target_color, meta, rules=None):
+def target_move_logps(model, features, moves, target_color, meta, rules=None, stones=()):
     """Replay `moves`; before each move of `target_color`, score it under `meta`.
 
     Returns one dict per target move: t (index in `moves`), gtp, logp of the move actually
-    played, and the full masked policy_logp vector (362) at that position.
+    played, and the full masked policy_logp vector (362) at that position. stones: Black setup
+    stones (x, y) of a handicap game, placed before the moves (aicup.sgf.setup_and_moves).
     """
-    gs = GameState(19, rules or GameState.RULES_CHINESE)
+    from aicup.pilot import start_state
+    gs = start_state(stones, rules)
     out = []
     for t, (c, x, y) in enumerate(moves):
         pla = Board.BLACK if c == "B" else Board.WHITE

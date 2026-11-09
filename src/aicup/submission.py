@@ -18,10 +18,10 @@ from pathlib import Path
 
 import pandas as pd
 from katago.game.board import Board
-from katago.game.gamestate import GameState
 
 from aicup.metric import LEVELS
-from aicup.sgf import board_size, parse_moves
+from aicup.pilot import start_state
+from aicup.sgf import board_size, handicap, setup_and_moves
 
 
 MAX_GAMES = 20
@@ -75,9 +75,11 @@ def read_test_lenient(path):
 
 
 def check_game(sgf, color):
-    """(ok, info): a game is usable when it is 19x19, colours alternate starting with Black,
-    every move replays legally and the target colour has at least one move."""
-    info = {"moves": 0, "passes": 0, "target_moves": 0, "error": None}
+    """(ok, info): a game is usable when it is 19x19, colours alternate starting with Black (with White, for a handicap
+    game HD >= 2: its stones are placed and its marks swapped as in aicup.sgf.setup_and_moves, exactly as the scoring
+    replays it), every move replays legally and the target colour has at least one move. info["handicap"] is the
+    record's HD (None when absent)."""
+    info = {"moves": 0, "passes": 0, "target_moves": 0, "handicap": handicap(sgf), "error": None}
     if color not in ("B", "W"):
         info["error"] = f"invalid colour {color!r}"
         return False, info
@@ -85,10 +87,14 @@ def check_game(sgf, color):
     if size != 19:
         info["error"] = f"board size {size}"
         return False, info
-    moves = parse_moves(sgf)
+    try:
+        stones, moves = setup_and_moves(sgf)
+    except ValueError as e:
+        info["error"] = str(e)
+        return False, info
     info["moves"] = len(moves)
-    gs = GameState(19, GameState.RULES_CHINESE)
-    expected = "B"
+    gs = start_state(stones)
+    expected = "W" if stones else "B"
     for t, (c, x, y) in enumerate(moves):
         if c != expected:
             info["error"] = f"move {t}: {c} played but {expected} to move"

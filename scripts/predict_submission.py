@@ -52,7 +52,12 @@ skips it. A fused_opp document (rank_model_fused_opp.json, 56 features, scripts/
 fused_opp_diff one (rank_model_fused_opp_diff.json, 59 features, --opp --diff; the differences are computed here
 from the shards' per-game sums, issue #25)
 decides from the target's and the opponent's sums; shards without the opponent's scores cannot feed it
-(exit 2), while the 40-feature rank_model_fused.json ignores them, so one set of shard files serves both.
+(exit 2), while the 40-feature rank_model_fused.json ignores them, so one set of shard files serves both. Since
+2026-11-04 the opponent pass also keeps its per-move log p in the shard file (l1b_opp_move_logp / opp_move_task /
+opp_move_t, meta l1b_opp_moves): nothing here reads them; scripts/trunk_predict.py (the trunk + TCN ensemble) does.
+Since 2026-11-05 (section 4M M14) the opponent pass also scores the opponents' moves under the 18 profiles (hsl_opp_sums [n, 18],
+hsl_opp_move_logp [Mo, 18], meta hsl_opponent), the opponent-HSL channel of the ct6 trunk models; --no-opp-hsl skips it (the
+pass then takes about a sixth of the time, as before). Nothing here reads those arrays either.
 
 --expect-rows / --expect-public / --expect-private (defaults: the official 800 = 400 + 400; 0 disables
 one) are checked against the questions read, so a truncated input fails validation; a mock test passes
@@ -92,6 +97,8 @@ from aicup.qfeatures import FEATURE_NAMES, question_features  # noqa: E402
 from aicup.rankmodel import _softmax, from_state  # noqa: E402
 from aicup.setmodel_io import file_sha256, load_set_model, sidecar_path, summary as set_model_summary  # noqa: E402
 from aicup.settrain import BASE_CLIP, predict_set_model  # noqa: E402
+from aicup.handicap import question_hd_features_from_games  # noqa: E402
+from aicup.sgf import handicap  # noqa: E402
 from aicup.submission import check_game, read_test, read_test_lenient, validate_submission, write_submission  # noqa: E402
 
 CKPT = ROOT / "models" / "katago" / "b18c384nbt-humanv0.ckpt"
@@ -133,6 +140,14 @@ def build_tasks(questions):
     return tasks, owner, dropped, passes
 
 
+def handicap_counts(questions):
+    """{"absent" | HD: games} over every game read (usable or not): dataset v1.1 marks handicap games with HD[n] and the
+    scoring replays HD >= 2 with the stones placed and the colours swapped (aicup.sgf.setup_and_moves); "absent" games are
+    replayed as written, so a test set without HD[] is scored exactly as before v1.1."""
+    c = Counter("absent" if (h := handicap(sgf)) is None else str(h) for q in questions for sgf, _ in q["games"])
+    return {k: c[k] for k in sorted(c, key=lambda k: (k != "absent", k))}
+
+
 def questions_sha(inputs, questions):
     """sha256 over the input file names and every question's id and game count: the shards of one run
     must agree on it, so a merge never mixes files made from other inputs."""
@@ -164,13 +179,14 @@ def l1b_models_meta(paths):
     return out
 
 
-def score_tasks(tasks, workers, log=print, l1b_heads=(), opponent=True):
+def score_tasks(tasks, workers, log=print, l1b_heads=(), opponent=True, opponent_hsl=True):
     """Score (k, sgf, colour) tasks on this GPU under the 18 profiles and, per L1b heads file, under its 10 rank
     heads: ({k: (n_moves, sums[18 + 10K])}, (move_logp [M, 18 + 10K], move_task [M], move_t [M]) or None, positions,
     wall seconds, opp). Each heads file gets its own model instance (load_heads restores a fine-tuned trunk in place);
     the positions' features are computed once for every model. opp is None, or with l1b_heads and opponent
     ({k: (the opponent's n_moves, sums[10K])}, positions, wall seconds): a second pass over the same games with the
-    colours swapped (l1b_score.py --opponent), under the L1b heads only."""
+    colours swapped (l1b_score.py --opponent), under the L1b heads -- and, with opponent_hsl (section 4M M14), under the 18
+    profiles too: the pass's columns are then [18 + 10K] (profiles first), else [10K]."""
     import torch
     from aicup.humansl import load_humansl, meta_rows, score_positions as hsl_score
     from aicup.l1b import load_heads, score_positions as l1b_score
@@ -198,12 +214,15 @@ def score_tasks(tasks, workers, log=print, l1b_heads=(), opponent=True):
         opp = None
         if l1b and opponent:
             def opp_scorer(bins, globs, legal, target, colors, rows_):
-                return np.concatenate([l1b_score(m, h, bins, globs, legal, target, colors) for m, h in l1b], axis=1)
+                parts = [hsl_score(model, bins, globs, legal, target, colors, rows_)] if opponent_hsl else []
+                parts += [l1b_score(m, h, bins, globs, legal, target, colors) for m, h in l1b]
+                return np.concatenate(parts, axis=1)
 
             opp_tasks = [(k, sgf, "W" if colour == "B" else "B") for k, sgf, colour in tasks]
-            log(f"scoring the opponents' moves of {len(opp_tasks)} games under the {len(l1b)} L1b models", flush=True)
-            o_per_task, _, o_pos, o_wall = score_stream(pool, None, opp_tasks, None, log_every=500, log=log, scorer=opp_scorer)
-            opp = (o_per_task, o_pos, o_wall)
+            log(f"scoring the opponents' moves of {len(opp_tasks)} games under {'the 18 profiles and ' if opponent_hsl else ''}the {len(l1b)} L1b models", flush=True)
+            o_per_task, o_moves, o_pos, o_wall = score_stream(pool, model if opponent_hsl else None, opp_tasks, rows if opponent_hsl else None,
+                                                              log_every=500, log=log, scorer=opp_scorer)
+            opp = (o_per_task, o_pos, o_wall, o_moves)
         return per_task, moves, n_pos, wall, opp
     finally:
         pool.close()
@@ -214,8 +233,12 @@ def save_shard(path, shard, nshards, tasks, per_task, moves, n_pos, wall, inputs
     move_logp [M, 18], move_task [M], move_t [M] and __meta__ (JSON). With l1b_models (K heads files, scored as
     columns 18.. of the sums and per-move log p) also l1b_sums [n, K, 10] (float64) and l1b_move_logp [M, K, 10]
     (float32), and the meta lists the models; with opp (score_tasks' opponent pass: ({k: (n, sums[10K])}, positions,
-    wall)) also l1b_opp_sums [n, K, 10] (float64) and l1b_opp_n_moves [n], and the meta's l1b_opponent is true.
-    Returns the meta."""
+    wall[, moves])) also l1b_opp_sums [n, K, 10] (float64) and l1b_opp_n_moves [n], and the meta's l1b_opponent is true;
+    when the pass also hands over its per-move arrays (moves: (logp [Mo, 10K], task [Mo], t [Mo])) they are written as
+    l1b_opp_move_logp [Mo, K, 10] (float32), opp_move_task [Mo] and opp_move_t [Mo] -- the opponent plies' L1b log p the
+    trunk + TCN path (scripts/trunk_predict.py, 2026-11-04) reads; the meta's l1b_opp_moves says whether they are there.
+    An opponent pass with 18 + 10K columns (score_tasks' opponent_hsl, section 4M M14) also gives hsl_opp_sums [n, 18] (float64)
+    and hsl_opp_move_logp [Mo, 18] (float32), and the meta's hsl_opponent is true. Returns the meta."""
     P, L, K = len(PROFILES), len(LEVELS), len(l1b_models)
     idx = np.array([k for k, _, _ in tasks], dtype=np.int64)
     n_moves = np.array([per_task[k][0] for k in idx], dtype=np.int64)
@@ -225,11 +248,12 @@ def save_shard(path, shard, nshards, tasks, per_task, moves, n_pos, wall, inputs
     if moves is None:
         moves = (np.zeros((0, P + L * K), dtype=np.float32), np.zeros(0, dtype=np.int32), np.zeros(0, dtype=np.int32))
     with_opp = bool(K and opp is not None)
+    o_moves = opp[3] if with_opp and len(opp) > 3 else None
     meta = {"shard": shard, "nshards": nshards, "n_tasks_total": n_tasks_total, "n_tasks": int(len(idx)),
             "inputs": [str(p) for p in inputs], "questions_sha256": sha, "positions": int(n_pos), "scoring_wall_s": float(wall),
             "profiles": list(PROFILES), "ckpt": CKPT.name, "l1b_models": [dict(m) for m in l1b_models], "levels": list(LEVELS),
             "l1b_opponent": with_opp, "opp_positions": int(opp[1]) if with_opp else 0, "opp_scoring_wall_s": float(opp[2]) if with_opp else 0.0,
-            "written": datetime.now().isoformat(timespec="seconds")}
+            "l1b_opp_moves": o_moves is not None, "hsl_opponent": False, "written": datetime.now().isoformat(timespec="seconds")}
     arrays = {"task": idx, "n_moves": n_moves, "sums": all_sums[:, :P], "move_logp": moves[0][:, :P], "move_task": moves[1], "move_t": moves[2]}
     if K:
         arrays["l1b_sums"] = all_sums[:, P:].reshape(len(idx), K, L)
@@ -240,10 +264,23 @@ def save_shard(path, shard, nshards, tasks, per_task, moves, n_pos, wall, inputs
         if missing:
             raise ValueError(f"{len(missing)} tasks have no opponent scores (e.g. {missing[:3]})")
         o_sums = np.stack([o_per_task[k][1] for k in idx]).astype(np.float64) if len(idx) else np.zeros((0, L * K))
-        if o_sums.shape[1] != L * K:
-            raise ValueError(f"the opponent pass scored {o_sums.shape[1]} columns per game, expected {K} x {L} L1b heads")
-        arrays["l1b_opp_sums"] = o_sums.reshape(len(idx), K, L)
+        P_o = o_sums.shape[1] - L * K  # 0: L1b heads only; P: the 18 profiles first (section 4M M14)
+        if P_o not in (0, P):
+            raise ValueError(f"the opponent pass scored {o_sums.shape[1]} columns per game, expected {K} x {L} L1b heads (+ {P} profiles)")
+        meta["hsl_opponent"] = P_o == P
+        arrays["l1b_opp_sums"] = o_sums[:, P_o:].reshape(len(idx), K, L)
         arrays["l1b_opp_n_moves"] = np.array([o_per_task[k][0] for k in idx], dtype=np.int64)
+        if P_o:
+            arrays["hsl_opp_sums"] = o_sums[:, :P]
+        if o_moves is not None:
+            if o_moves[0].shape[1] != P_o + L * K or len(o_moves[0]) != int(arrays["l1b_opp_n_moves"].sum()):
+                raise ValueError(f"the opponent pass gives {o_moves[0].shape} per-move log p for {int(arrays['l1b_opp_n_moves'].sum())} moves "
+                                 f"of {K} x {L} heads{f' + {P} profiles' if P_o else ''}")
+            arrays["l1b_opp_move_logp"] = o_moves[0][:, P_o:].reshape(len(o_moves[1]), K, L).astype(np.float32)
+            if P_o:
+                arrays["hsl_opp_move_logp"] = o_moves[0][:, :P].astype(np.float32)
+            arrays["opp_move_task"] = np.asarray(o_moves[1], dtype=np.int32)
+            arrays["opp_move_t"] = np.asarray(o_moves[2], dtype=np.int32)
     path = Path(path)
     tmp = path.with_name(path.stem + ".tmp.npz")
     np.savez_compressed(tmp, __meta__=np.asarray(json.dumps(meta)), **arrays)
@@ -288,17 +325,54 @@ def load_shards_l1b(out, nshards, with_moves=False):
     return models or [], per_task, moves, (opp if opponent else None)
 
 
-def fused_probs(questions, owner, per_task, l1b_per_task, mlp, order, rank_model, opp_per_task=None, opponent=False, feature_set=None):
+def load_shards_opp_hsl(out, nshards, with_moves=False):
+    """({k: (the opponent's n_moves, sums [18])}, moves) from the shard files' opponent-HSL arrays (section 4M M14): moves is None,
+    or with with_moves {k: (logp [n_opp, 18] float64, t [n_opp])}. ValueError when a shard was scored without the 18-profile
+    opponent pass (meta hsl_opponent false, e.g. shards from before 2026-11-05 or --no-opp-hsl)."""
+    per_task, moves = {}, {} if with_moves else None
+    for i in range(nshards):
+        path = shard_path(out, i, nshards)
+        with np.load(path, allow_pickle=False) as z:
+            meta = json.loads(str(z["__meta__"]))
+            if not meta.get("hsl_opponent"):
+                raise ValueError(f"{path}: no opponent scores under the 18 profiles (hsl_opponent): the shards must come from predict_submission.py "
+                                 "of 2026-11-05 or later, scored with --l1b-heads and the opponent pass, without --no-opp-hsl")
+            for k, n, s in zip(z["task"].tolist(), z["l1b_opp_n_moves"].tolist(), z["hsl_opp_sums"]):
+                per_task[k] = (int(n), s.astype(np.float64))
+            if with_moves:
+                if not meta.get("l1b_opp_moves"):
+                    raise ValueError(f"{path}: no per-move opponent log p (l1b_opp_moves)")
+                mt, logp, t = z["opp_move_task"].astype(np.int64), z["hsl_opp_move_logp"].astype(np.float64), z["opp_move_t"].astype(np.int64)
+                order = np.argsort(mt, kind="stable")
+                mt, logp, t = mt[order], logp[order], t[order]
+                tasks_here, starts = np.unique(mt, return_index=True)
+                ends = np.append(starts[1:], len(mt))
+                for k, a, b in zip(tasks_here.tolist(), starts.tolist(), ends.tolist()):
+                    moves[k] = (logp[a:b], t[a:b])
+                for k in z["task"].tolist():
+                    got = len(moves[k][0]) if k in moves else 0
+                    if got != per_task[k][0]:
+                        raise ValueError(f"{path}: task {k} has {got} scored opponent moves, the opponent's n_moves says {per_task[k][0]}")
+    return per_task, moves
+
+
+def fused_probs(questions, owner, per_task, l1b_per_task, mlp, order, rank_model, opp_per_task=None, opponent=False, feature_set=None, task_games=None):
     """({question index: probabilities [10]} for every question with a usable game, info): the fused MLP on each
     L1b model's fused features (shard columns `order`), averaged; a question whose averaged probabilities are not
     finite gets rank_model's (q24) probabilities and is listed in info["fused_fallback_questions"]. With opponent (a
     fused_opp document) the opponent's sums and move counts opp_per_task {k: (n, [K, 10])} join the features, and a
-    fused_opp_diff document (feature_set) adds the opponent-minus-own differences; ValueError when the shards carry none."""
+    fused_opp_diff document (feature_set) adds the opponent-minus-own differences; ValueError when the shards carry none.
+    A fused_opp_diff_hd document (issue #47) also takes the question's handicap features, computed from the usable games'
+    records task_games {k: (sgf, colour)} (aicup.handicap.question_hd_features_from_games; a record without HD[] counts as
+    unknown, zeros -- main refuses such inputs unless --allow-missing-hd)."""
     feature_set = fused_feature_set(opponent, feature_set)
     opponent = feature_set != "fused"
     if opponent and opp_per_task is None:
         raise ValueError("the fused model takes the opponent's L1b features but the shards carry no opponent scores: score them "
                          "again with --l1b-heads (without --no-l1b-opponent), or decide with the 40-feature rank_model_fused.json")
+    with_hd = feature_set == "fused_opp_diff_hd"
+    if with_hd and task_games is None:
+        raise ValueError("the fused_opp_diff_hd model needs the games' records (task_games) for the handicap features")
     by_q = {}
     for k, qi in enumerate(owner):
         by_q.setdefault(qi, []).append(k)
@@ -311,8 +385,9 @@ def fused_probs(questions, owner, per_task, l1b_per_task, mlp, order, rank_model
             raise ValueError(f"question {questions[qi]['question_id']}: {len(missing)} games have no L1b scores in the shards")
         l1b = np.stack([l1b_per_task[k] for k in ks])
         if opponent:
+            hd = question_hd_features_from_games([task_games[k] for k in ks]) if with_hd else None
             p = fused_predict(mlp, hsl, l1b, n, order, opp_sums=np.stack([opp_per_task[k][1] for k in ks]),
-                              opp_n_moves=np.array([opp_per_task[k][0] for k in ks]), feature_set=feature_set)
+                              opp_n_moves=np.array([opp_per_task[k][0] for k in ks]), feature_set=feature_set, hd_feats=hd)
         else:
             p = fused_predict(mlp, hsl, l1b, n, order)
         if not np.isfinite(p).all():
@@ -501,6 +576,8 @@ def main(argv=None):
                     help="read a question whose num_games disagrees with its filled sgf columns from the non-empty columns, "
                          "with a warning in the report, instead of stopping (exit 4 unless --allow-input-warnings)")
     ap.add_argument("--allow-input-warnings", action="store_true", help="exit 0 despite --lenient-inputs warnings")
+    ap.add_argument("--allow-missing-hd", action="store_true", help="let a fused_opp_diff_hd --fused-model decide although some games carry no "
+                    "HD[] (their handicap features are zeros); without it such inputs are refused (exit 2)")
     ap.add_argument("--set-models", nargs="*", default=[], metavar="PT",
                     help="set models (.pt with .json sidecars, scripts/train_set_model.py) whose averaged probabilities decide")
     ap.add_argument("--set-base", default=None, help="the paired base of the set models (rank_model.json format); required with them")
@@ -513,6 +590,9 @@ def main(argv=None):
                          "averaged over its L1b models, which must be exactly the models the shards were scored with")
     ap.add_argument("--no-l1b-opponent", dest="l1b_opponent", action="store_false",
                     help="with --l1b-heads: do not score the opponents' moves (the shards then cannot feed a fused_opp decision)")
+    ap.add_argument("--no-opp-hsl", dest="opp_hsl", action="store_false",
+                    help="with the opponent pass: do not score the opponents' moves under the 18 profiles as well (section 4M M14; the shards "
+                         "then cannot feed the ct6 trunk models' opponent-HSL channel)")
     a = ap.parse_args(argv)
     if a.set_models and not a.set_base:
         ap.error("--set-models needs --set-base, the paired base they were trained on")
@@ -538,8 +618,9 @@ def main(argv=None):
               + (f" (and {len(input_warnings) - 5} more)" if len(input_warnings) > 5 else ""), file=sys.stderr, flush=True)
     tasks, owner, dropped, passes = build_tasks(questions)
     sha = questions_sha(a.inputs, questions)
+    hd_counts = handicap_counts(questions)
     print(f"{len(questions)} questions, {sum(len(q['games']) for q in questions)} games, {len(tasks)} usable, "
-          f"{len(dropped)} dropped, {passes} passes", flush=True)
+          f"{len(dropped)} dropped, {passes} passes; handicap HD[] " + " ".join(f"{k}:{v}" for k, v in hd_counts.items()), flush=True)
 
     if not a.merge:
         shard = 0 if a.shard is None else a.shard
@@ -550,8 +631,9 @@ def main(argv=None):
             print(e, file=sys.stderr)
             return EXIT_INPUTS
         print(f"scoring shard {shard} of {a.nshards}: {len(mine)} games"
-              + (f", L1b heads {[m['name'] for m in l1b_models]}" + (" on the target's and the opponents' moves" if a.l1b_opponent else "") if l1b_models else ""), flush=True)
-        per_task, moves, n_pos, wall, opp = score_tasks(mine, a.workers, l1b_heads=a.l1b_heads, opponent=a.l1b_opponent)
+              + (f", L1b heads {[m['name'] for m in l1b_models]}" + ((" on the target's and the opponents' moves" + (" (the opponents' under the 18 profiles too)" if a.opp_hsl else ""))
+                                                                     if a.l1b_opponent else "") if l1b_models else ""), flush=True)
+        per_task, moves, n_pos, wall, opp = score_tasks(mine, a.workers, l1b_heads=a.l1b_heads, opponent=a.l1b_opponent, opponent_hsl=a.opp_hsl)
         path = shard_path(out, shard, a.nshards)
         out.parent.mkdir(parents=True, exist_ok=True)
         save_shard(path, shard, a.nshards, mine, per_task, moves, n_pos, wall, a.inputs, sha, len(tasks), l1b_models, opp)
@@ -574,8 +656,11 @@ def main(argv=None):
         if a.fused_model:
             fused_doc, fused_mlp = load_fused_model(a.fused_model)
             order = pairing_order(fused_doc, l1b_models)
+            if fused_doc["feature_set"] == "fused_opp_diff_hd" and hd_counts.get("absent", 0) and not a.allow_missing_hd:
+                raise ValueError(f"{a.fused_model} takes the handicap (HD) features but {hd_counts['absent']} of the games carry no HD[]: decide "
+                                 "with the fused_opp_diff document instead, or pass --allow-missing-hd to treat them as unknown (zeros)")
             set_probs, fused_info = fused_probs(questions, owner, per_task, l1b_per_task, fused_mlp, order, rank_model,
-                                                opp_per_task, fused_doc["opponent"], fused_doc["feature_set"])
+                                                opp_per_task, fused_doc["opponent"], fused_doc["feature_set"], {k: (sgf, c) for k, sgf, c in tasks})
     except (FileNotFoundError, ValueError) as e:
         print(e, file=sys.stderr)
         return EXIT_INPUTS
@@ -593,7 +678,7 @@ def main(argv=None):
               "nshards": a.nshards, "shards": shard_metas, "questions": len(questions),
               "games_declared": int(sum(q["declared_games"] for q in questions)),
               "games_present": int(sum(len(q["games"]) for q in questions)),
-              "games_used": len(tasks), "games_dropped": dropped, "passes": passes,
+              "games_used": len(tasks), "games_dropped": dropped, "passes": passes, "handicap": hd_counts,
               "positions": int(sum(m["positions"] for m in shard_metas)),
               "scoring_wall_s": float(sum(m["scoring_wall_s"] for m in shard_metas)), "total_wall_s": time.time() - t0,
               "l1b_opponent": bool(l1b_models) and all(m.get("l1b_opponent") for m in shard_metas),

@@ -647,11 +647,19 @@ sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 02:00:00 -J ohc scripts/na
 
 ### 4.16 TSFEL 生成的每局時序特徵接在 fused_opp_diff 後面（2026-11-01，issue #36）
 
-提交管線不動、不碰 fold 0。TSFEL **不裝進提交用的 `.venv`**（它會連帶拉進 scikit-learn、statsmodels、ipython 等十幾個套件，而 `.venv` 要在 11/04 跑正式評分；nano4 的決定，2026-11-01）：另開一個獨立環境（同一個 Python 3.12，numpy／pandas／scipy 用 `requirements.txt` 的版本），只多裝 `requirements-tsfel.txt`，下面的工作在那個環境裡跑；提交 `.venv` 的套件清單雜湊應前後相同。環境的路徑與啟用方式由 nano4 補在這裡：
+提交管線不動、不碰 fold 0。TSFEL **不裝進提交用的 `.venv`**（它會連帶拉進 scikit-learn、statsmodels、ipython 等十幾個套件，而 `.venv` 要在 11/04 跑正式評分；nano4 的決定，2026-11-01）：另開一個獨立環境（同一個 Python 3.12，numpy／pandas／scipy 用 `requirements.txt` 的版本），只多裝 `requirements-tsfel.txt`，下面的工作在那個環境裡跑；提交 `.venv` 的套件清單雜湊應前後相同。nano4 的做法（2026-11-01）：
 
 ```bash
-pip install -r requirements-tsfel.txt   # 在獨立環境裡，一次
+# 一次：用提交 .venv 的同一個直譯器建獨立環境，只裝 tsfel 與其依賴
+$(readlink -f .venv/bin/python) -m venv --without-pip ~/BK_AICUP_tsfel_venv
+python -m pip install --no-compile --target ~/BK_AICUP_tsfel_venv/lib/python3.12/site-packages -r requirements-tsfel.txt
+# 刪掉 target 裡 pip 重抓的 numpy / pandas / scipy，放兩個 .pth：zz_base_venv.pth 指向提交 .venv/lib/python3.12/site-packages
+# （torch、numpy 2.5.4、pandas 3.0.6、scipy 1.18.1 從那裡來），katago.pth 複製自提交 .venv
+# 切換：另開在 main 的 worktree ~/BK_AICUP_2026-1-tsfelwt，.venv 符號連結指到這個環境，data / logs / repo / models 連回主 checkout；
+# run.sbatch 不用改，從 worktree 根目錄送件，--hsl / --l1b / --opp 給主 checkout 的絕對路徑
 ```
+
+多出來的只有 tsfel、scikit-learn 1.9.1、statsmodels 0.15.0、PyWavelets 1.10.0、ipython 9.18 與其依賴；提交 `.venv` 的 site-packages 清單雜湊前後相同。
 
 然後一支 CPU 工作：第一次會算每折的 TSFEL 表（約 118k 局 × 2 條序列 × 11 ms，`--workers 12` 約 5 分）並快取到 `results/seq/tsfel/fold<F>.npz`（不進 git），接著五個特徵集 × 四折的 MLP 與局層級的 softmax 回歸（約 §4.10 的 2 倍）：
 
@@ -659,7 +667,200 @@ pip install -r requirements-tsfel.txt   # 在獨立環境裡，一次
 sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 03:00:00 -J tsfelchk scripts/nano4/run.sbatch python -I scripts/tsfel_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --workers 12 --out results/seq/tsfel_check.json
 ```
 
+**結果（nano4，2026-11-01，PR #39 `1447777`；job 669660，612 s，每折 TSFEL 表約 35 s；pytest 獨立環境 325 passed／5 skipped）**：`fused_opp_diff` 0.6916 重現；**`fused_opp_diff_tsfel16` 0.6788（預先指定 −0.0128 [−0.0167, −0.0090]，四折全負，三條件全不過）**；tsfel4 −0.0014、tsfel64 −0.0375、tsfel_all −0.0610，退步隨維度單調放大；局層級增益 +0.0093。自動特徵庫這條線在這個接法下結束（METHOD_NOTES §2.22，含「模型對多餘欄位沒抵抗力 vs 共變量偏移」的兩個未預先指定的對照提案）。
+
 預期：`fused_opp_diff` 0.6916（每折同 `error_analysis.json` 的 `mlp_diff`）。**預先指定** `fused_opp_diff_tsfel16 vs fused_opp_diff`（條件 (1)(3)(4)）；只報告 tsfel4／tsfel64／tsfel_all vs `fused_opp_diff`、局層級 softmax 的增益（mean-only vs mean + tsfel16）、每折保留欄數與 PCA 解釋變異。貼回 issue #36：五列（總分、NLL、by n、每折）、四條比較、`TSFEL:` 與 `game-level softmax:` 兩行；`tsfel_check.json` 進 git（新分支 + PR），`results/seq/tsfel/*.npz` 不進。決策見 METHOD_NOTES §2.22。
+
+### 4.17 正則化的題目層模型與對多餘欄位的抵抗力（2026-11-01，issue #41）
+
+提交管線不動、不碰 fold 0。CPU 一支，在提交 `.venv` 跑即可（TSFEL 塊只讀 §4.16 的 npz 快取，不需要 tsfel）；七個模型 × 三個特徵集 × 四折，約 §4.14 的 2–3 倍：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 03:00:00 -J qmodel scripts/nano4/run.sbatch python -I scripts/qmodel_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --tsfel-cache ~/BK_AICUP_2026-1-tsfelwt/results/seq/tsfel --out results/l1b/qmodel_check.json
+```
+
+`--tsfel-cache` 指向 §4.16 那個 worktree 裡的四個 `fold<F>.npz`；沒有就加 `--no-tsfel`（只跑純雜訊對照）。預期：`mlp@base` 0.6916（每折同 `error_analysis.json` 的 `mlp_diff`）。**預先指定** `mlp_l1@base vs mlp@base`（條件 (1)(3)(4)）；只報告其他模型 vs `mlp@base`、每個模型的 `@base_tsfel16 − @base` 與 `@base_noise16 − @base`。貼回 issue #41：各模型 × 特徵集的總分、NLL、每折、best epochs；預先指定那條；抵抗力的兩條；`qmodel_check.json` 進 git（新分支 + PR）。判讀規則與決策見 METHOD_NOTES §2.23。
+
+**結果（nano4，2026-11-01，PR #43 `426d719`；job 669767，947 s；pytest 327 passed／3 skipped）**：`mlp@base` 0.6916 重現；**`mlp_l1@base` 0.6922（預先指定 +0.0006 [−0.0026, +0.0038]，不過）**；抵抗力：`mlp` +TSFEL-16 −0.0135、+雜訊-16 −0.0014（CI 含 0）→ 模型有抵抗力，三條特徵線的退步是塊自己的偏移；`mlp_es` −0.0043、`mlp_l2` −0.0189、`softmax` −0.0245、`mlp_pp64` −0.0007。這條線結束（METHOD_NOTES §2.23）。
+
+### 4.18 資料集 v1.1 讓子資訊的普查（2026-11-01，issue #42）
+
+v1.1 在 nano4 的 `data/dl_v1.1/training/`（`data/training/` 仍是 v1.0）。`scripts/hd_census.py` 只讀 CSV、不重播（CPU 幾分鐘）；除了 HD 分布，還算 HD≥2 的局「標籤玩家等級 by `color`」（決定 Q13 待確認的 `color` 語義）與第一手落在標準讓子點的比例：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 4 -t 01:00:00 -J hdcensus scripts/nano4/run.sbatch python -I scripts/hd_census.py --train-dir data/dl_v1.1/training --out results/data/hd_census.json
+```
+
+貼回 issue #42：`hd`、`handicap_games.labelled_rank_by_color`、`first_move_on_star_point_share`、`players_with_any_hd1_share`／`hd2_share`；`hd_census.json` 進 git。切換 `data/training` 到 v1.1 時：`games_sha256` 不含 `sgf_content`，快取 provenance 不受影響；REPORT.md §134「沒有讓子」那行要改。
+
+### 4.19 讓子資訊：(a) HD 特徵的 CV、(b) 只重評 HD≥2 的局並併回（2026-11-01，issue #42）
+
+前提：`data/training` 是 v1.1。`aicup.sgf.setup_and_moves` 讓每個重播點（評分、快取、提交、`check_game`、replay）對 HD≥2 的局自動補讓子石、B/W 對調；HD 缺／0／1 的局逐位不變，所以現有評分只有那 3.6% 的局（36,421 局）要重算。設計與決策規則在 METHOD_NOTES §2.24。
+
+**步 1（CPU，幾分鐘）：HD 表與 HD≥2 的 key 清單**（兩個檔都不進 git）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 4 -t 01:00:00 -J hdtable scripts/nano4/run.sbatch python -I scripts/hd_table.py --out results/data/hd_table.csv --keys-out results/data/hd2_keys.csv
+```
+
+**步 2（CPU，約 1 小時；(a)，用現有分數、不重評）**（已跑：job 670322 步 1+2 共 50 分，`fused_opp_diff_hd` vs `fused_opp_diff` +0.0071 [+0.0034, +0.0107] **通過**，結果在 PR #46、METHOD_NOTES §2.24）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 8 -t 03:00:00 -J hdcheck scripts/nano4/run.sbatch python -I scripts/hd_check.py --l1b results/l1b/scores3 results/l1b/scores3_B --opp results/l1b/scores3_opp results/l1b/scores3_B_opp --hd-table results/data/hd_table.csv --out results/seq/hd_check.json
+```
+
+貼回 issue #42：`scores`（`fused_opp` 須 0.6735、`fused_opp_diff` 0.6916）、`comparisons`（預先指定 `fused_opp_diff_hd vs fused_opp_diff`）、`coverage`、`buckets`、`residual`；`hd_check.json` 進 git。
+
+**步 3（GPU；(b)）：只重評 HD≥2 的局，進補丁目錄。**（已跑：2026-11-02 jobs 674256–674260，Human SL 1 小時 9 分、L1b 四支各 9 分；步 4 674851；步 5 674852／674854，結果見 §2.24） 五個評分目錄各跑一次，`--game-keys` 直接吃 `hd2_keys.csv`（有 `game_key` 欄）；fold 的選局不變，只評清單上的局，所以每折只有幾百到幾千局。A 的 heads（訓練 folds 1、2）評 0、3、4，B 的評 0、1、2（`check_unseen` 會擋錯的）：
+
+```bash
+# Human SL 18 profiles（原目錄 results/scores）
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] --gres=gpu:1 -c 12 -t 04:00:00 -J hdhsl scripts/nano4/run.sbatch python -I scripts/score_folds.py --folds 0 1 2 3 4 --game-keys results/data/hd2_keys.csv --out results/scores_hdpatch
+# L1b 目標側與對手側，A 與 B
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] --gres=gpu:1 -c 12 -t 02:00:00 -J hdl1bA scripts/nano4/run.sbatch python -I scripts/l1b_score.py --heads results/l1b/heads3_A.pt --folds 0 3 4 --game-keys results/data/hd2_keys.csv --out results/l1b/scores3_hdpatch
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] --gres=gpu:1 -c 12 -t 02:00:00 -J hdl1bAo scripts/nano4/run.sbatch python -I scripts/l1b_score.py --heads results/l1b/heads3_A.pt --folds 0 3 4 --game-keys results/data/hd2_keys.csv --opponent --out results/l1b/scores3_opp_hdpatch
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] --gres=gpu:1 -c 12 -t 02:00:00 -J hdl1bB scripts/nano4/run.sbatch python -I scripts/l1b_score.py --heads results/l1b/heads3_B.pt --folds 0 1 2 --game-keys results/data/hd2_keys.csv --out results/l1b/scores3_B_hdpatch
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] --gres=gpu:1 -c 12 -t 02:00:00 -J hdl1bBo scripts/nano4/run.sbatch python -I scripts/l1b_score.py --heads results/l1b/heads3_B.pt --folds 0 1 2 --game-keys results/data/hd2_keys.csv --opponent --out results/l1b/scores3_B_opp_hdpatch
+```
+
+`--game-keys` 可以用在任何原本的評分命令上（`--shard`／`--nshards` 照舊）；補丁目錄的 part 從 0 編號、可中斷續跑。
+
+**步 4（CPU，幾分鐘）：併回。** 每個目錄的 `fold{F}/patch_meta.json` 與 `--summary` 記錄換了幾局、手數前後、每個 `sum_*` 欄的平均 |Δ| 與平均 Δ（`sum` 的平均 Δ 預期為負——缺子棋盤上評的是對手的棋）：
+
+```bash
+python -I scripts/patch_scored.py --base results/scores --patch results/scores_hdpatch --out results/scores_hd --folds 0 1 2 3 4 --summary results/data/patch_scores_hd.json
+python -I scripts/patch_scored.py --base results/l1b/scores3 --patch results/l1b/scores3_hdpatch --out results/l1b/scores3_hd --folds 0 3 4 --summary results/data/patch_scores3_hd.json
+python -I scripts/patch_scored.py --base results/l1b/scores3_opp --patch results/l1b/scores3_opp_hdpatch --out results/l1b/scores3_opp_hd --folds 0 3 4 --summary results/data/patch_scores3_opp_hd.json
+python -I scripts/patch_scored.py --base results/l1b/scores3_B --patch results/l1b/scores3_B_hdpatch --out results/l1b/scores3_B_hd --folds 0 1 2 --summary results/data/patch_scores3_B_hd.json
+python -I scripts/patch_scored.py --base results/l1b/scores3_B_opp --patch results/l1b/scores3_B_opp_hdpatch --out results/l1b/scores3_B_opp_hd --folds 0 1 2 --summary results/data/patch_scores3_B_opp_hd.json
+```
+
+**步 5（CPU）：修正後的 CV 與提交文件。** 用 `_hd` 目錄跑一次 `hist_check.py`（有 `fused_opp`／`fused_opp_diff` 兩組與殘差診斷；比較 `fused_opp_diff` 與修正前的 0.6916，下降不超過 0.002 視為不劣）和 `hd_check.py`（(a) 在修正後的分數上）；不劣就照 §4.13 的 `fitdiff` 命令、把五個目錄換成 `_hd`、`--out results/models/rank_model_fused_opp_diff_hd.json --fold0-proba results/l1b/fold0_fused_opp_diff_hd_proba.csv`，fold 0 的 `--reference` 對照照舊。11/04 用哪個文件由使用者決定；`predict_submission.py` 的報告有 `handicap`（每局 HD 值的計數），測試檔有沒有帶 `HD[` 一跑就知道。
+
+### 4.20 讓子特徵的提交文件 `rank_model_fused_opp_diff_hd.json`（2026-11-01，issue #47；**fold 0 第五次使用（前四次 r3_pma、fused、fused_opp、fused_opp_diff），要使用者本人同意才跑**）
+
+nano4 在完整資料上的全套 pytest：`f431660` 342 passed／3 skipped（job 670321）、`cf0008c` 344 passed／3 skipped（job 670747）。
+
+前提：§4.19 步 1 的 `results/data/hd_table.csv` 已有；(b) 的 `_hd` 目錄 2026-11-02 已做好（步 3–5 完成，§2.24），**五個評分目錄都換成 `_hd` 版**（`results/scores_hd`、`results/l1b/scores3_hd`、`scores3_B_hd`、`scores3_opp_hd`、`scores3_B_opp_hd`）。
+
+**先做（不碰 fold 0）：現行 59 維文件在 `_hd` 上重擬**，讓 11/04 推論端的新重播與訓練特徵一致（`--no-fold0`：文件記 `fold0_check.skipped`，沒有 fold-0 表，mock 檢查只能 run-vs-run）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 02:00:00 -J fitdiffhd scripts/nano4/run.sbatch python -I scripts/fit_fused_model.py --l1b A:results/l1b/scores3_hd:results/l1b/heads3_A.json B:results/l1b/scores3_B_hd:results/l1b/heads3_B.json --opp A:results/l1b/scores3_opp_hd B:results/l1b/scores3_B_opp_hd --hsl results/scores_hd --diff --no-fold0 --out results/models/rank_model_fused_opp_diff_r.json
+```
+
+**使用者同意 fold 0 第五次使用後**：HD 版文件的擬合與 fold 0 檢查（CPU，約 10 分；下面的命令已換成 `_hd` 目錄）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -c 12 -t 04:00:00 -J fithd scripts/nano4/run.sbatch python -I scripts/fit_fused_model.py --l1b A:results/l1b/scores3_hd:results/l1b/heads3_A.json B:results/l1b/scores3_B_hd:results/l1b/heads3_B.json --opp A:results/l1b/scores3_opp_hd B:results/l1b/scores3_B_opp_hd --hsl results/scores_hd --diff --hd-table results/data/hd_table.csv --out results/models/rank_model_fused_opp_diff_hd.json --fold0-proba results/l1b/fold0_fused_opp_diff_hd_proba.csv
+```
+
+貼回 issue #47：`fold 0 fused_opp_diff_hd_avg vs fused_opp_diff_avg` 的差與 95% CI（採用條件：下界 > 0）、`hsl`／`fused_opp_avg`／`fused_opp_diff_avg`（在 `_hd` 上與 §4.13 的舊重播數字不會相同，不加 `--reference`）；文件與 fold-0 表進 git。管線檢查用 mock-40（它的 SGF 沒有 `HD[`，所以要加 `--allow-missing-hd`，特徵全 0，只驗管線一致）：
+
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,007,039,062] -t 02:00:00 -J mockhd scripts/nano4/run.sbatch python -I scripts/predict_submission.py --inputs tests/fixtures/mock_fold0_40/rank_prediction_test_public.csv tests/fixtures/mock_fold0_40/rank_prediction_test_private.csv --expect-rows 40 --expect-public 20 --expect-private 20 --out results/mock_fold0_40_hd/submission_rank.csv --l1b-heads results/l1b/heads3_A.pt results/l1b/heads3_B.pt --fused-model results/models/rank_model_fused_opp_diff_hd.json --allow-missing-hd
+```
+
+mock-40 的 fold-0 表對照（`check_fused_submission.py --set fused_opp_diff_hd_avg`）**不會**逐題相等——離線表的 HD 特徵來自 HD 表、mock 的全 0——所以 mock 只看管線不崩、報告 `decision_model` 是 `fused_opp_diff_hd`、`handicap` 計數為 `absent`。真正的逐題對照要用帶 `HD[` 的 mock：nano4 已從 v1.1 的 `data/training` 做了 `data/mock_tests/fold0_40_v11/`（題目與舊 fixture 不同批，SGF 帶 HD；不進 git），`--inputs` 換成它的兩個 CSV、`--answers` 換成它的 `answers.csv`，再跑上面兩條（不加 `--allow-missing-hd`）。11/04：`predict_submission.py ... --fused-model results/models/rank_model_fused_opp_diff_hd.json`（報告 `handicap` 沒有 `absent` 才算成立；有 `absent` 會直接拒絕，換 `rank_model_fused_opp_diff.json`）。
+
+### 4.21 第二份提交檔：trunk + TCN 集成 C＋T（2026-11-04；架構 v2 §4A／§4H，folds 1–4 CV 0.7258 對 fused MLP 0.7026）
+
+主提交（§4.13／§4.20 的 `_r` 文件，`predict_submission.py --merge`）**不動**；這條路徑讀主流程的分片檔，另外產出 `submission_rank_ct.csv`。上傳哪一份由使用者決定。三個新東西：
+
+- `predict_submission.py` 的對手趟現在把每手 L1b log p 也寫進分片檔（`l1b_opp_move_logp [Mo, K, 10]`、`opp_move_task`、`opp_move_t`，meta `l1b_opp_moves`）；原有欄位不變，讀分片的程式不受影響，主決策不變。沒有這三個欄位的舊分片檔，`trunk_predict.py predict` 會拒絕（exit 2）。
+- `trunk_seq_check.py train --val-fold all --inner-frac 0.1`：folds 1–4 的玩家全訓（每人 32 題、`r_all` 快取，先 `rfeat --val-fold all` 做一次）、10% 玩家留出選停止點（seed 固定，每個模型同一組）、不評任何驗證折；權重與 token／R 兩套標準化存成 `results/models/ct/all_{C,T}_s{seed}.pt`，`.json` 側檔記 sha256、折、停止點、環境。`--save-dir` 也能留下驗證折模型的權重（對照用；`val1_C_s0.pt`）。配方與 §4H 的 12 個成員相同（8 epoch 上限、batch 32、lr 1e-3、wd 1e-4、dropout 0.1、每 1/4 epoch 評一次、連續 8 次沒進步停）。fold 0 照舊拒絕。
+- `scripts/trunk_predict.py`：`extract`（測試局重播 + 原始 humanv0 trunk 的每 ply 向量，與 `trunk_extract.py` 同一套函數與投影 seed，任務順序 = `predict_submission.py` 的任務，可用 `shards.sh` 分片、每局可續）；`predict`（每題每個 L1b 模型：64 維 R = `fused_opp_diff_hd`（分片總和 + 局內 `HD[`）、每 ply token = trunk 向量 + 分片的每手 Human SL／L1b（目標與對手）log p + 旗標，各 checkpoint 用自己的標準化；12 個 checkpoint × A／B 兩個 L1b 模型的機率平均、期望分決策；無可用局或機率非有限的題目拿 `--fallback-submission` 那列）；`offline`／`compare`（一致性檢查）。測試：`tests/test_trunk_predict.py`（合成分片與向量分片走完整個 predict，與手算逐題相等；對不上的 ply 與缺對手每手的分片都拒絕）。
+
+**11/04 步驟**（官方檔案到手、主流程的 8 卡分片與 `_r` 合併做完之後；分片檔在 `submission_rank.csv` 旁）：
+
+```bash
+# 1. trunk 向量，8 卡（約 9,300 局、2.1M ply：trunk 約 736 ply/s/卡、重播 10 workers 約 950 ply/s；8 分片約 10 分）
+sbatch --exclude=25a-hgpn[001,003,004,005,006,007,008,009,010,039,062,155] -p 8gpus --gres=gpu:8 -c 96 -t 02:00:00 -J ctvec scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 8 python -I scripts/trunk_predict.py extract --inputs data/tests/rank_prediction_test_public.csv data/tests/rank_prediction_test_private.csv --vec results/ct_submission/vec --workers 10
+# 2. 預測，1 卡，幾分鐘
+sbatch --exclude=25a-hgpn[001,003,004,005,006,007,008,009,010,039,062,155] -t 01:00:00 -J ctpred scripts/nano4/run.sbatch python -I scripts/trunk_predict.py predict --inputs data/tests/rank_prediction_test_public.csv data/tests/rank_prediction_test_private.csv --shards submission_rank.csv --nshards 8 --vec results/ct_submission/vec --models results/models/ct/all_*.pt --fallback-submission submission_rank.csv --out submission_rank_ct.csv
+```
+
+預期：報告 `passes` 24（12 × 2）、`fallback_questions` 空、`problems` 空、`handicap` 沒有 `absent`（有 `absent` 直接拒絕；`--allow-missing-hd` 才以 0 代入，那時 R 特徵與訓練不一致，不建議上傳那份）；`vs_fallback_submission` 列出與主提交決策不同的題數（參考用；CV 上 C＋T 與 MLP 的決策約有一到兩成不同）。exit code 與 `predict_submission.py` 相同。
+
+**一致性檢查**（上線前，不碰 fold 0；看到結果前寫下通過標準）：fold 1 的 100 題 mock（`data/mock_tests/fold1_100`，`make_mock_test.py --fold 1 --n-questions 100 --seed 7 --scores results/scores_hd`，SGF 帶 `HD[`）→ 主流程 4 卡分片 + `_r` 合併（`results/mock_fold1_100/`）→ `extract` → `predict --l1b-names heads3_B --models results/models/ct_check/val1_C_s0.pt results/models/ct_check/val1_T_s0.pt`（fold 1 訓練時的 token 用 B 的分數，所以只比 B）→ `offline --mock-dir data/mock_tests/fold1_100 --fold 1`（同兩個 checkpoint 走訓練端的表與 `results/trunk_vec/fold1`）→ `compare --answers`。通過：100 題 max |Δp| ≤ 1e-3（bf16 批次雜訊的量級，§4.13 的 mock 是 5.1e-4）、決策全部相同、兩邊的官方分相同。驗證折模型 `val1_C_s0`／`val1_T_s0` 的驗證分也要與 §4H 存的 `C_s0`／`T_s0`（0.6970／0.6954）在雜訊內（GPU 非確定性）。
+
+結果：見 `reports/architecture_v2_2026-11-02.md` §4J。
+
+### 4.22 §4M 資料軸學習曲線與微調 trunk token（2026-11-04；架構 v2 §4M，使用者核定「好，可以調多一點 GPU」）
+
+同一個訓練器 `trunk_seq_check.py`，四個新旗標，驗證題與評估協定不變（compare 讀基準快取 `r_val{v}` 的驗證題，與資料臂旗標無關）：
+
+- `--train-folds 2`（M1 玩家軸）：驗證折 v 只用其餘三折中的兩折訓練，丟掉 fold (v mod 4) + 1（v=1 丟 2、v=2 丟 3、v=3 丟 4、v=4 丟 1，每折各被丟一次）；臂標 `C-f2`，R 快取 `r_val{v}_f2`。對照臂是現有的 `C`／`T`（三折）。token 只載訓練折。
+- `--train-games 10 --train-sizes 5 10`（M2 局數軸）：每位訓練玩家只留 10 局評分局（以玩家 id 作種子的排列，與行序無關），訓練題全抽 5–10 局；臂標 `C-g10s5-10`，快取 `r_val{v}_g10s5-10`。對照臂 `--train-sizes 5 10`（全部 ≤ 20 局，題也只抽 5–10 局）→ `C-s5-10`、`r_val{v}_s5-10`。`--train-games` 必須蓋住最大題目局數，否則拒絕。
+- `--vec-dir results/trunk_vec_ft`（M3）：換一套 trunk 向量；臂標加 `-ft`（目錄名去掉 `trunk_vec_`）。先 `build --vec-dir results/trunk_vec_ft --cache results/trunk_seq` 寫 `scores_ft_fold{f}.npy`（每 ply 分數排成該目錄的 part 順序，逐局核對）。
+- `compare --sizes 5 10`：只評 5、10 局的題（M2 的主比較；n=20 另跑一次全 n 報告）。輸出 JSON 多 `sizes` 欄。
+
+`trunk_extract.py --trunk results/l1b/heads3_B.pt`：用該 stage-2 run 的微調 trunk（`l1b.load_heads` 原地載入、sha256 核對）抽向量，投影 seed 不變；每個 fold 目錄寫 `trunk.json`，再抽時不同的 trunk 直接拒絕（原 `results/trunk_vec` 沒有 `trunk.json`，視為原始 trunk）。OOF 規則同 L1b 分數：folds 1、2 用 `heads3_B`，folds 3、4 用 `heads3_A`。
+
+集成層檢定：`logs/nano4/ens_compare.py --old C T --new C-ft T-ft --seeds 0 1 2 [--sizes 5 10] --out ...`（新臂成員機率平均對舊臂成員，條件 (1)(3)(4)；也逐臂比）。
+
+```bash
+# 一條龍（測試 → 8 卡抽 ft 向量 → 12 個快取 → 72 個 M1/M2 訓練 → build → 24 個 M3 訓練 → compare/ensemble），上限 18 個排隊工作
+setsid nohup bash ~/.cache/report_audit/m4_wave.sh > ~/.cache/report_audit/m4_wave.log 2>&1 &
+```
+
+測試：`tests/test_trunk_seq_4m.py`。結果：見架構 v2 §4M。
+
+**M7 分帶路由的提交路徑（2026-11-04，使用者「開始測測看」）**：`trunk_predict.py predict` 讀每個 checkpoint 側檔的 `train_sizes`——有的話只對「可用局數在該區間」的題投票，沒有的對所有題投票；每題取有投票的 checkpoint × L1b 模型的平均，沒人投票的題走 `--fallback-submission`。報告多了 `size_routing`（各帶投票的題數）、`arm_questions_voted`，`arm_agreement_with_ensemble` 改以 tag（`C`、`C-s5-10`…）分組、只算該臂有投票的題。測試 `tests/test_trunk_predict.py::test_predict_routes_checkpoints_by_question_size`。
+
+```bash
+# 12 個 s5-10 的 train-all 模型（先 rfeat --val-fold all --train-sizes 5 10 建 r_all_s5-10 快取）；driver ~/.cache/report_audit/m7_prod.sh
+python -I scripts/trunk_seq_check.py train --arm C --val-fold all --seed 0 --inner-frac 0.1 --train-sizes 5 10 --out results/trunk_seq   # -> results/models/ct/all_C-s5-10_s0.pt
+# 第二代檔案：12 個標準 + 12 個 s5-10；n=5／10 的題吃 24 個、n=15／20 的題吃 12 個標準
+sbatch ... -J ctpred2 scripts/nano4/run.sbatch python -I scripts/trunk_predict.py predict --inputs data/tests/rank_prediction_test_public.csv data/tests/rank_prediction_test_private.csv --shards submission_rank.csv --nshards 8 --vec results/ct_submission/vec --models results/models/ct/all_*.pt --fallback-submission submission_rank_ct.csv --out submission_rank_ct2.csv
+```
+
+預期報告：`size_routing` {"all": 800, "5-10": 400}、`passes` 48、無退路題；與 `submission_rank_ct.csv` 的決策只在 n=5／10 的題不同（n=15／20 構造上相同）。CV 依據：§4M M7(a) routed-6 對 3C+3T +0.0039 [+0.0021, +0.0057]（次門檻，使用者決定試）。
+
+結果：ct2 Public 0.7415（−0.0079 對 C＋T），路由不採用；見架構 v2 §4M。
+
+### 4.23 §4M M8：每人補評分到 40 局 ＋ fold 0 併入正式訓練（2026-11-04，使用者「要做」）
+
+- 鍵清單：`python -I logs/nano4/x40_keys.py --out results/data/x40_keys.csv --report results/data/x40_keys.json`（每位玩家 `fold_players` 排列的第 21–40 局，folds 0–4 共 106,892 局；1,750 位玩家不到 21 局沒有加局）。
+- 評分到**新目錄**（原目錄的 20 局樣本定義驗證題，不能動）：`score_folds.py --max-games 40 --game-keys results/data/x40_keys.csv --out results/scores_hd_x40`（8 卡 shards）；`l1b_score.py --heads heads3_A.pt --folds 0 3 4 ...--out results/l1b/scores3_hd_x40`、`--opponent --out scores3_opp_hd_x40`、`heads3_B.pt --folds 1 2` → `scores3_B_hd_x40`／`scores3_B_opp_hd_x40`；`trunk_extract.py --folds 0 1 2 3 4 --allow-fold0 --max-games 40 --game-keys ... --out results/trunk_vec_x40`，另 `trunk_extract.py --folds 0 --allow-fold0 --out results/trunk_vec`（fold 0 的 20 局基礙向量）。三個 8 卡工作 701934／701935／701936。
+- 訓練器：`--extra-games`（tag `-x40`；訓練折玩家的局表 = 原 20 局 + x40 目錄，`players_from_scores(max_games=40)` 還原排列順序，任一 x40 目錄不完整會因玩家局數對不上而拒絕）、`--with-fold0`（tag `-f0`，只能配 `--val-fold all`；fold 0 的 L1b 用 A：`L1B[0] = scores3_hd`）。分數陣列：`build --build-folds 0`（→ `scores_fold0.npy`）、`build --vec-dir results/trunk_vec_x40 --extra-games --build-folds 0 1 2 3 4`（→ `scores_x40_fold{f}.npy`）。
+- CV：`train --arm C --val-fold v --seed s --inner-frac 0.1 --extra-games` → `C-x40`；compare／ens 對 C、T。正式：`train --arm C --val-fold all --seed s --inner-frac 0.1 --with-fold0 [--extra-games]` → `all_C-f0[-x40]_s{s}.pt`；第三代檔案 `submission_rank_ct3.csv`（只用這 12 個；不混舊的 all_* 模型）。
+- 事先寫的規則與結果：架構 v2 §4M「M8」。
+
+### 4.24 §4M M9：第二組 L1b heads（另一種折切法）給集成多樣性（2026-11-04 晚）
+
+- 快取每折一個：`shards.sh 8 python -I scripts/l1b_build_cache.py --folds f --out results/l1b/cache_f$f --workers 12` 再 `--merge-meta`（8 卡節點，約 15 分一折；jobs 702594–702597）。
+- heads4_A（folds 1、3）、heads4_B（folds 2、4），照 heads3 的三段譜系（`torchrun --standalone --nproc_per_node 8 scripts/l1b_train.py --batch 128 --seed 4`）：stage 1 `--cache cache_f1 cache_f3 --out heads4s1_A.pt`；stage 2 `--init-heads heads4s1_A.pt --trunk-lr 1e-5 --epochs 3 --out heads4s2_A.pt`；stage 3 `--init-heads heads4s2_A.pt --trunk-lr 1e-5 --disc-weight 1.0 --epochs 2 --out heads4_A.pt`。driver `~/.cache/report_audit/m9_heads.sh`。
+- OOF 評分：A 評 folds 0、2、4，B 評 0、1、3；target 與 `--opponent`；基礎 20 局與 x40 → `results/l1b/scores4{,_B}{,_opp}_hd{,_x40}`（`l1b_score.py` 拒絕評到 heads 看過的折）。
+- 訓練器 `--l1b-set 4`（tag `-h4`）：token 與 R 的 L1b 來源換成 `L1B_SETS[4]`（fold 0、2、4 用 A，1、3 用 B）；分數陣列 `build --l1b-set 4 [--extra-games --vec-dir results/trunk_vec_x40]` → `scores[_x40]_h4_fold{f}.npy`；快取 `r_val{v}_h4`、`r_all_f0[_x40]_h4`。checkpoint 側檔多 `l1b_set`、`l1b_heads`。
+- 測試端：`predict_submission.py ... --l1b-heads heads3_A heads3_B heads4_A heads4_B --out submission_rank4.csv`（8 卡重出分片，四個 L1b 模型）；`trunk_predict.py predict` 依側檔 `l1b_heads` 只讓 checkpoint 吃自己那組 head 的 token（沒有該鍵的舊 checkpoint 吃全部）。第四代檔案 `submission_rank_ct4.csv` = 12 個 h3 ＋ 12 個 h4 的 all 模型。driver `~/.cache/report_audit/m9_ct.sh`（等 M8 的版本決定與 M9 評分完成）。
+- 事先指定的檢定與結果：架構 v2 §4M「M9」。
+
+### 4.25 §4M M14：對手的手用 18 個 HSL 剖面評分（2026-11-05；架構 v2 §4M M13→M14）
+
+M13 的副產物：對手的平均強度（HSL 版）給定本人 HSL／本人 L1b／對手 L1b 後仍有偏相關 0.355，而對手的手從未用 18 剖面評過（對手通道只有 L1b 10 頭）。第 1 步 R 層消融 **+0.0200 [+0.0156, +0.0245]**（`results/r_variants/m14_r.json`）。
+
+**1. 評分**（`score_folds.py --opponent`：翻色評對手的手，`color` 欄仍是本人執色、`n_moves` 變成對手手數；輸出與 `scores_hd` 同格式）。基礎 20 局五折 3 h 07、x40 鍵 2 h 16（各 8 卡）：
+```bash
+sbatch --exclude=25a-hgpn[001,003,004,005,006,007,008,009,010,039,062,155] -p 8gpus --gres=gpu:8 -c 96 -t 06:00:00 -J opphsl scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 8 python -I scripts/score_folds.py --folds 0 1 2 3 4 --opponent --out results/scores_opp_hd --workers 10
+sbatch ... -J opphslx40 scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 8 python -I scripts/score_folds.py --folds 0 1 2 3 4 --max-games 40 --game-keys results/data/x40_keys.csv --opponent --out results/scores_opp_hd_x40 --workers 10
+sbatch -t 00:40:00 -J flipchk scripts/nano4/run.sbatch python -I logs/nano4/opp_flip_check.py 0 5000   # 兩表的 t 集合必須互斥且聯集連續（PASS）
+```
+**2. token 分數陣列與 R 快取**（`trunk_seq_check.py --opp-hsl`：對手手上的 HSL 區塊（第 11–29 欄，原為零）填對手 centred log p，維度不變；`--opp-hsl-r` 再把 39 欄對手 HSL 題層特徵（`aicup.opphsl`）接到 R（64→103）。檔名：`scores_oh_fold*.npy`、`scores_x40_oh_fold*.npy`、`r_val*_x40_ohr.npz`、`r_all_f0_x40_ohr.npz`；`-oh` 的 R 就是原本的）。各約 1–2 分鐘：
+```bash
+sbatch -c 12 -t 02:00:00 -J ohb scripts/nano4/run.sbatch python -I scripts/trunk_seq_check.py build --opp-hsl --build-folds 0 1 2 3 4 --cache results/trunk_seq
+sbatch -c 12 -t 02:00:00 -J ohb40 scripts/nano4/run.sbatch python -I scripts/trunk_seq_check.py build --opp-hsl --vec-dir results/trunk_vec_x40 --extra-games 40 --build-folds 0 1 2 3 4 --cache results/trunk_seq
+for v in 1 2 3 4; do sbatch -c 12 -t 02:00:00 -J rohr$v scripts/nano4/run.sbatch python -I scripts/trunk_seq_check.py rfeat --val-fold $v --extra-games 40 --opp-hsl-r; done
+sbatch -c 12 -t 02:00:00 -J rohrall scripts/nano4/run.sbatch python -I scripts/trunk_seq_check.py rfeat --val-fold all --with-fold0 --extra-games 40 --opp-hsl-r
+```
+**3. CV 成員與比較**（`~/.cache/report_audit/m14_step2.sh`：`train --arm C|T --val-fold v --seed s --inner-frac 0.1 --extra-games 40 --opp-hsl[-r] --out results/trunk_seq/es`，臂名 `C-x40-oh`／`C-x40-ohr`；8 個一包 `pack8.sh`；再 `compare --arms C-x40 T-x40 C-x40-oh ... --pairs ...` 與 `ens_compare.py --old C-x40 T-x40 --new C-x40-oh T-x40-oh`）。採用規則見架構 v2 §4M。
+**4. 提交路徑**（只在第 3 步通過後）：`predict_submission.py` 的對手 pass 自 2026-11-05 起也評 18 剖面（分片檔多 `hsl_opp_sums`、`hsl_opp_move_logp`，meta `hsl_opponent`；`--no-opp-hsl` 可關，約省 5/6 的對手 pass 時間），所以 ct6 要**重新評測試集分片**到另一個目錄（不要覆蓋正式的 `submission_rank_shard*of8.npz`）；`trunk_predict.py predict` 依 checkpoint 側檔的 `opp_hsl`／`opp_hsl_r` 自動選 token／R 變體，舊 checkpoint 與新 checkpoint 可混用：
+```bash
+sbatch -p 8gpus --gres=gpu:8 -c 96 -t 04:00:00 -J sub8oh scripts/nano4/run.sbatch bash scripts/nano4/shards.sh 8 python -I scripts/predict_submission.py --workers 10 --l1b-heads results/l1b/heads3_A.pt results/l1b/heads3_B.pt --out results/ct6/submission_rank.csv
+# production: train --arm C|T --val-fold all --seed 0-5 --inner-frac 0.1 --with-fold0 --extra-games 40 --opp-hsl[-r] --out results/trunk_seq  → results/models/ct/all_{C,T}-f0-x40-oh[r]_s*.pt
+sbatch -t 01:00:00 -J ctpred6 scripts/nano4/run.sbatch python -I scripts/trunk_predict.py predict --inputs data/tests/rank_prediction_test_public.csv data/tests/rank_prediction_test_private.csv --shards results/ct6/submission_rank.csv --nshards 8 --vec results/ct_submission/vec --models results/models/ct/all_*-f0-x40-oh*_s*.pt --fallback-submission submission_rank_ct3.csv --out submission_rank_ct6.csv
+```
+mock 一致性檢查（fold-1 100 題）照 4.21 的流程，分片用新的對手 pass、模型用 `results/models/ct_check/val1_{C,T}-x40-oh[r]_s0.pt`（`~/.cache/report_audit/m14_step3.sh`）。單元測試：`tests/test_opphsl.py`（與 test_trunk_seq_4m、test_trunk_predict、test_predict_submission 一起 37 項通過，job 706938）。
 
 ## 5. 同步程式碼、取回結果
 

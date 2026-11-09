@@ -4,20 +4,50 @@ Workers replay a game once and keep, for every move of the target colour, the bo
 features, the legality mask and the index of the move actually played. The GPU side
 (`aicup.humansl.score_positions`) then scores the same features under every profile.
 """
+import os
+
 import numpy as np
 from katago.game.board import Board
 from katago.game.gamestate import GameState
 
-from aicup.sgf import parse_moves
+from aicup.sgf import handicap, parse_moves, setup_and_moves
 
 PASS_POS = 19 * 19
 
 
-def game_positions(sgf, target_color, features):
-    """Inputs for every move of `target_color`, taken from the position before that move."""
-    gs = GameState(19, GameState.RULES_CHINESE)
+def start_state(stones=(), rules=None):
+    """A GameState at the start of a game: empty, Black to play; with `stones` (the Black setup stones (x, y) of a handicap
+    game) placed outside the move history and White to play, as KataGo treats an SGF's AB[] stones."""
+    gs = GameState(19, rules or GameState.RULES_CHINESE)
+    if stones:
+        for x, y in stones:
+            gs.board.set_stone(Board.BLACK, gs.board.loc(x, y))
+        gs.board.set_pla(Board.WHITE)
+        gs.boards = [gs.board.copy()]
+    return gs
+
+
+def replay_rules(sgf):
+    """The rules the net is shown when replaying `sgf`: None (RULES_CHINESE, whiteKomi 7.5: production) unless the environment sets
+    AICUP_RULES=jp (section 4M M27): RULES_JAPANESE with the server's komi, 6.5 in even games (HD0) and 0 in 讓先 / handicap games."""
+    mode = os.environ.get("AICUP_RULES", "")
+    if not mode:
+        return None
+    if mode != "jp":
+        raise ValueError(f"AICUP_RULES={mode!r}: only 'jp' is known")
+    r = dict(GameState.RULES_JAPANESE)
+    r["whiteKomi"] = 6.5 if (handicap(sgf) or 0) == 0 else 0.0
+    return r
+
+
+def game_positions(sgf, target_color, features, handicap=True):
+    """Inputs for every move of `target_color`, taken from the position before that move. handicap: replay HD >= 2 records
+    with their handicap stones on the board and the actual colours (aicup.sgf.setup_and_moves); False replays the record as
+    written (the behaviour before dataset v1.1 made the handicap known)."""
+    stones, moves = setup_and_moves(sgf) if handicap else ([], parse_moves(sgf))
+    gs = start_state(stones, replay_rules(sgf))
     bins, globs, legal, target, ts = [], [], [], [], []
-    for t, (c, x, y) in enumerate(parse_moves(sgf)):
+    for t, (c, x, y) in enumerate(moves):
         pla = Board.BLACK if c == "B" else Board.WHITE
         loc = Board.PASS_LOC if x is None else gs.board.loc(x, y)
         if c == target_color:

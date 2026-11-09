@@ -34,7 +34,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 from aicup.scoring import (fold_players, init_worker, load_games, part_paths, pause_requested,  # noqa: E402
-                           player_games, resume_plan, score_stream)
+                           player_games, read_game_keys, restrict_players, resume_plan, score_stream)
 
 CKPT = ROOT / "models" / "katago" / "b18c384nbt-humanv0.ckpt"
 STOP = {"signal": None}
@@ -60,9 +60,15 @@ def main():
     ap.add_argument("--workers", type=int, default=10)
     ap.add_argument("--part-size", type=int, default=100)
     ap.add_argument("--limit-games", type=int, default=0)
+    ap.add_argument("--max-games", type=int, default=20, help="scoring.fold_players' cap per player (section 4M M8: 40 with --game-keys of positions 21-40)")
     ap.add_argument("--cudnn-benchmark", action="store_true")
+    ap.add_argument("--opponent", action="store_true", help="section 4M M14: score the OPPONENT's moves (colour flipped) under the same 18 profiles; the color column stays the target's")
+    ap.add_argument("--profiles", nargs="+", default=None, metavar="RANK",
+                    help="section 4M M16: score under these humanv0 profiles instead of the 18 (12k-6d), e.g. 7d 8d 9d; the sums columns are sum_<rank>")
     ap.add_argument("--out", default=str(ROOT / "results" / "scores"))
     ap.add_argument("--pause-file", default=None, help="default: <out>/PAUSE")
+    ap.add_argument("--game-keys", default=None, help="score only these games of each fold's selection (a CSV with a game_key column or one key "
+                    "per line), e.g. the HD >= 2 games again into a patch directory that scripts/patch_scored.py merges (issue #42)")
     a = ap.parse_args()
     pause_file = Path(a.pause_file) if a.pause_file else Path(a.out) / "PAUSE"
     if pause_requested(pause_file):
@@ -77,18 +83,24 @@ def main():
     pool = mp.get_context("fork").Pool(a.workers, initializer=init_worker, initargs=(config,))
     for sig in (signal.SIGTERM, signal.SIGINT):  # after the fork: workers keep the default handlers
         signal.signal(sig, _on_signal)
-    from aicup.humansl import PROFILES, load_humansl, meta_rows
+    from aicup.humansl import PROFILES as DEFAULT_PROFILES, inverse_rank, load_humansl, meta_rows
+    PROFILES = list(a.profiles) if a.profiles else list(DEFAULT_PROFILES)
+    for p_ in PROFILES:
+        inverse_rank(p_)  # ValueError for a rank humanv0 does not know
     model, _ = load_humansl(str(CKPT), "cuda")
     torch.backends.cudnn.benchmark = a.cudnn_benchmark
     rows = meta_rows([(p, p) for p in PROFILES])
     log(f"shard {a.shard}/{a.nshards} on {torch.cuda.get_device_name(0)}; folds {a.folds}; part size {a.part_size}; "
-        f"pause file {pause_file}")
+        f"pause file {pause_file}; {len(PROFILES)} profiles {PROFILES[0]}..{PROFILES[-1]}" + ("; the OPPONENT's moves" if a.opponent else ""))
 
     def stop_now():
         return STOP["signal"] is not None or pause_requested(pause_file)
 
+    only = read_game_keys(a.game_keys) if a.game_keys else None
     for fold in a.folds:
-        players = fold_players(all_games, folds, fold)
+        players = fold_players(all_games, folds, fold, max_games=a.max_games)
+        if only is not None:
+            players = restrict_players(players, only)
         games = [(p.rank, p.player_id, k) for p in players.itertuples() for k in p.game_keys][a.shard::a.nshards]
         if a.limit_games:
             games = games[:a.limit_games]
@@ -108,7 +120,7 @@ def main():
                     pool.close()
                     return
                 sub = [meta[key] for key in keys]
-                tasks = [(i, data[key][0], data[key][1]) for i, key in enumerate(keys)]
+                tasks = [(i, data[key][0], ("W" if data[key][1] == "B" else "B") if a.opponent else data[key][1]) for i, key in enumerate(keys)]
                 per_task, (logp, task_idx, ts), n_pos, wall = score_stream(pool, model, tasks, rows, log_every=10**9)
                 recs = [{"game_key": key, "player_id": pid, "rank": rank, "color": data[key][1], "n_moves": per_task[i][0],
                          **{f"sum_{p}": float(s) for p, s in zip(PROFILES, per_task[i][1])}}
