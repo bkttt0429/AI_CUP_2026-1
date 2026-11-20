@@ -1,0 +1,15 @@
+{
+  "duplicate_max_points": 0.004917199999999511,
+  "elapsed_seconds": 23.81,
+  "events": 21332,
+  "requests": 43984,
+  "searched": 656,
+  "sha256": {
+    "analysis_m25.cfg": "5a249b25ab94784db7a5bfe26d94ac27021d6604ea29f18b4afbfc7a52600762",
+    "events.npz": "0bdb5a788945c192a3e373372c189c3649c36160fec9f175e562fe80aa05f802",
+    "judge.py": "9725fa08c1f05c65a3c1cdf8ce5f3644c1c1d433e9e8d124c186ba86e1d8054b",
+    "judge_3.npz": "a927afb7c5d188b2a1ec675f61739da1ec76ff1dec429498c78280983d8405c9",
+    "kata1-b18c384nbt-s9996604416-d4316597426.bin.gz": "9d7a6afed8ff5b74894727e156f04f0cd36060a24824892008fbb6e0cba51f1d",
+    "katago": "13170f2c4cef084399311ba7f2f35c50438f9885d5016b9af1384e8ba73ceeac"
+  }
+}

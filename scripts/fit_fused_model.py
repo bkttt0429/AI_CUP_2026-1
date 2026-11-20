@@ -21,6 +21,13 @@ average over all five has no held-out check (the document says so in fold0_check
 With --opp NAME:OPP_SCORES_DIR --diff (issue #25) the document's MLP is the fused_opp_diff one (59 features: fused_opp + the three
 opponent-minus-own pmi differences of aicup.fused.diff_features), the fold-0 table also carries fused_opp_diff_* and
 fused_opp_diff_avg vs fused_opp_avg, and the default output is rank_model_fused_opp_diff.json.
+--no-fold0 skips the fold-0 check altogether (fold0_check.skipped = true in the document; no --fold0-proba / --reference): for a refit
+that must not spend another look at fold 0, such as the current feature set on the re-scored handicap games (issue #42 (b)).
+With --opp ... --diff --hd-table HD_TABLE_CSV (issue #47; scripts/hd_table.py's table of dataset v1.1's HD[n]) the document's MLP is
+the fused_opp_diff_hd one (64 features: + aicup.handicap's five handicap question features, looked up per game), the fold-0
+table also carries fused_opp_diff_hd_* and fused_opp_diff_hd_avg vs fused_opp_diff_avg, the fused_opp_diff MLP's state is kept
+(fused_opp_diff_state) and the default output is rank_model_fused_opp_diff_hd.json. predict_submission.py computes the same
+features from the test files' HD[] and refuses the document when a game carries none.
 With --opp NAME:OPP_SCORES_DIR (issue #12; one per --l1b model, l1b_score.py --opponent directories) the
 document's MLP is the fused_opp one: the 40 fused features plus the 16 of the L1b sums over the opponent's
 moves, built by scripts/l1b_opp_check.features exactly as scripts/l1b_opp_fold0_check.py did (the same
@@ -50,6 +57,7 @@ for d in (ROOT / "src", ROOT / "scripts"):
     if str(d) not in sys.path:
         sys.path.insert(0, str(d))
 from aicup import fused  # noqa: E402
+from aicup.handicap import hd_summary, question_hd_features, read_hd_table  # noqa: E402
 from aicup.ladder import FOLDS_CSV  # noqa: E402
 from aicup.metric import LEVELS  # noqa: E402
 from aicup.qeval import SIZES, balanced_mean_over_n, evaluate, paired_diff  # noqa: E402
@@ -61,7 +69,8 @@ import l1b_opp_check as oc  # noqa: E402
 
 DEFAULT_TRAIN_FOLDS = (1, 2, 3, 4)
 DEFAULT_OUT = {"fused": ROOT / "results" / "models" / "rank_model_fused.json", "fused_opp": ROOT / "results" / "models" / "rank_model_fused_opp.json",
-               "fused_opp_diff": ROOT / "results" / "models" / "rank_model_fused_opp_diff.json"}
+               "fused_opp_diff": ROOT / "results" / "models" / "rank_model_fused_opp_diff.json",
+               "fused_opp_diff_hd": ROOT / "results" / "models" / "rank_model_fused_opp_diff_hd.json"}
 
 
 def parse_l1b(spec):
@@ -115,21 +124,25 @@ def questions_sha(train_q):
     return h.hexdigest()
 
 
-def feature_sets(hsl, l1b, questions, opp=None, diff=False):
+def feature_sets(hsl, l1b, questions, opp=None, diff=False, hd=None):
     """l1b_cv.feature_sets (hsl, fused), plus l1b_opp_check.features' fused_opp when the opponent table is given and,
-    with diff, fused_opp_diff (+ aicup.fused.question_diff_features; issue #25)."""
+    with diff, fused_opp_diff (+ aicup.fused.question_diff_features; issue #25) and, with an HD table, fused_opp_diff_hd
+    (+ aicup.handicap.question_hd_features; issue #47)."""
     if opp is None:
         return l1b_cv.feature_sets(hsl, l1b, questions)
     X, y, n = oc.features(hsl, l1b, opp, questions)
     if diff:
         X["fused_opp_diff"] = np.hstack([X["fused_opp"], fused.question_diff_features(l1b, opp, questions)])
+    if hd is not None:
+        X["fused_opp_diff_hd"] = np.hstack([X["fused_opp_diff"], question_hd_features(hd, questions)])
     return X, y, n
 
 
-def fit(models, hsl_dir, folds, per_player, folds_df, log=print, opp_dirs=None, diff=False):
-    """({"fused": MLP, "hsl": MLP[, "fused_opp": MLP[, "fused_opp_diff": MLP]]}, info) fitted on the training folds with
-    the fold-0 checks' protocol; opp_dirs {model name: l1b_score.py --opponent directory} adds the fused_opp fit (the fold's
-    opponent features come from the same model as its target features) and diff the fused_opp_diff fit."""
+def fit(models, hsl_dir, folds, per_player, folds_df, log=print, opp_dirs=None, diff=False, hd=None):
+    """({"fused": MLP, "hsl": MLP[, "fused_opp": MLP[, "fused_opp_diff": MLP[, "fused_opp_diff_hd": MLP]]]}, info) fitted on the
+    training folds with the fold-0 checks' protocol; opp_dirs {model name: l1b_score.py --opponent directory} adds the fused_opp
+    fit (the fold's opponent features come from the same model as its target features), diff the fused_opp_diff fit and an HD
+    table (aicup.handicap.read_hd_table) the fused_opp_diff_hd fit."""
     by_name = {name: (scores, side) for name, scores, _, side in models}
     src = feature_sources(models, folds)
     data = {}
@@ -142,16 +155,17 @@ def fit(models, hsl_dir, folds, per_player, folds_df, log=print, opp_dirs=None, 
     rng = np.random.RandomState(l1b_cv.TRAIN_SEED)
     train_q = pd.concat([sample_questions(data[f]["players"], per_player, rng) for f in sorted(folds)], ignore_index=True)
     cat = lambda key: pd.concat([data[f][key] for f in sorted(folds)], ignore_index=True)  # noqa: E731
-    X, y, _ = feature_sets(cat("hsl"), cat("l1b"), train_q, cat("opp") if opp_dirs else None, diff)
-    sets = ("fused", "hsl") + (("fused_opp",) if opp_dirs else ()) + (("fused_opp_diff",) if diff else ())
+    X, y, _ = feature_sets(cat("hsl"), cat("l1b"), train_q, cat("opp") if opp_dirs else None, diff, hd)
+    sets = ("fused", "hsl") + (("fused_opp",) if opp_dirs else ()) + (("fused_opp_diff",) if diff else ()) + (("fused_opp_diff_hd",) if hd is not None else ())
     log(f"{len(train_q)} training questions; fitting the {', '.join(sets)} MLPs", flush=True)
     mlps = {s: MLPModel(hidden=32).fit(X[s], y) for s in sets}
     return mlps, {"n_train": int(len(train_q)), "questions_sha256": questions_sha(train_q), "sources": src}
 
 
-def fold0(models, hsl_dir, mlps, folds_df, n_boot, opp_dirs=None, diff=False):
+def fold0(models, hsl_dir, mlps, folds_df, n_boot, opp_dirs=None, diff=False, hd=None):
     """The fold-0 checks' numbers for these fits (hsl, fused_<model>, fused_avg and, with opp_dirs, fused_opp_<model>,
-    fused_opp_avg; with diff also fused_opp_diff_<model>, fused_opp_diff_avg) and the per-question probabilities table. Only the models out-of-fold for fold 0 take part (A and B
+    fused_opp_avg; with diff also fused_opp_diff_<model>, fused_opp_diff_avg; with hd also fused_opp_diff_hd_<model>,
+    fused_opp_diff_hd_avg) and the per-question probabilities table. Only the models out-of-fold for fold 0 take part (A and B
     both; of the five cross-fit models of issue #16 only the one that left fold 0 out), and the averages are over those;
     the result names them (fold0_models) and the models left aside (models_seen_fold0). ValueError when none is OOF."""
     oof = [m for m in models if 0 not in set(m[3]["train_folds"])]
@@ -163,7 +177,7 @@ def fold0(models, hsl_dir, mlps, folds_df, n_boot, opp_dirs=None, diff=False):
     P, y, n = {}, None, None
     for name, scores, _, _ in oof:
         _, l1b0 = l1b_cv.load_fold(hsl_dir, scores, 0)
-        X, y_, n_ = feature_sets(hsl0, l1b0, val, opponent_table(opp_dirs[name], 0, hsl0) if opp_dirs else None, diff)
+        X, y_, n_ = feature_sets(hsl0, l1b0, val, opponent_table(opp_dirs[name], 0, hsl0) if opp_dirs else None, diff, hd)
         if y is None:
             y, n = y_, n_
             P["hsl"] = mlps["hsl"].predict_proba(X["hsl"])
@@ -173,11 +187,15 @@ def fold0(models, hsl_dir, mlps, folds_df, n_boot, opp_dirs=None, diff=False):
             P[f"fused_opp_{name}"] = mlps["fused_opp"].predict_proba(X["fused_opp"])
         if diff:
             P[f"fused_opp_diff_{name}"] = mlps["fused_opp_diff"].predict_proba(X["fused_opp_diff"])
+        if hd is not None:
+            P[f"fused_opp_diff_hd_{name}"] = mlps["fused_opp_diff_hd"].predict_proba(X["fused_opp_diff_hd"])
     P["fused_avg"] = np.mean([P[f"fused_{name}"] for name, *_ in oof], axis=0)
     if opp_dirs:
         P["fused_opp_avg"] = np.mean([P[f"fused_opp_{name}"] for name, *_ in oof], axis=0)
     if diff:
         P["fused_opp_diff_avg"] = np.mean([P[f"fused_opp_diff_{name}"] for name, *_ in oof], axis=0)
+    if hd is not None:
+        P["fused_opp_diff_hd_avg"] = np.mean([P[f"fused_opp_diff_hd_{name}"] for name, *_ in oof], axis=0)
     pid = val["player_id"].to_numpy(dtype=str)
     res = {k: evaluate(p, y, val) for k, p in P.items()}
     s = {k: r[1] for k, r in res.items()}
@@ -193,6 +211,8 @@ def fold0(models, hsl_dir, mlps, folds_df, n_boot, opp_dirs=None, diff=False):
         out["fused_opp_avg_vs_fused_avg"] = paired_diff(s["fused_opp_avg"], s["fused_avg"], y, pid, n, n=n_boot)
     if diff:
         out["fused_opp_diff_avg_vs_fused_opp_avg"] = paired_diff(s["fused_opp_diff_avg"], s["fused_opp_avg"], y, pid, n, n=n_boot)
+    if hd is not None:
+        out["fused_opp_diff_hd_avg_vs_fused_opp_diff_avg"] = paired_diff(s["fused_opp_diff_hd_avg"], s["fused_opp_diff_avg"], y, pid, n, n=n_boot)
     table = val[["question_id", "rank", "n_games", "player_id"]].copy()
     for k, p in P.items():
         for j, lv in enumerate(LEVELS):
@@ -206,6 +226,8 @@ def main(argv=None):
     ap.add_argument("--opp", nargs="*", default=[], metavar="NAME:OPP_SCORES_DIR",
                     help="l1b_score.py --opponent directories, one per --l1b model: fit the fused_opp MLP instead (issue #12)")
     ap.add_argument("--diff", action="store_true", help="with --opp: fit the fused_opp_diff MLP instead (+3 opponent-minus-own pmi features; issue #25)")
+    ap.add_argument("--hd-table", default=None, help="with --opp --diff: fit the fused_opp_diff_hd MLP instead (+5 handicap question features from "
+                    "scripts/hd_table.py's CSV of dataset v1.1's HD[n]; issue #47)")
     ap.add_argument("--hsl", default=str(ROOT / "results" / "scores"))
     ap.add_argument("--train-folds", type=int, nargs="+", default=list(DEFAULT_TRAIN_FOLDS))
     ap.add_argument("--per-player", type=int, default=32)
@@ -214,6 +236,8 @@ def main(argv=None):
     ap.add_argument("--out", default=None, help=f"default {DEFAULT_OUT['fused'].name}, {DEFAULT_OUT['fused_opp'].name} with --opp, "
                     f"{DEFAULT_OUT['fused_opp_diff'].name} with --opp --diff")
     ap.add_argument("--fold0-proba", default=None, help="write fold 0's per-question probabilities (CSV) here")
+    ap.add_argument("--no-fold0", action="store_true", help="skip the fold-0 check (the document records fold0_check.skipped = true): a refit that must not "
+                    "spend another look at fold 0, e.g. the same feature set on re-scored data (issue #42 (b)); incompatible with --fold0-proba / --reference")
     ap.add_argument("--reference", default=None,
                     help="results/l1b/fold0_check.json (its runs[--reference-run]) or results/l1b/opp_fold0_check.json to compare the fold-0 numbers with")
     ap.add_argument("--reference-run", default="disc")
@@ -222,7 +246,11 @@ def main(argv=None):
     opponent = bool(a.opp)
     if a.diff and not opponent:
         ap.error("--diff needs --opp (the differences are between the opponent's and the target's L1b sums)")
-    kind = "fused_opp_diff" if a.diff else "fused_opp" if opponent else "fused"
+    if a.hd_table and not a.diff:
+        ap.error("--hd-table needs --opp --diff (the handicap features are appended to fused_opp_diff)")
+    if a.no_fold0 and (a.fold0_proba or a.reference):
+        ap.error("--no-fold0 skips the fold-0 check, so --fold0-proba and --reference have nothing to write or compare")
+    kind = "fused_opp_diff_hd" if a.hd_table else "fused_opp_diff" if a.diff else "fused_opp" if opponent else "fused"
     out = Path(a.out) if a.out else DEFAULT_OUT[kind]
     if out.exists() and not a.overwrite:
         print(f"{out} exists; pass --overwrite to refit", file=sys.stderr)
@@ -237,8 +265,16 @@ def main(argv=None):
         if opponent and sorted(opp_dirs) != sorted(names):
             raise ValueError(f"--opp must name every --l1b model exactly once: got {sorted(opp_dirs)}, models {sorted(names)}")
         folds_df = pd.read_csv(a.folds_csv, dtype={"player_id": str})
-        mlps, info = fit(models, a.hsl, folds, a.per_player, folds_df, opp_dirs=opp_dirs, diff=a.diff)
-        check, table = fold0(models, a.hsl, mlps, folds_df, a.n_boot, opp_dirs=opp_dirs, diff=a.diff)
+        hd = read_hd_table(a.hd_table) if a.hd_table else None
+        if hd is not None:
+            cov = hd_summary(hd)
+            print(f"HD table {a.hd_table}: {cov['games']} games, HD>=1 {cov['share_hd1']:.3f}, HD>=2 {cov['share_hd2']:.3f}, absent {cov['hd'].get('absent', 0)}", flush=True)
+        mlps, info = fit(models, a.hsl, folds, a.per_player, folds_df, opp_dirs=opp_dirs, diff=a.diff, hd=hd)
+        if a.no_fold0:
+            check, table = {"skipped": True, "reason": "--no-fold0: fold 0 not evaluated by this fit", "scores": {}, "vs_hsl": {}, "models_seen_fold0": []}, None
+            print("fold 0: skipped (--no-fold0); the document carries no fold-0 check", flush=True)
+        else:
+            check, table = fold0(models, a.hsl, mlps, folds_df, a.n_boot, opp_dirs=opp_dirs, diff=a.diff, hd=hd)
     except (FileNotFoundError, ValueError, KeyError) as e:
         print(e, file=sys.stderr)
         return 2
@@ -250,12 +286,15 @@ def main(argv=None):
         extra = f"  vs hsl {d['diff']:+.4f} [{d['ci95'][0]:+.4f}, {d['ci95'][1]:+.4f}]" if d else ""
         print(f"fold 0 {k:14s} {v['balanced_mean_over_n']:.4f}  NLL {v['nll_balanced']:.4f}  by n "
               + " ".join(f"{m}: {v['balanced_by_n'][str(m)]:.4f}" for m in SIZES) + extra, flush=True)
-    if opponent:
+    if opponent and not a.no_fold0:
         d = check["fused_opp_avg_vs_fused_avg"]
         print(f"fold 0 fused_opp_avg vs fused_avg: {d['diff']:+.4f} [{d['ci95'][0]:+.4f}, {d['ci95'][1]:+.4f}]", flush=True)
-    if a.diff:
+    if a.diff and not a.no_fold0:
         d = check["fused_opp_diff_avg_vs_fused_opp_avg"]
         print(f"fold 0 fused_opp_diff_avg vs fused_opp_avg: {d['diff']:+.4f} [{d['ci95'][0]:+.4f}, {d['ci95'][1]:+.4f}]", flush=True)
+    if a.hd_table and not a.no_fold0:
+        d = check["fused_opp_diff_hd_avg_vs_fused_opp_diff_avg"]
+        print(f"fold 0 fused_opp_diff_hd_avg vs fused_opp_diff_avg: {d['diff']:+.4f} [{d['ci95'][0]:+.4f}, {d['ci95'][1]:+.4f}]", flush=True)
     if a.reference:
         ref = json.loads(Path(a.reference).read_text())
         ref = ref["runs"][a.reference_run]["scores"] if "runs" in ref else ref["scores"]  # fold0_check.json vs opp_fold0_check.json
@@ -271,10 +310,12 @@ def main(argv=None):
         extra.update({"opp_scores_dirs": {name: str(d) for name, d in opp_dirs.items()}, "fused_state": mlps["fused"].state_dict()})
     if a.diff:
         extra["fused_opp_state"] = mlps["fused_opp"].state_dict()
+    if a.hd_table:
+        extra.update({"fused_opp_diff_state": mlps["fused_opp_diff"].state_dict(), "hd_table": str(a.hd_table), "hd_coverage": hd_summary(hd)})
     doc = fused.fused_document(mlps[kind], records, folds, a.per_player, info["n_train"], info["questions_sha256"], extra=extra, feature_set=kind)
     fused.save_fused_model(doc, out)
     print(f"wrote {out}: {doc['name']}, {info['n_train']} training questions, L1b models {[r['name'] for r in records]}")
-    if a.fold0_proba:
+    if a.fold0_proba and table is not None:
         Path(a.fold0_proba).parent.mkdir(parents=True, exist_ok=True)
         table.to_csv(a.fold0_proba, index=False)
         print(f"wrote {a.fold0_proba} ({len(table)} fold-0 questions)")

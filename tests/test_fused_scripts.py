@@ -308,3 +308,77 @@ def test_fit_fused_model_cli_with_five_cross_fit_models(tmp_path, capsys):
              "--folds-csv", str(folds_csv), "--out", str(tmp_path / "x.json")]
     assert ffm.main(args2) == 2
     assert "out-of-fold for fold 0" in capsys.readouterr().err
+
+
+def test_fit_fused_model_cli_with_hd_table(tmp_path, capsys):
+    """--hd-table (issue #47): the fused_opp_diff_hd MLP on top of the diff fit, the fold-0 table and comparison, the HD provenance."""
+    from tests.test_hd_check import _hd_table
+
+    l1b_dir, hsl_dir, _ = _synthetic_scores(tmp_path, folds=(0, 1, 2, 3, 4), l1b_name="l1b_all")
+    opp_dir = _opponent_scores(tmp_path)
+    side_a = _sidecar(tmp_path / "heads3_A.json", "a" * 64, "1" * 64, [1, 2])
+    side_b = _sidecar(tmp_path / "heads3_B.json", "b" * 64, "2" * 64, [3, 4])
+    folds_csv = _folds_csv(tmp_path)
+    hd_path = tmp_path / "hd_table.csv"
+    _hd_table(hsl_dir, (0, 1, 2, 3, 4), hd_path)
+    out, proba = tmp_path / "models" / "rank_model_fused_opp_diff_hd.json", tmp_path / "fold0_hd_proba.csv"
+    l1b_args = ["--l1b", f"A:{l1b_dir}:{side_a}", f"B:{l1b_dir}:{side_b}", "--opp", f"A:{opp_dir}", f"B:{opp_dir}"]
+    rest = ["--hsl", str(hsl_dir), "--per-player", "2", "--folds-csv", str(folds_csv), "--out", str(out), "--fold0-proba", str(proba)]
+    assert ffm.main([*l1b_args, "--diff", "--hd-table", str(hd_path), *rest]) == 0
+    printed = capsys.readouterr().out
+    assert "HD table" in printed and "fused_opp_diff_hd_avg vs fused_opp_diff_avg" in printed and "fused_opp_diff_avg vs fused_opp_avg" in printed
+    doc, mlp = fused.load_fused_model(out)
+    assert doc["name"] == fused.NAME_OPP_DIFF_HD and doc["feature_set"] == "fused_opp_diff_hd" and len(doc["features"]) == 64 and doc["hd_table"] == str(hd_path)
+    assert doc["hd_coverage"]["games"] == 5 * 600 and 0 < doc["hd_coverage"]["share_hd2"] < doc["hd_coverage"]["share_hd1"] < 1
+    assert len(doc["state"]["params"]["0.weight"][0]) == 64 and len(doc["fused_opp_diff_state"]["params"]["0.weight"][0]) == 59
+    assert len(doc["fused_opp_state"]["params"]["0.weight"][0]) == 56 and len(doc["fused_state"]["params"]["0.weight"][0]) == 40
+    f0 = doc["fold0_check"]
+    assert {"fused_opp_diff_hd_A", "fused_opp_diff_hd_B", "fused_opp_diff_hd_avg", "fused_opp_diff_avg"} <= set(f0["scores"])
+    assert "ci95" in f0["fused_opp_diff_hd_avg_vs_fused_opp_diff_avg"] and "ci95" in f0["vs_hsl"]["fused_opp_diff_hd_avg"]
+    table = pd.read_csv(proba)
+    cols = lambda s: [f"{s}_p_{lv}" for lv in LEVELS]  # noqa: E731
+    np.testing.assert_allclose(table[cols("fused_opp_diff_hd_avg")].to_numpy(), (table[cols("fused_opp_diff_hd_A")].to_numpy() + table[cols("fused_opp_diff_hd_B")].to_numpy()) / 2, atol=1e-12)
+    assert not np.allclose(table[cols("fused_opp_diff_hd_avg")].to_numpy(), table[cols("fused_opp_diff_avg")].to_numpy())
+    # the hd MLP's inputs are the diff features plus the HD block of the same training questions (the diff fit is the kept reference)
+    from aicup.handicap import question_hd_features, read_hd_table
+    hd = read_hd_table(hd_path)
+    hsl0 = l1b_cv.read_scored_games(hsl_dir / "fold0")
+    folds_df = pd.read_csv(folds_csv, dtype={"player_id": str})
+    val = l1b_cv.pilot_questions(l1b_cv.players_from_scores(hsl0, folds_df))
+    _, l1b0 = l1b_cv.load_fold(hsl_dir, l1b_dir, 0)
+    X, _, _ = ffm.feature_sets(hsl0, l1b0, val, ffm.opponent_table(opp_dir, 0, hsl0), True, hd)
+    np.testing.assert_allclose(X["fused_opp_diff_hd"], np.hstack([X["fused_opp_diff"], question_hd_features(hd, val)]), atol=0)
+    np.testing.assert_allclose(table[cols("fused_opp_diff_hd_A")].to_numpy(), mlp.predict_proba(X["fused_opp_diff_hd"]), atol=1e-12)
+    # refusals: --hd-table without --diff; a table that lacks the games
+    with pytest.raises(SystemExit):
+        ffm.main([*l1b_args, "--hd-table", str(hd_path), *rest, "--overwrite"])
+    short = tmp_path / "short.csv"
+    pd.read_csv(hd_path, dtype=str, keep_default_na=False).iloc[:100].to_csv(short, index=False)
+    assert ffm.main([*l1b_args, "--diff", "--hd-table", str(short), *rest, "--overwrite"]) == 2
+
+
+def test_fit_fused_model_cli_no_fold0(tmp_path, capsys):
+    """--no-fold0: the fit without the fold-0 check (a refit on re-scored data that must not spend another look at fold 0)."""
+    l1b_dir, hsl_dir, _ = _synthetic_scores(tmp_path, folds=(0, 1, 2, 3, 4), l1b_name="l1b_all")
+    opp_dir = _opponent_scores(tmp_path)
+    side_a = _sidecar(tmp_path / "heads3_A.json", "a" * 64, "1" * 64, [1, 2])
+    side_b = _sidecar(tmp_path / "heads3_B.json", "b" * 64, "2" * 64, [3, 4])
+    folds_csv = _folds_csv(tmp_path)
+    out = tmp_path / "models" / "rank_model_fused_opp_diff.json"
+    args = ["--l1b", f"A:{l1b_dir}:{side_a}", f"B:{l1b_dir}:{side_b}", "--opp", f"A:{opp_dir}", f"B:{opp_dir}", "--diff", "--hsl", str(hsl_dir),
+            "--per-player", "2", "--folds-csv", str(folds_csv), "--out", str(out), "--no-fold0"]
+    assert ffm.main(args) == 0
+    printed = capsys.readouterr().out
+    assert "fold 0: skipped" in printed and "fold 0 fused" not in printed
+    doc, mlp = fused.load_fused_model(out)
+    assert doc["name"] == fused.NAME_OPP_DIFF and doc["fold0_check"]["skipped"] is True and doc["fold0_check"]["scores"] == {}
+    assert len(doc["state"]["params"]["0.weight"][0]) == 59
+    # the fit itself is the same as with the check: same training questions, same MLP
+    out2 = tmp_path / "models" / "with_fold0.json"
+    assert ffm.main([*args[:-3], "--out", str(out2)]) == 0
+    doc2, _ = fused.load_fused_model(out2)
+    assert doc2["state"]["params"] == doc["state"]["params"] and doc2["questions_sha256"] == doc["questions_sha256"] and "skipped" not in doc2["fold0_check"]
+    with pytest.raises(SystemExit):
+        ffm.main(args + ["--fold0-proba", str(tmp_path / "p.csv"), "--overwrite"])
+    with pytest.raises(SystemExit):
+        ffm.main(args + ["--reference", str(tmp_path / "ref.json"), "--overwrite"])

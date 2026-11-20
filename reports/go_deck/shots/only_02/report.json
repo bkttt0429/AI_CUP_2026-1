@@ -1,0 +1,116 @@
+{
+ "tag": "only_02",
+ "cards": [
+  "c02_evidence.html"
+ ],
+ "scripts": [
+  "a02_evidence.js",
+  "a90_terms.js"
+ ],
+ "console": [],
+ "slides": {
+  "01 card-hsl": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 3 章 · 每手棋變證據",
+    "issues": [],
+    "m": {
+     "leftChars": 340,
+     "allChars": 483,
+     "svgTexts": 20,
+     "svgMin": 14.7,
+     "svgP10": 14.7,
+     "bottomGap": 86
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 3 章 · 每手棋變證據",
+    "issues": [],
+    "m": {
+     "leftChars": 340,
+     "allChars": 483,
+     "svgTexts": 20,
+     "svgMin": 17.2,
+     "svgP10": 17.2,
+     "bottomGap": 107
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "02 card-scale": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 3 章 · 每手棋變證據",
+    "issues": [],
+    "m": {
+     "leftChars": 347,
+     "allChars": 452,
+     "svgTexts": 43,
+     "svgMin": 13.1,
+     "svgP10": 13.1,
+     "bottomGap": 69
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 3 章 · 每手棋變證據",
+    "issues": [],
+    "m": {
+     "leftChars": 347,
+     "allChars": 452,
+     "svgTexts": 43,
+     "svgMin": 15.4,
+     "svgP10": 15.4,
+     "bottomGap": 86
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "03 card-opp": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 3 章 · 每手棋變證據",
+    "issues": [],
+    "m": {
+     "leftChars": 315,
+     "allChars": 494,
+     "svgTexts": 31,
+     "svgMin": 13.1,
+     "svgP10": 13.1,
+     "bottomGap": 37
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 3 章 · 每手棋變證據",
+    "issues": [],
+    "m": {
+     "leftChars": 315,
+     "allChars": 494,
+     "svgTexts": 31,
+     "svgMin": 15.4,
+     "svgP10": 15.4,
+     "bottomGap": 63
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  }
+ },
+ "static": [],
+ "missing_anims": [],
+ "kpi_missing": [],
+ "notes_drawer": {
+  "page": 3,
+  "open": true,
+  "t": "第 3 頁 · 難點 ①：相鄰等級分不開",
+  "len": 963,
+  "closed_again": true
+ }
+}

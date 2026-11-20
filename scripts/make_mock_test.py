@@ -45,13 +45,17 @@ def main():
     ap.add_argument("--model", default=str(ROOT / "results" / "models" / "rank_model.json"))
     ap.add_argument("--scores", default=str(ROOT / "results" / "scores"))
     ap.add_argument("--out-dir", default=str(ROOT / "data" / "mock_tests"))
+    ap.add_argument("--sizes", type=int, nargs="*", default=None, help="only pilot questions of these sizes (default all); --n-questions 0 takes every one of them")
     a = ap.parse_args()
     out = Path(a.out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
     players = fold_players(player_games(), pd.read_csv(ROOT / "splits" / "player_folds.csv"), a.fold)
     qs = pilot_questions(players)
-    pick = qs.iloc[np.sort(np.random.RandomState(a.seed).choice(len(qs), size=a.n_questions, replace=False))].reset_index(drop=True)
+    if a.sizes:
+        qs = qs[qs["n_games"].isin(a.sizes)].reset_index(drop=True)
+    n = len(qs) if a.n_questions <= 0 else a.n_questions
+    pick = qs.iloc[np.sort(np.random.RandomState(a.seed).choice(len(qs), size=n, replace=False))].reset_index(drop=True)
     half = len(pick) // 2
     data = load_games([k for ks in pick["game_keys"] for k in ks])
     official_rows(pick.iloc[:half], "pub", data).to_csv(out / "rank_prediction_test_public.csv", index=False)

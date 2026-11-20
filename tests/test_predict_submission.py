@@ -29,12 +29,13 @@ MODEL = ROOT / "results" / "models" / "rank_model.json"
 PUBLIC, PRIVATE = FIXTURE / "rank_prediction_test_public.csv", FIXTURE / "rank_prediction_test_private.csv"
 
 
-def _fake_score(tasks, workers, log=print, l1b_heads=(), opponent=True):
+def _fake_score(tasks, workers, log=print, l1b_heads=(), opponent=True, opponent_hsl=True):
     """Stand-in for score_tasks: n_moves = the target colour's moves; the per-move log p curve depends on
     the game only (a peak profile hashed from the SGF), so any sharding gives the same per-task values.
     With l1b_heads, 10 more columns per heads file follow the 18 profiles (a peak at a rank that depends on the
     game and on the model's index, so the models differ); with opponent too, the opponent pass gives each task the
-    other colour's move count and its own L1b curves (another hash slice), as score_tasks' fifth value."""
+    other colour's move count and its own L1b curves (another hash slice), as score_tasks' fifth value; with opponent_hsl
+    (section 4M M14) 18 profile columns precede them, as the real pass's do."""
     per_task, logps, mt, tt = {}, [], [], []
     for k, sgf, color in tasks:
         n = sum(1 for c, _, _ in parse_moves(sgf) if c == color)
@@ -51,14 +52,19 @@ def _fake_score(tasks, workers, log=print, l1b_heads=(), opponent=True):
     moves = (np.concatenate(logps), np.concatenate(mt), np.concatenate(tt)) if logps else None
     opp = None
     if l1b_heads and opponent:
-        o_per_task = {}
+        o_per_task, o_logps, o_mt, o_tt = {}, [], [], []
         for k, sgf, color in tasks:
             other = "W" if color == "B" else "B"
             n_o = sum(1 for c, _, _ in parse_moves(sgf) if c == other)
             seed = int(hashlib.sha256(sgf.encode()).hexdigest()[8:16], 16)
-            curve = np.concatenate([-1.2 - 0.1 * (np.arange(len(LEVELS)) - (seed + 5 * j) % len(LEVELS)) ** 2 for j in range(len(l1b_heads))])
+            curve = np.concatenate(([-1.8 - 0.05 * (np.arange(len(PROFILES)) - seed % len(PROFILES)) ** 2] if opponent_hsl else [])
+                                   + [-1.2 - 0.1 * (np.arange(len(LEVELS)) - (seed + 5 * j) % len(LEVELS)) ** 2 for j in range(len(l1b_heads))])
             o_per_task[k] = (n_o, curve * n_o)
-        opp = (o_per_task, int(sum(v[0] for v in o_per_task.values())), 0.25)
+            o_logps.append(np.tile(curve, (n_o, 1)).astype(np.float32))
+            o_mt.append(np.full(n_o, k, dtype=np.int32))
+            o_tt.append(1 + 2 * np.arange(n_o, dtype=np.int32))  # the other colour's plies
+        o_moves = (np.concatenate(o_logps), np.concatenate(o_mt), np.concatenate(o_tt)) if o_logps else None
+        opp = (o_per_task, int(sum(v[0] for v in o_per_task.values())), 0.25, o_moves)
     return per_task, moves, int(sum(len(x) for x in logps)), 0.5, opp
 
 
@@ -148,8 +154,15 @@ def test_shards_then_merge_equal_the_single_process_run(tmp_path, fake_scorer):
     assert [m["shard"] for m in rm["shards"]] == [0, 1, 2] and sum(m["n_tasks"] for m in rm["shards"]) == 375
     assert sorted(k for m in range(3) for k in np.load(ps.shard_path(merged, m, 3))["task"].tolist()) == list(range(375))
     assert np.load(ps.shard_path(merged, 1, 3))["task"].tolist() == list(range(1, 375, 3))
-    for key in ("questions", "games_used", "games_dropped", "passes", "fallback_questions", "problems", "exit_code"):
+    for key in ("questions", "games_used", "games_dropped", "passes", "handicap", "fallback_questions", "problems", "exit_code"):
         assert rm[key] == rs[key], key
+    assert rs["handicap"] == {"absent": 375}  # the mock test is v1.0-style: no HD[]
+
+
+def test_handicap_counts_orders_absent_first_then_by_handicap():
+    qs = [{"games": [("(;SZ[19];B[pd])", "B"), ("(;SZ[19]HD[2];B[qf])", "W"), ("(;SZ[19]HD[0];B[pd])", "B"), ("(;SZ[19]HD[2];B[qf])", "B")]},
+          {"games": [("(;SZ[19]HD[1];B[pd])", "W")]}]
+    assert ps.handicap_counts(qs) == {"absent": 1, "0": 1, "1": 1, "2": 2}
 
 
 def test_merge_refuses_missing_inconsistent_or_duplicated_shards(tmp_path, fake_scorer, capsys):
@@ -475,11 +488,17 @@ def test_l1b_heads_in_shards_and_fused_decision(tmp_path, fake_scorer, capsys):
         assert z["l1b_sums"].shape == (len(z["task"]), 2, 10) and z["l1b_sums"].dtype == np.float64
         assert z["l1b_move_logp"].shape == (len(z["move_task"]), 2, 10) and z["l1b_move_logp"].dtype == np.float32
         np.testing.assert_allclose(z["l1b_sums"][0], z["l1b_move_logp"][z["move_task"] == z["task"][0]].sum(axis=0), rtol=0, atol=1e-3)
-        # the opponent pass (issue #12): per game the opponent's move count and L1b sums of both models, no per-move arrays
+        # the opponent pass (issue #12): per game the opponent's move count and L1b sums of both models; since 2026-11-04 also
+        # the opponent plies' per-move log p (read by scripts/trunk_predict.py only)
         assert z["l1b_opp_sums"].shape == (len(z["task"]), 2, 10) and z["l1b_opp_sums"].dtype == np.float64
-        assert z["l1b_opp_n_moves"].shape == (len(z["task"]),) and z["l1b_opp_n_moves"].dtype == np.int64 and "l1b_opp_move_logp" not in z.files
+        assert z["l1b_opp_n_moves"].shape == (len(z["task"]),) and z["l1b_opp_n_moves"].dtype == np.int64
         assert (np.abs(z["l1b_opp_n_moves"] - z["n_moves"]) <= 1).all() and not np.array_equal(z["l1b_opp_sums"], z["l1b_sums"])
         opp_total = int(z["l1b_opp_n_moves"].sum())
+        assert z["l1b_opp_move_logp"].shape == (opp_total, 2, 10) and z["l1b_opp_move_logp"].dtype == np.float32
+        assert z["opp_move_task"].shape == z["opp_move_t"].shape == (opp_total,) and set(z["opp_move_task"].tolist()) == set(z["task"].tolist())
+        k0 = z["task"][0]
+        np.testing.assert_allclose(z["l1b_opp_sums"][0], z["l1b_opp_move_logp"][z["opp_move_task"] == k0].sum(axis=0), rtol=1e-5, atol=1e-3)  # float32 per-move sums
+        assert len(z["opp_move_t"][z["opp_move_task"] == k0]) == z["l1b_opp_n_moves"][0] and meta["l1b_opp_moves"] is True
     assert [m["name"] for m in meta["l1b_models"]] == ["heads3_A", "heads3_B"]
     assert meta["l1b_models"][0]["state_sha256"] == sides[0]["state_sha256"] and meta["l1b_models"][0]["trunk_sha256"] == sides[0]["trunk_sha256"]
     assert meta["l1b_models"][1]["trunk_sha256"] is None and meta["l1b_models"][0]["train_folds"] == [1, 2]
@@ -550,6 +569,47 @@ def test_l1b_heads_in_shards_and_fused_decision(tmp_path, fake_scorer, capsys):
     got_d = pd.read_csv(out.with_name("submission_rank_proba.csv"))[[f"p_{lv}" for lv in LEVELS]].to_numpy()
     np.testing.assert_allclose(got_d, np.stack(want_d), rtol=0, atol=1e-12)
     assert not np.allclose(got_d, got_o) and report["fused_fallback_questions"] == []
+    # the fused_opp_diff_hd document (issue #47): the handicap features come from the records' HD[]; the mock inputs carry none -> refused
+    from aicup.handicap import question_hd_features_from_games
+    hd_path, hd_mlp, _ = _tiny_fused_doc(tmp_path / "hd", sides, feature_set="fused_opp_diff_hd")
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--merge", "--fused-model", str(hd_path))) == ps.EXIT_INPUTS
+    assert "carry no HD[]" in capsys.readouterr().err
+    # --allow-missing-hd: unknown handicap, zeros
+    assert ps.main(_args(inputs, out, 5, 3, 2, "--merge", "--fused-model", str(hd_path), "--allow-missing-hd")) == ps.EXIT_OK
+    report = json.loads(out.with_name("submission_rank_report.json").read_text())
+    n_games = sum(len(q["games"]) for q in questions)
+    assert report["decision_model"] == "fused_opp_diff_hd" and report["fused_model"]["name"] == fused.NAME_OPP_DIFF_HD and report["handicap"] == {"absent": n_games}
+
+    def want_hd(task_games):
+        rows = []
+        for qi in range(len(questions)):
+            ks = [k for k, q in enumerate(owner) if q == qi]
+            rows.append(fused.fused_predict(hd_mlp, np.stack([per_task[k][1] for k in ks]), np.stack([l1b_per_task[k] for k in ks]), np.array([per_task[k][0] for k in ks]), order,
+                                            opp_sums=np.stack([opp_per_task[k][1] for k in ks]), opp_n_moves=np.array([opp_per_task[k][0] for k in ks]),
+                                            feature_set="fused_opp_diff_hd", hd_feats=question_hd_features_from_games([task_games[k] for k in ks])))
+        return np.stack(rows)
+    got_h0 = pd.read_csv(out.with_name("submission_rank_proba.csv"))[[f"p_{lv}" for lv in LEVELS]].to_numpy()
+    np.testing.assert_allclose(got_h0, want_hd({k: (sgf, c) for k, sgf, c in tasks}), rtol=0, atol=1e-12)
+    # inputs whose records carry HD[1] (讓先: boards and colours as recorded, so the same shards serve; the file names and the
+    # question ids are the same, so the shards' hash matches): the features come from the records, the report counts them
+    hd_dir = tmp_path / "hd_inputs"
+    hd_dir.mkdir()
+    hd_inputs = []
+    for path in inputs:
+        df = pd.read_csv(path, dtype=str, keep_default_na=False)
+        sgf_cols = [c for c in df.columns if c.startswith("sgf_")]
+        df[sgf_cols] = df[sgf_cols].map(lambda v: v.replace("(;SZ[19]", "(;SZ[19]HD[1]", 1) if v else v)
+        df.to_csv(hd_dir / Path(path).name, index=False)
+        hd_inputs.append(str(hd_dir / Path(path).name))
+    assert ps.main(_args(hd_inputs, out, 5, 3, 2, "--merge", "--fused-model", str(hd_path))) == ps.EXIT_OK
+    report = json.loads(out.with_name("submission_rank_report.json").read_text())
+    assert report["handicap"] == {"1": n_games} and report["decision_model"] == "fused_opp_diff_hd" and report["exit_code"] == 0
+    questions_hd, _ = ps.load_questions(hd_inputs)
+    tasks_hd, owner_hd, _, _ = ps.build_tasks(questions_hd)
+    assert owner_hd == owner and [(k, c) for k, _, c in tasks_hd] == [(k, c) for k, _, c in tasks]
+    got_h1 = pd.read_csv(out.with_name("submission_rank_proba.csv"))[[f"p_{lv}" for lv in LEVELS]].to_numpy()
+    np.testing.assert_allclose(got_h1, want_hd({k: (sgf, c) for k, sgf, c in tasks_hd}), rtol=0, atol=1e-12)
+    assert not np.allclose(got_h1, got_h0)
 
 
 def test_fused_decision_refusals_and_fallback(tmp_path, fake_scorer, capsys):

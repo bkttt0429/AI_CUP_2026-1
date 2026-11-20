@@ -239,3 +239,44 @@ def test_diff_document_round_trip_and_predict(tmp_path):
     np.testing.assert_array_equal(fused.fused_predict(mlp56, hsl, l1b, n, [0, 1], opp_sums=opp, opp_n_moves=n_opp),
                                   fused.fused_predict(mlp56, hsl, l1b, n, [0, 1], opp_sums=opp, opp_n_moves=n_opp, feature_set="fused_opp"))
 
+
+
+def test_hd_document_round_trip_and_predict(tmp_path):
+    """The fused_opp_diff_hd set (issue #47): 59 + the five handicap question features, the same for every L1b model."""
+    from aicup.handicap import HD_FEATURE_NAMES
+
+    rng = np.random.RandomState(9)
+    X, y = rng.randn(80, 64), np.arange(80) % 10
+    mlp = MLPModel(hidden=4, epochs=5).fit(X, y)
+    sides = [{"state_sha256": "a" * 64, "trunk_file": "t.ckpt", "trunk_sha256": "1" * 64, "train_folds": [1, 2]},
+             {"state_sha256": "b" * 64, "trunk_file": "t.ckpt", "trunk_sha256": "1" * 64, "train_folds": [3, 4]}]
+    records = [fused.l1b_model_record("A", "heads3_A.pt", sides[0], [3, 4]), fused.l1b_model_record("B", "heads3_B.pt", sides[1], [1, 2])]
+    doc = fused.fused_document(mlp, records, [1, 2, 3, 4], 32, 80, "e" * 64, feature_set="fused_opp_diff_hd")
+    assert doc["name"] == fused.NAME_OPP_DIFF_HD and doc["features"] == fused.FUSED_OPP_DIFF_HD_FEATURE_NAMES and len(doc["features"]) == 64
+    assert doc["features"][-5:] == HD_FEATURE_NAMES and doc["features"][:59] == fused.FUSED_OPP_DIFF_FEATURE_NAMES
+    assert doc["opponent"] is True and doc["feature_set"] == "fused_opp_diff_hd" and "handicap" in doc["role"] and "opponent-minus-own" in doc["role"]
+    path = tmp_path / "rank_model_fused_opp_diff_hd.json"
+    fused.save_fused_model(doc, path)
+    doc2, mlp2 = fused.load_fused_model(path)
+    assert doc2["feature_set"] == "fused_opp_diff_hd" and doc2["opponent"] is True and doc2["name"] == fused.NAME_OPP_DIFF_HD
+    np.testing.assert_array_equal(mlp2.predict_proba(X[:7]), mlp.predict_proba(X[:7]))
+    m = 4
+    hsl, l1b, opp = -rng.rand(m, 18) * 200, -rng.rand(m, 2, 10) * 200, -rng.rand(m, 2, 10) * 200
+    n, n_opp = rng.randint(50, 150, size=m), rng.randint(50, 150, size=m)
+    hd = np.array([0.5, 0.25, 0.25, 0.75, 0.0])
+    p = fused.fused_predict(mlp, hsl, l1b, n, order=[1, 0], opp_sums=opp, opp_n_moves=n_opp, feature_set="fused_opp_diff_hd", hd_feats=hd)
+    want = np.mean([mlp.predict_proba(np.concatenate([fused.fused_opp_diff_features(hsl, l1b[:, k], n, opp[:, k], n_opp), hd])[None])[0] for k in (1, 0)], axis=0)
+    np.testing.assert_allclose(p, want, rtol=0, atol=1e-15)
+    assert not np.allclose(p, fused.fused_predict(mlp, hsl, l1b, n, order=[1, 0], opp_sums=opp, opp_n_moves=n_opp, feature_set="fused_opp_diff_hd", hd_feats=np.zeros(5)))
+    with pytest.raises(ValueError, match="hd_feats"):
+        fused.fused_predict(mlp, hsl, l1b, n, order=[1, 0], opp_sums=opp, opp_n_moves=n_opp, feature_set="fused_opp_diff_hd")
+    with pytest.raises(ValueError, match="handicap features"):
+        fused.fused_predict(mlp, hsl, l1b, n, order=[1, 0], opp_sums=opp, opp_n_moves=n_opp, feature_set="fused_opp_diff_hd", hd_feats=np.zeros(4))
+    with pytest.raises(ValueError, match="opponent"):
+        fused.fused_predict(mlp, hsl, l1b, n, order=[1, 0], feature_set="fused_opp_diff_hd", hd_feats=hd)
+    # a document of another size is still recognised by its names; one of 64 unknown names is not
+    broken = json.loads(path.read_text())
+    broken["features"] = [f"x{i}" for i in range(64)]
+    (tmp_path / "bad.json").write_text(json.dumps(broken))
+    with pytest.raises(ValueError, match="neither this code's .* nor fused_opp_diff_hd"):
+        fused.load_fused_model(tmp_path / "bad.json")

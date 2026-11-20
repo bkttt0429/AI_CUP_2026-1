@@ -34,7 +34,8 @@ if str(ROOT / "src") not in sys.path:
 from aicup.l1b import load_heads, score_positions  # noqa: E402
 from aicup.ladder import FOLDS_CSV, environment, to_json  # noqa: E402
 from aicup.metric import LEVELS  # noqa: E402
-from aicup.scoring import fold_players, init_worker, load_games, part_paths, player_games, resume_plan, score_stream  # noqa: E402
+from aicup.scoring import (fold_players, init_worker, load_games, part_paths, player_games, read_game_keys, restrict_players,  # noqa: E402
+                           resume_plan, score_stream)
 
 CKPT = ROOT / "models" / "katago" / "b18c384nbt-humanv0.ckpt"
 HEADS_SUMMARY = ("train_folds", "max_games", "best_epoch", "inner_nll_init", "inner_nll_best", "stopped_early", "n_params",
@@ -135,6 +136,8 @@ def main(argv=None):
     ap.add_argument("--folds-csv", default=str(FOLDS_CSV))
     ap.add_argument("--allow-seen", action="store_true")
     ap.add_argument("--opponent", action="store_true", help="score the opponent's moves (the other colour) instead of the target player's")
+    ap.add_argument("--game-keys", default=None, help="score only these games of each fold's selection (a CSV with a game_key column or one key "
+                    "per line), e.g. the HD >= 2 games again into a patch directory that scripts/patch_scored.py merges (issue #42)")
     a = ap.parse_args(argv)
     model = load_trunk(a.ckpt, a.model_config, "cpu")  # on the CPU until the pool is forked
     try:
@@ -156,8 +159,11 @@ def main(argv=None):
         return score_positions(model, heads, bins, globs, legal, target, colors)
 
     try:
+        only = read_game_keys(a.game_keys) if a.game_keys else None
         for fold in a.folds:
             players = fold_players(all_games, folds_df, fold, max_games=a.max_games, min_games=a.min_games)
+            if only is not None:
+                players = restrict_players(players, only)
             n_games, n_pos, secs = score_fold(fold, players, a.out, a.shard, a.nshards, a.part_size, pool, scorer, meta_heads, opponent=a.opponent)
             print(f"fold {fold} done: {n_games} games, {n_pos} positions scored, {secs / 60:.1f} min", flush=True)
     finally:

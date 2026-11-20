@@ -1,0 +1,18 @@
+{
+  "attempted": 43243,
+  "counts_sha256": "6a856cea24bb706388f558a731fb67eeecb4b7f3f83407836b9d834b14b3561e",
+  "eligible": 63181,
+  "games": 115445,
+  "same_turns_as_defense": true,
+  "sha256": {
+    "/home/u2507115/BK_AICUP_2026-1/research_notes/ladder_rank_20261118/attack_protocol.json": "ba0e6ff0c049b4c371ffff413847d6bd4dde41cc65663b8014073ab3a6485269",
+    "/home/u2507115/BK_AICUP_2026-1/research_notes/ladder_rank_20261118/extract_attacks.py": "eb41882f4a27f448636d07222c3eecd304fbc6138a7f359f9eee16425f0cc270",
+    "/home/u2507115/BK_AICUP_2026-1/research_notes/ladder_rank_20261118/extract_games.py": "9bda393ac21b8469b862ae1e7bec03c2c7c7ccb1014d6b06997017668ca2efd7",
+    "/home/u2507115/BK_AICUP_2026-1/research_notes/ladder_rank_20261118/extraction.json": "f4594a450c04825a95cb21fd33f75ec47e93c9a1457cd21b891659c6cf98bbf1",
+    "/home/u2507115/BK_AICUP_2026-1/research_notes/ladder_rank_20261118/read_attacks.cpp": "06546f81c78994b74e21159b177bd95e29933266c247375b3aa602d927fc3093",
+    "/home/u2507115/BK_AICUP_2026-1/results/trunk_seq/r_val1.json": "e9252f66ccd94e1ea0a6729d33ba8093e2fb8ab495b2abe83226922a1b652201",
+    "/home/u2507115/BK_AICUP_2026-1/results/trunk_seq/r_val2.json": "d7e96a1e88f21733f281c5f3115890e09f7fbfe15fdecd0f6ab5417d1ce9fb56",
+    "/home/u2507115/BK_AICUP_2026-1/results/trunk_seq/r_val3.json": "7e01443faba2a2a0b1cb58caa37e6d3fd6ce74546d7d9b4d13e89db1a7663284",
+    "/home/u2507115/BK_AICUP_2026-1/results/trunk_seq/r_val4.json": "8d8dde118c1d2c13333b4a2087883af4c6a7e9312d1ea609b41bab1c55357c8b"
+  }
+}

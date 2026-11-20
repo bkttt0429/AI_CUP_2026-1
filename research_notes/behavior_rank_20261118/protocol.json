@@ -1,0 +1,17 @@
+{
+  "question": "Can a frozen policy conditioned on other players of a candidate rank improve the existing R1 move-based rank ensemble on ambiguous adjacent-rank questions?",
+  "levels": ["D", "C", "B", "A", "1D", "2D", "3D", "4D", "5D", "6D"],
+  "development_fold": 1,
+  "evaluation_fold": 2,
+  "baseline": ["C-pc-f0-x40-oh", "T-pc-f0-x40-oh"],
+  "baseline_seeds": [0, 1, 2],
+  "behavior_seeds": [20261116, 20261117],
+  "selection": "5 games, two largest baseline probabilities are adjacent, largest/second <= 2, one question per owner, deterministic hash order, up to 12 per boundary per fold. Equal quotas refer to predicted boundaries, never to true labels.",
+  "reference_bank": "64 pilot training players in folds 3/4, seven reference games each. Each person gets equal weight within their known rank. Never use a query player's reference or a query rank at inference.",
+  "feature": "Average observed move log-likelihood for references one grade higher minus lower. Equal weights over selected moves per game, five games, reference players within grade and two frozen model seeds. Secondary controls use the same network with displaced reference actions, their intact-minus-displaced difference, and mean neutral played-move log-probability.",
+  "calibration": "For each feature subtract its development-fold mean by predicted boundary, then divide by one pooled development standard deviation. Fit one nonnegative slope [0,2] on fold 1 minimizing mean ten-class NLL + 0.05*slope^2. Add +slope*z/2 to the higher candidate logit and -slope*z/2 to the lower one. Keep all ten classes. No parameter is selected on fold 2.",
+  "evaluation": "On fold 2 use paired ten-class NLL gain versus the unchanged six-member rank ensemble, and versus its separately calibrated displaced-action augmentation. Require both one-sided directions with two-sided 95% intervals entirely above zero to support incremental context binding; no model selection. Also report exact rank accuracy, mean official per-question score, and the same fixed slope's corrections/regressions. Stratified paired bootstrap over query players within predicted boundary, 10000 draws, conditional on trained models, reference bank, calibration and selected sample.",
+  "exclusions": "Drop a whole question if any of its five games cannot be replayed, if its SGF repeats within the study, or if it matches a behavior-pilot SGF. Report all exclusions. Never replace after seeing scores.",
+  "same_grade_pilot": "For the original 20 pilot test players, average seeds and the three heldout games before testing. Compare own references versus mean other same-grade references, also intact minus displaced, and run a one-sided exact permutation of owners inside each rank. Omit singleton ranks. Reference permutation here differs from the within-reference action displacement control.",
+  "scope": "Exploratory, 5-game ambiguous items only. No official questions or leaderboard labels, no new backbone training, no submission. Folds 1/2 were used in previous R1 experiments; these players were unseen by the frozen behavior head."
+}

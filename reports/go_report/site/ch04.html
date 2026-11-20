@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AICUP 棋力預測 第 4 章：每手證據：Human SL 到 L1b</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/report.css">
+</head>
+<body class="m-read" data-chapter="4" data-prev="ch03.html" data-next="ch05.html">
+<header class="top"><h1><button type="button" class="ch-menu-btn" aria-haspopup="dialog" aria-controls="ch-menu" aria-expanded="false">AICUP 棋力預測 · 第 4 章 每手證據：Human SL 到 L1b <span class="ch-menu-caret" aria-hidden="true">▾</span></button></h1><div class="modes" role="group" aria-label="模式">
+    <button data-mode="present" aria-pressed="false">簡報</button>
+    <button data-mode="read" aria-pressed="true">閱讀</button>
+    <button data-mode="notes" aria-pressed="false">筆記</button>
+  </div></header>
+<dialog class="ch-menu-dlg" id="ch-menu" aria-label="章節"><a href="index.html"><span>章節架構</span> <span class="ch-menu-meta"></span></a><hr><a href="ch01.html"><span>1 · 任務與資料</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch02.html"><span>2 · 工具：KataGo 與 Human SL</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch03.html"><span>3 · 現行架構：提交候選</span> <span class="ch-menu-meta">3 頁</span></a><a href="ch04.html" aria-current=page><span>4 · 每手證據：Human SL 到 L1b</span> <span class="ch-menu-meta">4 頁 · 目前</span></a><a href="ch05.html"><span>5 · 聚合與第二份證據</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch06.html"><span>6 · 沒有通過的方向</span> <span class="ch-menu-meta">3 頁</span></a><a href="ch07.html"><span>7 · 錯誤結構與診斷</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch08.html"><span>8 · 架構 v2 與規則</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch09.html"><span>9 · 提交流程與未確認事項</span> <span class="ch-menu-meta">3 頁</span></a><hr><a href="talk.html"><span>整份報告（35 頁）</span> <span class="ch-menu-meta"></span></a></dialog>
+<main>
+<section class="page opening" id="opening">
+  <div class="kicker">AICUP 棋力預測 · 第 4 章 · 每手證據：Human SL 到 L1b</div>
+  <p class="hook">既有的人類落子模型能直接判斷等級嗎？<br>用本資料的標籤訓練會更好嗎？</p>
+  <p class="lead">KataGo Human SL（humanv0）可依等級 profile 產生人類落子機率，是最便宜的起點；L1b 在同一個 trunk 上加 10 個等級 head，用本資料標籤訓練。本章說明兩者的訊號，以及為何只有鑑別式目標才把題目分數拉開。</p>
+  <nav class="opening-route" aria-label="本章路線"><a href="#card-scale">尺度</a><span aria-hidden="true">→</span><a href="#card-mlp">映射</a><span aria-hidden="true">→</span><a href="#card-disc">L1b</a></nav>
+  <ol><li id="opening-q1"><b>1</b><a href="#card-scale">Human SL 的等級和本資料的等級對得上嗎？</a></li><li id="opening-q2"><b>2</b><a href="#card-mlp">用本資料學映射能到多少？</a></li><li id="opening-q3"><b>3</b><a href="#card-disc">每手證據能不能用本資料的標籤變好？</a></li></ol>
+  <div class="meta"><span>humanv0 18 個 profile · L1b 模型 A（folds 1、2）與 B（folds 3、4）</span><span>3 張報告卡 · 推導見「推導 ▸」</span></div>
+</section>
+<section class="page card" id="card-scale" data-sec="0">
+  <div class="report">
+    <div>
+      <div class="num"><a class="trace" href="#opening-q1">第 4 章 · 問題 1／3</a></div>
+      <h3>訊號單調但尺度被壓縮：10 個等級只對到 KGS 6k–2d，硬分箱僅 0.25</h3>
+      <div class="formula">pmi = Σ<sub>r</sub> r · softmax( L<sub>r</sub> )</div>
+      <ul><li>似然峰值隨等級單調右移；posterior-mean index 與等級的 Spearman 0.944</li><li>零樣本硬分箱官方分 0.25（段位幾乎全錯）</li><li>1D–4D 擠在 2k–1k，尺度必須學</li></ul>
+    </div>
+    <div class="fig"><div class="stage"><svg viewBox="0 0 560 300" role="img" aria-label="10 個等級的似然峰值只落在 KGS 6k 到 2d 之間，遠比標稱範圍窄"><circle cx="50" cy="12" r="5" fill="#ffffff" stroke="#5d6370" stroke-width="2"/><text x="62.0" y="16.0" font-size="12" fill="#5d6370" text-anchor="start">標稱位置</text><circle cx="136.0" cy="12" r="5" fill="#0b6e69"/><text x="148.0" y="16.0" font-size="12" fill="#5d6370" text-anchor="start">實測似然峰值</text><line x1="44.0" y1="272.0" x2="504.0" y2="272.0" stroke="#d9dbe0" stroke-width="1" fill="none"/><text x="38.0" y="276.0" font-size="11" fill="#5d6370" text-anchor="end">12k</text><line x1="44.0" y1="230.0" x2="504.0" y2="230.0" stroke="#d9dbe0" stroke-width="1" fill="none"/><text x="38.0" y="234.0" font-size="11" fill="#5d6370" text-anchor="end">9k</text><line x1="44.0" y1="188.0" x2="504.0" y2="188.0" stroke="#d9dbe0" stroke-width="1" fill="none"/><text x="38.0" y="192.0" font-size="11" fill="#5d6370" text-anchor="end">6k</text><line x1="44.0" y1="146.0" x2="504.0" y2="146.0" stroke="#d9dbe0" stroke-width="1" fill="none"/><text x="38.0" y="150.0" font-size="11" fill="#5d6370" text-anchor="end">3k</text><line x1="44.0" y1="104.0" x2="504.0" y2="104.0" stroke="#d9dbe0" stroke-width="1" fill="none"/><text x="38.0" y="108.0" font-size="11" fill="#5d6370" text-anchor="end">1d</text><line x1="44.0" y1="76.0" x2="504.0" y2="76.0" stroke="#d9dbe0" stroke-width="1" fill="none"/><text x="38.0" y="80.0" font-size="11" fill="#5d6370" text-anchor="end">3d</text><line x1="44.0" y1="34.0" x2="504.0" y2="34.0" stroke="#d9dbe0" stroke-width="1" fill="none"/><text x="38.0" y="38.0" font-size="11" fill="#5d6370" text-anchor="end">6d</text><text x="67.0" y="292.0" font-size="12" fill="#1d1f24" text-anchor="middle">D</text><text x="113.0" y="292.0" font-size="12" fill="#1d1f24" text-anchor="middle">C</text><text x="159.0" y="292.0" font-size="12" fill="#1d1f24" text-anchor="middle">B</text><text x="205.0" y="292.0" font-size="12" fill="#1d1f24" text-anchor="middle">A</text><text x="251.0" y="292.0" font-size="12" fill="#1d1f24" text-anchor="middle">1D</text><text x="297.0" y="292.0" font-size="12" fill="#1d1f24" text-anchor="middle">2D</text><text x="343.0" y="292.0" font-size="12" fill="#1d1f24" text-anchor="middle">3D</text><text x="389.0" y="292.0" font-size="12" fill="#1d1f24" text-anchor="middle">4D</text><text x="435.0" y="292.0" font-size="12" fill="#1d1f24" text-anchor="middle">5D</text><text x="481.0" y="292.0" font-size="12" fill="#1d1f24" text-anchor="middle">6D</text><polyline points="67.0,258.0 113.0,216.0 159.0,174.0 205.0,132.0 251.0,104.0 297.0,90.0 343.0,76.0 389.0,62.0 435.0,48.0 481.0,34.0" fill="none" stroke="#d9dbe0" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/><polyline points="67.0,188.0 113.0,174.0 159.0,160.0 205.0,146.0 251.0,132.0 297.0,132.0 343.0,125.0 389.0,118.0 435.0,104.0 481.0,90.0" fill="none" stroke="#0b6e69" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="67.0" cy="258.0" r="4.5" fill="#ffffff" stroke="#5d6370" stroke-width="2"><title>D 標稱 11k</title></circle><circle cx="113.0" cy="216.0" r="4.5" fill="#ffffff" stroke="#5d6370" stroke-width="2"><title>C 標稱 8k</title></circle><circle cx="159.0" cy="174.0" r="4.5" fill="#ffffff" stroke="#5d6370" stroke-width="2"><title>B 標稱 5k</title></circle><circle cx="205.0" cy="132.0" r="4.5" fill="#ffffff" stroke="#5d6370" stroke-width="2"><title>A 標稱 2k</title></circle><circle cx="251.0" cy="104.0" r="4.5" fill="#ffffff" stroke="#5d6370" stroke-width="2"><title>1D 標稱 1d</title></circle><circle cx="297.0" cy="90.0" r="4.5" fill="#ffffff" stroke="#5d6370" stroke-width="2"><title>2D 標稱 2d</title></circle><circle cx="343.0" cy="76.0" r="4.5" fill="#ffffff" stroke="#5d6370" stroke-width="2"><title>3D 標稱 3d</title></circle><circle cx="389.0" cy="62.0" r="4.5" fill="#ffffff" stroke="#5d6370" stroke-width="2"><title>4D 標稱 4d</title></circle><circle cx="435.0" cy="48.0" r="4.5" fill="#ffffff" stroke="#5d6370" stroke-width="2"><title>5D 標稱 5d</title></circle><circle cx="481.0" cy="34.0" r="4.5" fill="#ffffff" stroke="#5d6370" stroke-width="2"><title>6D 標稱 6d</title></circle><circle cx="67.0" cy="188.0" r="5" fill="#0b6e69" stroke="#ffffff" stroke-width="1.5"><title>D 實測峰值 6k</title></circle><circle cx="113.0" cy="174.0" r="5" fill="#0b6e69" stroke="#ffffff" stroke-width="1.5"><title>C 實測峰值 5k</title></circle><circle cx="159.0" cy="160.0" r="5" fill="#0b6e69" stroke="#ffffff" stroke-width="1.5"><title>B 實測峰值 4k</title></circle><circle cx="205.0" cy="146.0" r="5" fill="#0b6e69" stroke="#ffffff" stroke-width="1.5"><title>A 實測峰值 3k</title></circle><circle cx="251.0" cy="132.0" r="5" fill="#0b6e69" stroke="#ffffff" stroke-width="1.5"><title>1D 實測峰值 2k</title></circle><circle cx="297.0" cy="132.0" r="5" fill="#0b6e69" stroke="#ffffff" stroke-width="1.5"><title>2D 實測峰值 2k</title></circle><circle cx="343.0" cy="125.0" r="5" fill="#0b6e69" stroke="#ffffff" stroke-width="1.5"><title>3D 實測峰值 2k/1k</title></circle><circle cx="389.0" cy="118.0" r="5" fill="#0b6e69" stroke="#ffffff" stroke-width="1.5"><title>4D 實測峰值 1k</title></circle><circle cx="435.0" cy="104.0" r="5" fill="#0b6e69" stroke="#ffffff" stroke-width="1.5"><title>5D 實測峰值 1d</title></circle><circle cx="481.0" cy="90.0" r="5" fill="#0b6e69" stroke="#ffffff" stroke-width="1.5"><title>6D 實測峰值 2d</title></circle><text x="67.0" y="178.0" font-size="12" fill="#1d1f24" text-anchor="middle">6k</text><text x="493.0" y="94.0" font-size="12" fill="#1d1f24" text-anchor="start">2d</text></svg></div><div class="cap">每級 20 人、每人 20 局；3D 的峰值落在 2k、1k 之間，畫在中點</div><div class="sources"><div class="source-chips" role="group" aria-label="出處"><span class="source-chip" data-field="資料"><b>資料</b> results/pilot_humansl.json</span><span class="source-chip source-scope" data-field="範圍"><b>範圍</b> fold 0 pilot，200 人</span></div></div></div>
+    <div class="cause"><span class="pair"><span class="k">問題</span><b>預訓練模型能零樣本判斷嗎？</b></span><span class="arrow">→</span><span class="pair"><span class="k go">作法</span><b>每級 20 人掃 18 個 profile</b></span><span class="arrow">→</span><span class="pair"><span class="k stuck">限制</span><b>尺度要學，怎麼學？</b></span><span class="bridge"><a href="#card-mlp">接續：24 維題目特徵加 MLP 到 CV 0.6192，比官方 baseline 高約 0.17</a><span class="bridge-text">接續：24 維題目特徵加 MLP 到 CV 0.6192，比官方 baseline 高約 0.17</span></span></div>
+  </div>
+  <button class="deriv-open" data-sec="0" aria-haspopup="dialog">推導 ▸</button>
+</section>
+<section class="lesson" id="sec-0" data-title="4.1 Pilot：零樣本的結果">
+  <h3>4.1 Pilot：零樣本的結果</h3>
+  <p class="proves">對應報告卡 1：訊號單調但尺度被壓縮：10 個等級只對到 KGS 6k–2d，硬分箱僅 0.25</p>
+  <p>Pilot 從 fold 0 與 fold 1 各取 200 人（每級 20 人）× 20 局，每手算 18 個 profile。Python 直讀權重與 KataGo 引擎對照過：20 個局面的目標落子最大差 3.8×10⁻⁴，argmax 全部一致。用 fold 1 擬合單調門檻再測 fold 0，分數升到 n=5 0.586、n=10 0.601、n=20 0.647。</p>
+  <p class="takeaway">Human SL 的序數訊號可用，等級尺度不能照搬，必須用本資料學映射。</p>
+</section>
+<section class="page card" id="card-mlp" data-sec="1">
+  <div class="report">
+    <div>
+      <div class="num"><a class="trace" href="#opening-q2">第 4 章 · 問題 2／3</a></div>
+      <h3>24 維題目特徵加 MLP 到 CV 0.6192，比官方 baseline 高約 0.17</h3>
+      <div class="formula">x(Q) ∈ ℝ<sup>24</sup> → MLP(h = 32) → q(k | Q)</div>
+      <ul><li>18 維相對曲線、峰值、log 局數、log 總手數等 24 維</li><li>fold 0：0.6113，與 CV 的差在雜訊內</li><li>1D、2D、3D 仍只有 0.47、0.42、0.50</li></ul>
+    </div>
+    <div class="fig"><div class="stage"><div class="table-wrap"><table><thead><tr><th>模型（同一組 fold 0 題）</th><th>官方分</th></tr></thead><tbody><tr><td>官方 baseline，argmax</td><td class="n">0.399</td></tr><tr><td>官方 baseline，期望得分</td><td class="n">0.440</td></tr><tr><td>單調門檻</td><td class="n">0.597</td></tr><tr><td>邏輯迴歸</td><td class="n">0.600</td></tr><tr class="hl"><td>MLP h32（每人 32 題）</td><td class="n">0.6113</td></tr></tbody></table></div></div><div class="cap">官方 baseline 為 Tutorial notebook 原封重跑，只改切分</div><div class="sources"><div class="source-chips" role="group" aria-label="出處"><span class="source-chip" data-field="資料"><b>資料</b> results/baseline_official_eval.json、opp_fold0_check.json</span></div></div></div>
+    <div class="cause"><span class="pair"><span class="k">問題</span><b>尺度要學</b></span><span class="arrow">→</span><span class="pair"><span class="k go">作法</span><b>題目特徵 + 小 MLP</b></span><span class="arrow">→</span><span class="pair"><span class="k stuck">限制</span><b>每手證據能不能用本資料的標籤變好？</b></span><span class="bridge"><a href="#card-disc">接續：能，但只有鑑別式目標有效：NLL 變好不帶動題目分數，加等級交叉熵後 fused 升到 0.6545</a><span class="bridge-text">接續：能，但只有鑑別式目標有效：NLL 變好不帶動題目分數，加等級交叉熵後 fused 升到 0.6545</span></span></div>
+  </div>
+  <button class="deriv-open" data-sec="1" aria-haspopup="dialog">推導 ▸</button>
+</section>
+<section class="lesson" id="sec-1" data-title="4.2 題目特徵與第一個基準">
+  <h3>4.2 題目特徵與第一個基準</h3>
+  <p class="proves">對應報告卡 2：24 維題目特徵加 MLP 到 CV 0.6192，比官方 baseline 高約 0.17</p>
+  <p>全量評分涵蓋 7,948 人、147,780 局、1,643 萬個目標落子，每手 18 個 profile。題目特徵 24 維：18 維相對每手 log p 曲線、最佳 profile 的每手 log p、posterior-mean index、拋物線內插峰值、log 總手數、log 局數、各局最佳 profile 的標準差。folds 1–4：門檻 0.596、邏輯迴歸 0.609、MLP h32 0.6192。換線性或非線性分類器不是往上的路。</p>
+  <p class="takeaway">學出來的映射讓分數從 0.25 升到約 0.62；再往上要改每手證據本身。</p>
+</section>
+<section class="page card" id="card-disc" data-sec="2">
+  <div class="report">
+    <div>
+      <div class="num"><a class="trace" href="#opening-q3">第 4 章 · 問題 3／3</a></div>
+      <h3>能，但只有鑑別式目標有效：NLL 變好不帶動題目分數，加等級交叉熵後 fused 升到 0.6545</h3>
+      <div class="formula">L = NLL + λ · CE( log p<sub>1…10</sub>(a), k )，λ = 1</div>
+      <ul><li>10 個等級 head 接在凍結的 humanv0 trunk 上，一次前向出 10 個 log p</li><li>A 訓 folds 1、2 評 0、3、4；B 訓 3、4 評 0、1、2：每位玩家的特徵都來自沒看過他的模型</li><li>fused 0.6545，對 hsl +0.0352 [+0.0303, +0.0404]；fold 0 0.6535，+0.0422 [+0.0323, +0.0524]</li></ul>
+    </div>
+    <div class="fig"><div class="stage"><div class="table-wrap"><table><thead><tr><th>階段</th><th>inner NLL</th><th>rank CE</th><th>fused CV</th></tr></thead><tbody><tr><td>1 凍結 trunk</td><td class="n">1.6164 → 1.4885</td><td class="n">—</td><td class="n">0.6257</td></tr><tr><td>2 微調 trunk</td><td class="n">→ 1.4339</td><td class="n">—</td><td class="n">0.6250</td></tr><tr class="hl"><td>3 鑑別式</td><td class="n">→ 1.5156</td><td class="n">2.286 → 2.137</td><td class="n">0.6545</td></tr></tbody></table></div></div><div class="cap">NLL 與 rank CE 為模型 A 的內層分數</div><div class="sources"><div class="source-chips" role="group" aria-label="出處"><span class="source-chip" data-field="資料"><b>資料</b> results/l1b/heads*_A.json、cv_summary{,2,3}.json</span></div></div></div>
+    <div class="cause"><span class="pair"><span class="k">問題</span><b>Human SL 不是為本資料的等級訓練</b></span><span class="arrow">→</span><span class="pair"><span class="k go">作法</span><b>在 trunk 上訓 head，保持 out-of-fold；直接訓練 head 之間的等級鑑別力</b></span><span class="arrow">→</span><span class="pair"><span class="k stuck">限制</span><b>目標玩家的落子用完了，還有別的證據嗎？</b></span><span class="bridge"><a href="ch05.html#opening">接續：第 5 章　聚合與第二份證據</a><span class="bridge-text">接續：第 5 章　聚合與第二份證據</span></span></div>
+  </div>
+  <button class="deriv-open" data-sec="2" aria-haspopup="dialog">推導 ▸</button>
+</section>
+<section class="lesson" id="sec-2" data-title="4.3 L1b：結構、鑑別式目標與洩漏檢查">
+  <h3>4.3 L1b：結構、鑑別式目標與洩漏檢查</h3>
+  <p class="proves">對應報告卡 3：能，但只有鑑別式目標有效：NLL 變好不帶動題目分數，加等級交叉熵後 fused 升到 0.6545</p>
+  <p>metadata 用 humanv0 訓練時見過的「等級未知」列，等級資訊只經由 10 個 head 注入，所以一次 trunk 前向就得到 10 個等級的 log p。生成式 NLL 要每個 head 把自己等級的落子預測好，但判斷等級需要的是 head 之間的差異；鑑別式目標把 10 個 head 對實際落子的 log p 當 logits 預測玩家等級，選模看 NLL + CE。</p>
+<p>增幅遠大於所有聚合器實驗，所以先查洩漏：A、B 的訓練與出特徵 folds 沒有交叉；再用兩個模型都沒看過的 fold 0 檢查（經使用者核准、不作選擇）：fused_A 0.6479、fused_B 0.6510、平均 0.6535，與 CV 一致。測試時 A、B 各出一套特徵、各走一次 MLP，機率平均。</p>
+<p>每手只存實際落子那一格的 log p：目標手 18 個 profile 與 10 個 head、對手手 10 個 head。重評分約 900 局面／秒／卡；全量兩側約 2.2 億局面，8 卡一節點約 8–9 小時。</p>
+  <p class="takeaway">對這個計分，目標函數比模型容量重要；每手層級的 NLL 進步不保證傳到題目層級（第 6 章還會看到兩次）。</p>
+</section>
+<section class="after" id="recap">
+  <h3>本章結論</h3><p>Human SL 的序數訊號可用但尺度要學（0.6192）；L1b 的增益來自鑑別式目標（+0.0352），fold 0 的檢查確認沒有洩漏。</p>
+  <div class="next"><b>待解問題　</b>目標玩家的落子之外還有證據嗎？第 5 章看聚合方式與對手的落子。</div>
+  <section class="refs"><h3>參考文獻</h3><ol><li>Wu, D. J. (2019). Accelerating self-play learning in Go. <em>arXiv:1902.10565</em>.（本研究使用 KataGo 的 b18c384nbt-humanv0 權重）</li><li>本專案紀錄：<code>METHOD_NOTES.md</code>、<code>docs/NANO4.md</code>、<code>results/</code>、<code>reports/architecture_v2_2026-11-02.md</code>；GitHub issue #6、#23、#36、#42。</li></ol></section>
+</section>
+<nav class="chapter-nav" aria-label="上一章／下一章"><a class="prev" href="ch03.html">‹ 第 3 章　現行架構：提交候選</a><a class="next" href="ch05.html">第 5 章　聚合與第二份證據 ›</a></nav>
+</main>
+<dialog class="lesson-dlg" id="dlg" aria-labelledby="dlg-t">
+  <div class="dlg-head"><span class="k" id="dlg-k">第 4 章 · 推導</span><span class="t" id="dlg-t"></span><button class="x" aria-label="關閉">✕</button></div>
+  <div class="dlg-body"></div>
+  <div class="dlg-foot"><button class="prev">‹ 上一節</button><button class="nextb">下一節 ›</button><button class="whole">閱讀全章</button></div>
+</dialog>
+<nav class="pager" aria-label="頁面導覽">
+  <button type="button" class="pg-prev" aria-label="上一頁">‹</button>
+  <span id="pg" title="← → 換頁 · D 推導 · Esc 離開">4 · 1／4</span>
+  <button type="button" class="pg-next" aria-label="下一頁">›</button>
+  <span class="pg-hint" aria-live="polite"></span>
+</nav>
+<script src="assets/core.js"></script>
+<script src="assets/report.js"></script>
+<script src="assets/modes.js"></script>
+</body>
+</html>

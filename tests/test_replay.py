@@ -75,6 +75,9 @@ def test_build_payload_is_json_and_aligns_evidence_with_moves():
     json.dumps(payload)
     g = payload["games"][0]
     assert g["color"] == "W" and g["rank"] == "A" and g["band"] == [8, 10]
-    assert g["moves"] == [[15, 3], [3, 15], [15, 16], [3, 3]]
+    assert g["moves"] == [[15, 3], [3, 15], [15, 16], [3, 3]] and g["stones"] == [] and g["first"] == "B" and g["handicap"] is None
     assert g["evidence"]["t"] == [1, 3] and len(g["evidence"]["pmi"]) == 2
+    # a handicap record (dataset v1.1): the stones are listed, the moves keep their coordinates and White moves first
+    h = build_payload(rows, {"A:g1": ("(;SZ[19]HD[3];B[qf];W[cf])", "W")}, logp, {}, title="t", source="test")["games"][0]
+    assert h["stones"] == [[15, 3], [3, 15], [3, 3]] and h["first"] == "W" and h["handicap"] == 3 and h["moves"] == [[16, 5], [2, 5]]
     assert payload["profiles"][0] == "12k" and payload["levels"][-1] == "6D"

@@ -1,0 +1,10 @@
+{
+  "menus": 130392,
+  "roots": 172840,
+  "sha256": {
+    "corpus_5.tsv.gz": "e93aa2efc83b78f53cb6d00c72b28260f9d933d4315cd088e3d3d9b87f706e2b",
+    "protocol.json": "54f5dc092611e1f18e72d19826bd8ebda33ff50280d286523ddc7944d02f11bc",
+    "root_5.npz": "4ac364a2b7aebfc5b502abeb5792e89cf586468703e970424058424869e5e4b4",
+    "search.py": "da65d73522c299550660aeb5a9fbc86cf71d053506c43efcf9541c22512abb85"
+  }
+}

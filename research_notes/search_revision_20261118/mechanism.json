@@ -1,0 +1,566 @@
+{
+  "bootstrap_draws": 4000,
+  "question_coverage": {
+    "10": {
+      "medians": {
+        "eligible": 83.0,
+        "named": 28.0,
+        "sampled": 110.0,
+        "strong": 6.0,
+        "strong_named": 2.0
+      },
+      "questions": 5566,
+      "strong_named_at_least_1": 0.8726194753862738,
+      "strong_named_at_least_2": 0.6200143729787999
+    },
+    "20": {
+      "medians": {
+        "eligible": 165.0,
+        "named": 56.0,
+        "sampled": 220.0,
+        "strong": 11.0,
+        "strong_named": 4.0
+      },
+      "questions": 2543,
+      "strong_named_at_least_1": 0.9775855289028706,
+      "strong_named_at_least_2": 0.9091624066063704
+    },
+    "5": {
+      "medians": {
+        "eligible": 41.0,
+        "named": 14.0,
+        "sampled": 55.0,
+        "strong": 3.0,
+        "strong_named": 1.0
+      },
+      "questions": 11530,
+      "strong_named_at_least_1": 0.651517779705117,
+      "strong_named_at_least_2": 0.29679098005203813
+    }
+  },
+  "repeatability": {
+    "median_both_halves_have_a_strong_named_move": 0.7675973259929217,
+    "median_person_correlations": {
+      "continuous_revision_response": {
+        "all": 0.021027435176710352,
+        "within_rank": 0.019752101298970967
+      },
+      "named_pair_rate": {
+        "all": 0.5218358910702257,
+        "within_rank": 0.19462681590791814
+      },
+      "searched_choice_rate": {
+        "all": -0.013180933703281193,
+        "within_rank": -0.017900930670810854
+      },
+      "strong_reversal_choice_rate": {
+        "all": 0.01763908786717297,
+        "both_halves_observed": 0.020835479483373175,
+        "within_rank": 0.018628180838900263
+      }
+    },
+    "players": 2543,
+    "splits": 20
+  },
+  "samples": {
+    "new_games": {
+      "choices": {
+        "eligible": {
+          "B_among_all": 0.11956748678614991,
+          "choices_A_B_other": [
+            20077,
+            10881,
+            60045
+          ],
+          "menus": 91003,
+          "named_untied": 30958,
+          "searched_winner": 16705,
+          "winner_given_named": 0.5396020414755475
+        },
+        "exploratory_strong_manhattan_at_least_8": {
+          "B_among_all": 0.09525574499629355,
+          "choices_A_B_other": [
+            666,
+            257,
+            1775
+          ],
+          "menus": 2698,
+          "named_untied": 923,
+          "searched_winner": 393,
+          "winner_given_named": 0.4257854821235103
+        },
+        "exploratory_strong_manhattan_below_8": {
+          "B_among_all": 0.1468459152016546,
+          "choices_A_B_other": [
+            949,
+            568,
+            2351
+          ],
+          "menus": 3868,
+          "named_untied": 1517,
+          "searched_winner": 659,
+          "winner_given_named": 0.43441001977587346
+        },
+        "raw_A_to_search_B": {
+          "B_among_all": 0.11786666666666666,
+          "choices_A_B_other": [
+            1005,
+            442,
+            2303
+          ],
+          "menus": 3750,
+          "named_untied": 1447,
+          "searched_winner": 442,
+          "winner_given_named": 0.30545957152729786
+        },
+        "raw_B_to_search_A": {
+          "B_among_all": 0.13600852272727273,
+          "choices_A_B_other": [
+            610,
+            383,
+            1823
+          ],
+          "menus": 2816,
+          "named_untied": 993,
+          "searched_winner": 610,
+          "winner_given_named": 0.6143001007049346
+        },
+        "strong_reversal": {
+          "B_among_all": 0.1256472738349071,
+          "choices_A_B_other": [
+            1615,
+            825,
+            4126
+          ],
+          "menus": 6566,
+          "named_untied": 2440,
+          "searched_winner": 1052,
+          "winner_given_named": 0.4311475409836066
+        },
+        "strong_stable": {
+          "B_among_all": 0.13444113052123277,
+          "choices_A_B_other": [
+            8622,
+            4733,
+            21850
+          ],
+          "menus": 35205,
+          "named_untied": 13355,
+          "searched_winner": 7752,
+          "winner_given_named": 0.5804567577686259
+        }
+      },
+      "games": 11050,
+      "matched_strong_reversal": {
+        "1D/2D": {
+          "ci95": [
+            -0.06750430505884229,
+            0.14959032434121977
+          ],
+          "difference": 0.03761663118064258,
+          "draws": 4000,
+          "exploratory": false,
+          "opportunities_in_common_support": [
+            155,
+            206
+          ],
+          "strata_with_both": 34
+        },
+        "3D/4D": {
+          "ci95": [
+            -0.06009210920949977,
+            0.1178205250593917
+          ],
+          "difference": 0.029136068690274436,
+          "draws": 4000,
+          "exploratory": false,
+          "opportunities_in_common_support": [
+            210,
+            220
+          ],
+          "strata_with_both": 35
+        },
+        "D/6D": {
+          "ci95": [
+            -0.046763204733408045,
+            0.1228437843445002
+          ],
+          "difference": 0.040206391862752384,
+          "draws": 4000,
+          "exploratory": true,
+          "opportunities_in_common_support": [
+            198,
+            264
+          ],
+          "strata_with_both": 34
+        }
+      },
+      "observed_by_grade": {
+        "1D": {
+          "ci95": [
+            0.3625,
+            0.515527950310559
+          ],
+          "opportunities": 155,
+          "owners_all": 172,
+          "owners_observed": 100,
+          "rate": 0.43870967741935485,
+          "wins": 68
+        },
+        "2D": {
+          "ci95": [
+            0.3928524682124159,
+            0.5352729225571916
+          ],
+          "opportunities": 211,
+          "owners_all": 238,
+          "owners_observed": 141,
+          "rate": 0.46445497630331756,
+          "wins": 98
+        },
+        "3D": {
+          "ci95": [
+            0.33492506797630844,
+            0.46551724137931033
+          ],
+          "opportunities": 210,
+          "owners_all": 242,
+          "owners_observed": 138,
+          "rate": 0.4,
+          "wins": 84
+        },
+        "4D": {
+          "ci95": [
+            0.36651524484139203,
+            0.5076963350785341
+          ],
+          "opportunities": 224,
+          "owners_all": 250,
+          "owners_observed": 139,
+          "rate": 0.4375,
+          "wins": 98
+        },
+        "5D": {
+          "ci95": [
+            0.39,
+            0.5144753641006241
+          ],
+          "opportunities": 282,
+          "owners_all": 258,
+          "owners_observed": 166,
+          "rate": 0.450354609929078,
+          "wins": 127
+        },
+        "6D": {
+          "ci95": [
+            0.3956023454157782,
+            0.5129900530181429
+          ],
+          "opportunities": 274,
+          "owners_all": 277,
+          "owners_observed": 168,
+          "rate": 0.45255474452554745,
+          "wins": 124
+        },
+        "A": {
+          "ci95": [
+            0.3627684964200477,
+            0.4611743838685587
+          ],
+          "opportunities": 430,
+          "owners_all": 564,
+          "owners_observed": 302,
+          "rate": 0.4116279069767442,
+          "wins": 177
+        },
+        "B": {
+          "ci95": [
+            0.3869727636181909,
+            0.5098058591025343
+          ],
+          "opportunities": 267,
+          "owners_all": 387,
+          "owners_observed": 200,
+          "rate": 0.449438202247191,
+          "wins": 120
+        },
+        "C": {
+          "ci95": [
+            0.33157894736842103,
+            0.4720540027605245
+          ],
+          "opportunities": 189,
+          "owners_all": 308,
+          "owners_observed": 132,
+          "rate": 0.4021164021164021,
+          "wins": 76
+        },
+        "D": {
+          "ci95": [
+            0.33695097604259094,
+            0.47150259067357514
+          ],
+          "opportunities": 198,
+          "owners_all": 339,
+          "owners_observed": 147,
+          "rate": 0.40404040404040403,
+          "wins": 80
+        }
+      },
+      "owners": 3035,
+      "roots": 120800
+    },
+    "question_games": {
+      "choices": {
+        "eligible": {
+          "B_among_all": 0.120448161550725,
+          "choices_A_B_other": [
+            104924,
+            57117,
+            312163
+          ],
+          "menus": 474204,
+          "named_untied": 162041,
+          "searched_winner": 86854,
+          "winner_given_named": 0.5360001481106633
+        },
+        "exploratory_strong_manhattan_at_least_8": {
+          "B_among_all": 0.10208916648718501,
+          "choices_A_B_other": [
+            3328,
+            1422,
+            9179
+          ],
+          "menus": 13929,
+          "named_untied": 4750,
+          "searched_winner": 2077,
+          "winner_given_named": 0.43726315789473685
+        },
+        "exploratory_strong_manhattan_below_8": {
+          "B_among_all": 0.14453696694423418,
+          "choices_A_B_other": [
+            5054,
+            2864,
+            11897
+          ],
+          "menus": 19815,
+          "named_untied": 7918,
+          "searched_winner": 3575,
+          "winner_given_named": 0.4515029047739328
+        },
+        "raw_A_to_search_B": {
+          "B_among_all": 0.12247098695696826,
+          "choices_A_B_other": [
+            5115,
+            2385,
+            11974
+          ],
+          "menus": 19474,
+          "named_untied": 7500,
+          "searched_winner": 2385,
+          "winner_given_named": 0.318
+        },
+        "raw_B_to_search_A": {
+          "B_among_all": 0.1332165381920112,
+          "choices_A_B_other": [
+            3267,
+            1901,
+            9102
+          ],
+          "menus": 14270,
+          "named_untied": 5168,
+          "searched_winner": 3267,
+          "winner_given_named": 0.6321594427244582
+        },
+        "strong_reversal": {
+          "B_among_all": 0.12701517306780466,
+          "choices_A_B_other": [
+            8382,
+            4286,
+            21076
+          ],
+          "menus": 33744,
+          "named_untied": 12668,
+          "searched_winner": 5652,
+          "winner_given_named": 0.44616356173034416
+        },
+        "strong_stable": {
+          "B_among_all": 0.1342696292420799,
+          "choices_A_B_other": [
+            44962,
+            24637,
+            113890
+          ],
+          "menus": 183489,
+          "named_untied": 69599,
+          "searched_winner": 40013,
+          "winner_given_named": 0.5749076854552508
+        }
+      },
+      "games": 57650,
+      "matched_strong_reversal": {
+        "1D/2D": {
+          "ci95": [
+            -0.03893009621243827,
+            0.04762471796958707
+          ],
+          "difference": 0.004862928931430808,
+          "draws": 4000,
+          "exploratory": false,
+          "opportunities_in_common_support": [
+            755,
+            1106
+          ],
+          "strata_with_both": 36
+        },
+        "3D/4D": {
+          "ci95": [
+            -0.030223493798659438,
+            0.04588436626579369
+          ],
+          "difference": 0.007552659080306582,
+          "draws": 4000,
+          "exploratory": false,
+          "opportunities_in_common_support": [
+            1142,
+            1231
+          ],
+          "strata_with_both": 36
+        },
+        "D/6D": {
+          "ci95": [
+            -0.02172335551657464,
+            0.05366165840617492
+          ],
+          "difference": 0.01573540024832578,
+          "draws": 4000,
+          "exploratory": true,
+          "opportunities_in_common_support": [
+            1155,
+            1481
+          ],
+          "strata_with_both": 36
+        }
+      },
+      "observed_by_grade": {
+        "1D": {
+          "ci95": [
+            0.409856229064934,
+            0.4778559180190676
+          ],
+          "opportunities": 755,
+          "owners_all": 172,
+          "owners_observed": 168,
+          "rate": 0.4423841059602649,
+          "wins": 334
+        },
+        "2D": {
+          "ci95": [
+            0.41235999713071275,
+            0.47411541282353914
+          ],
+          "opportunities": 1106,
+          "owners_all": 244,
+          "owners_observed": 237,
+          "rate": 0.4430379746835443,
+          "wins": 490
+        },
+        "3D": {
+          "ci95": [
+            0.4051325617687199,
+            0.46450904765080214
+          ],
+          "opportunities": 1142,
+          "owners_all": 246,
+          "owners_observed": 238,
+          "rate": 0.4352014010507881,
+          "wins": 497
+        },
+        "4D": {
+          "ci95": [
+            0.41313287540372107,
+            0.4699552008724218
+          ],
+          "opportunities": 1231,
+          "owners_all": 256,
+          "owners_observed": 253,
+          "rate": 0.44191714053614944,
+          "wins": 544
+        },
+        "5D": {
+          "ci95": [
+            0.4277059337331858,
+            0.4802984439355333
+          ],
+          "opportunities": 1301,
+          "owners_all": 262,
+          "owners_observed": 257,
+          "rate": 0.45426594926979247,
+          "wins": 591
+        },
+        "6D": {
+          "ci95": [
+            0.4344633079434469,
+            0.4867022636296393
+          ],
+          "opportunities": 1481,
+          "owners_all": 282,
+          "owners_observed": 281,
+          "rate": 0.46049966239027684,
+          "wins": 682
+        },
+        "A": {
+          "ci95": [
+            0.4094707376719305,
+            0.456909036891936
+          ],
+          "opportunities": 1976,
+          "owners_all": 616,
+          "owners_observed": 553,
+          "rate": 0.4331983805668016,
+          "wins": 856
+        },
+        "B": {
+          "ci95": [
+            0.43142786421499296,
+            0.4837587238285145
+          ],
+          "opportunities": 1416,
+          "owners_all": 414,
+          "owners_observed": 390,
+          "rate": 0.4583333333333333,
+          "wins": 649
+        },
+        "C": {
+          "ci95": [
+            0.41056533827618164,
+            0.467147399801826
+          ],
+          "opportunities": 1105,
+          "owners_all": 326,
+          "owners_observed": 308,
+          "rate": 0.43891402714932126,
+          "wins": 485
+        },
+        "D": {
+          "ci95": [
+            0.4247447618262173,
+            0.4816985377169438
+          ],
+          "opportunities": 1155,
+          "owners_all": 356,
+          "owners_observed": 325,
+          "rate": 0.4536796536796537,
+          "wins": 524
+        }
+      },
+      "owners": 3174,
+      "roots": 629627
+    }
+  },
+  "sha256": {
+    "mechanism.py": "e9beefd6f962e2f1c7faf96c0d4c52e992509689a3bd9b0a7276e8d29e81a366",
+    "protocol.json": "54f5dc092611e1f18e72d19826bd8ebda33ff50280d286523ddc7944d02f11bc",
+    "rank_results.json": "33d8e7c8172e464254c4bad328ec670b483b2f75f8cb04b35b72895c97861099"
+  }
+}

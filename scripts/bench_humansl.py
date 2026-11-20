@@ -26,7 +26,8 @@ from katago.game.board import Board  # noqa: E402
 from katago.game.gamestate import GameState  # noqa: E402
 
 from aicup.humansl import load_humansl, make_profile_meta, stack_inputs, target_move_logps  # noqa: E402
-from aicup.sgf import parse_moves  # noqa: E402
+from aicup.pilot import start_state  # noqa: E402
+from aicup.sgf import setup_and_moves  # noqa: E402
 
 CKPT = ROOT / "models" / "katago" / "b18c384nbt-humanv0.ckpt"
 OUT = ROOT / "results" / "bench_0B.json"
@@ -43,9 +44,15 @@ def read_games(csv_path, n):
     return rows
 
 
-def target_states(moves, target_color):
-    """GameState snapshots right before each move of target_color."""
-    gs = GameState(19, GameState.RULES_CHINESE)
+def _replay(g):
+    """(moves, colour, stones) of a data row, as the scoring replays it (handicap stones placed, actual colours)."""
+    stones, moves = setup_and_moves(g["sgf_content"])
+    return moves, g["color"], stones
+
+
+def target_states(moves, target_color, stones=()):
+    """GameState snapshots right before each move of target_color (stones: a handicap game's Black setup stones)."""
+    gs = start_state(stones)
     out = []
     for c, x, y in moves:
         pla = Board.BLACK if c == "B" else Board.WHITE
@@ -85,7 +92,7 @@ def bench_end_to_end(model, features, games, meta):
     t0 = time.perf_counter()
     n_feat = 0
     for g in games:
-        for gs in target_states(parse_moves(g["sgf_content"]), g["color"]):
+        for gs in target_states(*_replay(g)):
             gs.get_input_features(features)
             n_feat += 1
     t_feat = time.perf_counter() - t0
@@ -93,7 +100,7 @@ def bench_end_to_end(model, features, games, meta):
     t0 = time.perf_counter()
     n_legal = 0
     for g in games[:20]:
-        for gs in target_states(parse_moves(g["sgf_content"]), g["color"]):
+        for gs in target_states(*_replay(g)):
             for i in range(features.pass_pos):
                 gs.board.would_be_legal(gs.board.pla, features.tensor_pos_to_loc(i, gs.board))
             n_legal += 1
@@ -102,7 +109,8 @@ def bench_end_to_end(model, features, games, meta):
     t0 = time.perf_counter()
     n_moves = 0
     for g in games:
-        n_moves += len(target_move_logps(model, features, parse_moves(g["sgf_content"]), g["color"], meta))
+        stones, moves = setup_and_moves(g["sgf_content"])
+        n_moves += len(target_move_logps(model, features, moves, g["color"], meta, stones=stones))
     torch.cuda.synchronize()
     t_e2e = time.perf_counter() - t0
     res = {
@@ -125,7 +133,7 @@ def main():
     model, features = load_humansl(str(CKPT), "cuda")
     meta = make_profile_meta("1d")
     games = read_games(a.csv, a.games)
-    states = target_states(parse_moves(games[0]["sgf_content"]), games[0]["color"])
+    states = target_states(*_replay(games[0]))
     print(f"GPU {torch.cuda.get_device_name(0)} | torch {torch.__version__} | {len(states)} real positions for batching")
     out = {
         "when": datetime.now().isoformat(timespec="seconds"),

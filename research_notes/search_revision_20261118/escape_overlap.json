@@ -1,0 +1,59 @@
+{
+  "audited_examples_meeting_rule": 0,
+  "earlier_eligible_escapes": 84746,
+  "eligible_two_move_menus_on_escape": 5454,
+  "escape_among_top_two": {
+    "opportunities": 1547,
+    "outside": 157,
+    "took_alternative_given_named": 0.15323741007194244,
+    "used_alternative": 213,
+    "used_direct": 1177
+  },
+  "example": null,
+  "scheduled_escapes": 8749,
+  "sha256": {
+    "escape_overlap.py": "610acf28040cf63e74bc373ddf883bd0daf9cd70da6eb3390d5e493b556d1c41",
+    "events.npz": "0bdb5a788945c192a3e373372c189c3649c36160fec9f175e562fe80aa05f802",
+    "offer_events.npz": "2a102797c84f26f4f1770fd3699c3535b69d5ff7e364a94e618b45427cb3586a",
+    "protocol.json": "54f5dc092611e1f18e72d19826bd8ebda33ff50280d286523ddc7944d02f11bc"
+  },
+  "strong_by_direction": {
+    "search_favors_alternative": {
+      "opportunities": 101,
+      "outside": 14,
+      "played_alternative_kinds": {
+        "capture": 1,
+        "immediate_rescue": 7,
+        "new_atari": 3,
+        "other_far": 0,
+        "other_near": 1,
+        "pass": 0
+      },
+      "took_alternative_given_named": 0.13793103448275862,
+      "used_alternative": 12,
+      "used_direct": 75
+    },
+    "search_favors_direct": {
+      "opportunities": 70,
+      "outside": 8,
+      "played_alternative_kinds": {
+        "capture": 0,
+        "immediate_rescue": 3,
+        "new_atari": 2,
+        "other_far": 0,
+        "other_near": 0,
+        "pass": 0
+      },
+      "took_alternative_given_named": 0.08064516129032258,
+      "used_alternative": 5,
+      "used_direct": 57
+    }
+  },
+  "strong_reversals": {
+    "opportunities": 171,
+    "outside": 22,
+    "took_alternative_given_named": 0.11409395973154363,
+    "used_alternative": 17,
+    "used_direct": 132
+  }
+}

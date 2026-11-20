@@ -1,0 +1,147 @@
+{
+ "tag": "only_01",
+ "cards": [
+  "c01_intro.html"
+ ],
+ "scripts": [
+  "a01_intro.js",
+  "a90_terms.js"
+ ],
+ "console": [],
+ "slides": {
+  "01 cover": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "",
+    "issues": [],
+    "m": {
+     "leftChars": 337,
+     "allChars": 337,
+     "svgTexts": 0,
+     "svgMin": null,
+     "svgP10": null,
+     "bottomGap": 57
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "",
+    "issues": [],
+    "m": {
+     "leftChars": 337,
+     "allChars": 337,
+     "svgTexts": 0,
+     "svgMin": null,
+     "svgP10": null,
+     "bottomGap": 57
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "02 card-task": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 1 章 · 比賽在做什麼",
+    "issues": [],
+    "m": {
+     "leftChars": 278,
+     "allChars": 478,
+     "svgTexts": 27,
+     "svgMin": 13.1,
+     "svgP10": 13.1,
+     "bottomGap": 123
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 1 章 · 比賽在做什麼",
+    "issues": [],
+    "m": {
+     "leftChars": 278,
+     "allChars": 478,
+     "svgTexts": 27,
+     "svgMin": 15.4,
+     "svgP10": 15.4,
+     "bottomGap": 164
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "03 card-weak": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 2 章 · 難在哪裡",
+    "issues": [],
+    "m": {
+     "leftChars": 248,
+     "allChars": 424,
+     "svgTexts": 13,
+     "svgMin": 14.8,
+     "svgP10": 14.8,
+     "bottomGap": 49
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 2 章 · 難在哪裡",
+    "issues": [],
+    "m": {
+     "leftChars": 248,
+     "allChars": 424,
+     "svgTexts": 13,
+     "svgMin": 17.4,
+     "svgP10": 17.4,
+     "bottomGap": 76
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "04 card-label": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 2 章 · 難在哪裡",
+    "issues": [],
+    "m": {
+     "leftChars": 269,
+     "allChars": 409,
+     "svgTexts": 29,
+     "svgMin": 13.1,
+     "svgP10": 13.1,
+     "bottomGap": 81
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 2 章 · 難在哪裡",
+    "issues": [],
+    "m": {
+     "leftChars": 269,
+     "allChars": 409,
+     "svgTexts": 29,
+     "svgMin": 15.4,
+     "svgP10": 15.4,
+     "bottomGap": 101
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  }
+ },
+ "static": [],
+ "missing_anims": [],
+ "kpi_missing": [],
+ "notes_drawer": {
+  "page": 4,
+  "open": true,
+  "t": "第 4 頁 · 難點 ②：標籤和實力不一致",
+  "len": 1281,
+  "closed_again": true
+ }
+}

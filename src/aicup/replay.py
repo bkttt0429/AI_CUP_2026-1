@@ -19,7 +19,7 @@ import pandas as pd
 from aicup.evidence import posterior_mean_index
 from aicup.humansl import PROFILES
 from aicup.metric import LEVELS
-from aicup.sgf import parse_moves
+from aicup.sgf import handicap, setup_and_moves
 
 MAX_BOARDS = 100
 DEFAULT_BOARDS = 50
@@ -100,9 +100,11 @@ def build_payload(rows, sgf_map, logp_map, bands, title, source):
     for r in rows.itertuples():
         sgf, color = sgf_map[r.game_key]
         ev = logp_map.get(r.game_key)
+        stones, moves = setup_and_moves(sgf)
         games.append({
             "key": r.game_key, "player": r.player_id[:8], "rank": r.rank, "color": color,
-            "moves": [None if x is None else [x, y] for _, x, y in parse_moves(sgf)],
+            "moves": [None if x is None else [x, y] for _, x, y in moves],
+            "stones": [[x, y] for x, y in stones], "first": moves[0][0] if moves else "B", "handicap": handicap(sgf),
             "band": bands.get(r.rank),
             "evidence": None if ev is None else {"t": [int(t) for t in ev["t"]], **evidence_series(ev["logp"])},
         })

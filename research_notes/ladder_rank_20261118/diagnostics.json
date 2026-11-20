@@ -1,0 +1,97 @@
+{
+  "independent_metric_check": {
+    "attack": {
+      "independent_1000_draw_ci95": [
+        -0.001805087667562029,
+        0.0008885868473930683
+      ],
+      "maximum_endpoint_difference": 3.4303867925396226e-05,
+      "official_implementation_point": -0.00042428724745668944
+    },
+    "defense": {
+      "independent_1000_draw_ci95": [
+        -0.0008943074763753028,
+        0.0012570206614661772
+      ],
+      "maximum_endpoint_difference": 4.7864971020635536e-05,
+      "official_implementation_point": 0.00020661998371263035
+    },
+    "pooled": {
+      "independent_1000_draw_ci95": [
+        -0.0009477678689547569,
+        0.0016780159457483645
+      ],
+      "maximum_endpoint_difference": 0.00010093034898364249,
+      "official_implementation_point": 0.0003099452309519579
+    }
+  },
+  "source_sha256": "df2b835543d87aaf2272f10832b8c758fb345734bcfe46b652b6bd901dfbe724",
+  "split_half": {
+    "attack": {
+      "distinct_games_per_player": 20,
+      "measurements": {
+        "coupling": {
+          "first_split_ci95": [
+            -0.016541359248232756,
+            -0.009508465856439205
+          ],
+          "first_split_r": -0.012952287378286525,
+          "twenty_splits_median_r": 0.009239326899776591,
+          "within_true_grade_twenty_splits_median_r": 0.00980100537582672
+        },
+        "opportunities_per_game": {
+          "first_split_ci95": [
+            0.07281637059491146,
+            0.15203969689029426
+          ],
+          "first_split_r": 0.11104916657134747,
+          "twenty_splits_median_r": 0.10132710550821916,
+          "within_true_grade_twenty_splits_median_r": 0.0760464158621133
+        },
+        "tendency_to_extend_or_attack": {
+          "first_split_ci95": [
+            -0.019565299813665553,
+            0.054834297974895266
+          ],
+          "first_split_r": 0.018399354155523417,
+          "twenty_splits_median_r": 0.02038983014552789,
+          "within_true_grade_twenty_splits_median_r": 0.01945151022002651
+        }
+      },
+      "players": 2543
+    },
+    "defense": {
+      "distinct_games_per_player": 20,
+      "measurements": {
+        "coupling": {
+          "first_split_ci95": [
+            0.008485405937906327,
+            0.08731667004529081
+          ],
+          "first_split_r": 0.04731987726800074,
+          "twenty_splits_median_r": 0.05385991823778288,
+          "within_true_grade_twenty_splits_median_r": 0.05382892869383861
+        },
+        "opportunities_per_game": {
+          "first_split_ci95": [
+            0.41510862116351416,
+            0.4767765704596966
+          ],
+          "first_split_r": 0.4467302043715923,
+          "twenty_splits_median_r": 0.4417494265359231,
+          "within_true_grade_twenty_splits_median_r": 0.4199744595317859
+        },
+        "tendency_to_extend_or_attack": {
+          "first_split_ci95": [
+            0.22541104088333255,
+            0.30144232235666546
+          ],
+          "first_split_r": 0.26536545184207944,
+          "twenty_splits_median_r": 0.271529898325254,
+          "within_true_grade_twenty_splits_median_r": 0.2309728723751911
+        }
+      },
+      "players": 2543
+    }
+  }
+}

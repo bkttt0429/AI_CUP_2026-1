@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AICUP 棋力預測 第 6 章：沒有通過的方向</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/report.css">
+</head>
+<body class="m-read" data-chapter="6" data-prev="ch05.html" data-next="ch07.html">
+<header class="top"><h1><button type="button" class="ch-menu-btn" aria-haspopup="dialog" aria-controls="ch-menu" aria-expanded="false">AICUP 棋力預測 · 第 6 章 沒有通過的方向 <span class="ch-menu-caret" aria-hidden="true">▾</span></button></h1><div class="modes" role="group" aria-label="模式">
+    <button data-mode="present" aria-pressed="false">簡報</button>
+    <button data-mode="read" aria-pressed="true">閱讀</button>
+    <button data-mode="notes" aria-pressed="false">筆記</button>
+  </div></header>
+<dialog class="ch-menu-dlg" id="ch-menu" aria-label="章節"><a href="index.html"><span>章節架構</span> <span class="ch-menu-meta"></span></a><hr><a href="ch01.html"><span>1 · 任務與資料</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch02.html"><span>2 · 工具：KataGo 與 Human SL</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch03.html"><span>3 · 現行架構：提交候選</span> <span class="ch-menu-meta">3 頁</span></a><a href="ch04.html"><span>4 · 每手證據：Human SL 到 L1b</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch05.html"><span>5 · 聚合與第二份證據</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch06.html" aria-current=page><span>6 · 沒有通過的方向</span> <span class="ch-menu-meta">3 頁 · 目前</span></a><a href="ch07.html"><span>7 · 錯誤結構與診斷</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch08.html"><span>8 · 架構 v2 與規則</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch09.html"><span>9 · 提交流程與未確認事項</span> <span class="ch-menu-meta">3 頁</span></a><hr><a href="talk.html"><span>整份報告（35 頁）</span> <span class="ch-menu-meta"></span></a></dialog>
+<main>
+<section class="page opening" id="opening">
+  <div class="kicker">AICUP 棋力預測 · 第 6 章 · 沒有通過的方向</div>
+  <p class="hook">論文方法、新特徵塊、換模型，<br>為什麼都停在門檻之下？</p>
+  <p class="lead">本章把所有事先指定的比較放在同一張圖上：棋力標量、落子品質、有序最後一層、五折交叉擬合、每局形狀、直方圖、TSFEL、序列 encoder、樹模型與 MLP 變體。全程沒有碰 fold 0。</p>
+  <nav class="opening-route" aria-label="本章路線"><a href="#card-forest">全部比較</a><span aria-hidden="true">→</span><a href="#card-noise">為什麼</a></nav>
+  <ol><li id="opening-q1"><b>1</b><a href="#card-forest">哪些方向試過、結果如何？</a></li><li id="opening-q2"><b>2</b><a href="#card-noise">題目層多加一塊欄位為什麼常變差？</a></li></ol>
+  <div class="meta"><span>本章實驗全部未過門檻</span><span>2 張報告卡 · 推導見「推導 ▸」</span></div>
+</section>
+<section class="page card" id="card-forest" data-sec="0">
+  <div class="report">
+    <div>
+      <div class="num"><a class="trace" href="#opening-q1">第 6 章 · 問題 1／2</a></div>
+      <h3>十六項比較只有對手通道通過；最差的是 CORAL（−0.026）與 TSFEL 全塊（−0.061）</h3>
+      <div class="formula">所有比較對當時的現行模型，玩家 bootstrap 95% CI</div>
+      <ul><li>棋力標量 −0.0041、落子品質 −0.0042、CORAL −0.0263、成對 BT +0.0025、x5 −0.0032</li><li>每局形狀 8 維 −0.0029、直方圖 10 維 −0.0055、TSFEL PCA-16 −0.0128（4／64／全：−0.0014／−0.0375／−0.0610）</li><li>xgboost 代 MLP −0.0058；MLP h128 −0.0050、L2×100 −0.0189、softmax −0.0245、提早停止 −0.0043、L1 +0.0006</li></ul>
+    </div>
+    <div class="fig"><div class="stage"><svg viewBox="0 0 600 444" role="img" aria-label="十五項比較中只有對手通道的三步通過門檻"><line x1="213.4" y1="14.0" x2="213.4" y2="408.0" stroke="#d9dbe0" stroke-width="1" fill="none"/><text x="213.4" y="424.0" font-size="11" fill="#5d6370" text-anchor="middle">−0.03</text><line x1="268.2" y1="14.0" x2="268.2" y2="408.0" stroke="#d9dbe0" stroke-width="1" fill="none"/><text x="268.2" y="424.0" font-size="11" fill="#5d6370" text-anchor="middle">−0.02</text><line x1="322.9" y1="14.0" x2="322.9" y2="408.0" stroke="#d9dbe0" stroke-width="1" fill="none"/><text x="322.9" y="424.0" font-size="11" fill="#5d6370" text-anchor="middle">−0.01</text><line x1="377.7" y1="14.0" x2="377.7" y2="408.0" stroke="#5d6370" stroke-width="1" fill="none"/><text x="377.7" y="424.0" font-size="11" fill="#5d6370" text-anchor="middle">0</text><line x1="432.5" y1="14.0" x2="432.5" y2="408.0" stroke="#d9dbe0" stroke-width="1" fill="none"/><text x="432.5" y="424.0" font-size="11" fill="#5d6370" text-anchor="middle">+0.01</text><line x1="487.2" y1="14.0" x2="487.2" y2="408.0" stroke="#d9dbe0" stroke-width="1" fill="none"/><text x="487.2" y="424.0" font-size="11" fill="#5d6370" text-anchor="middle">+0.02</text><line x1="542.0" y1="14.0" x2="542.0" y2="408.0" stroke="#d9dbe0" stroke-width="1" fill="none"/><text x="542.0" y="424.0" font-size="11" fill="#5d6370" text-anchor="middle">+0.03</text><line x1="405.1" y1="14.0" x2="405.1" y2="408.0" stroke="#a4451c" stroke-width="1" stroke-dasharray="4 3" fill="none"/><text x="409.1" y="440.0" font-size="11" fill="#a4451c" text-anchor="start">門檻 +0.005</text><text x="178.0" y="31.0" font-size="12" fill="#1d1f24" text-anchor="end" font-weight="700">加對手 16 維（已採用）</text><line x1="458.6" y1="27.0" x2="506.2" y2="27.0" stroke="#0b6e69" stroke-width="2" fill="none"/><circle cx="482.0" cy="27.0" r="5" fill="#0b6e69" stroke="#ffffff" stroke-width="1.5"><title>加對手 16 維（已採用）：+0.0191 [+0.0148, +0.0235]</title></circle><text x="548.0" y="31.0" font-size="11.5" fill="#1d1f24" text-anchor="start" font-weight="700">+0.0191</text><text x="178.0" y="57.0" font-size="12" fill="#1d1f24" text-anchor="end" font-weight="700">加差值 3 維（已採用）</text><line x1="454.6" y1="53.0" x2="498.3" y2="53.0" stroke="#0b6e69" stroke-width="2" fill="none"/><circle cx="476.6" cy="53.0" r="5" fill="#0b6e69" stroke="#ffffff" stroke-width="1.5"><title>加差值 3 維（已採用）：+0.0181 [+0.0140, +0.0220]</title></circle><text x="548.0" y="57.0" font-size="11.5" fill="#1d1f24" text-anchor="start" font-weight="700">+0.0181</text><text x="178.0" y="83.0" font-size="12" fill="#1d1f24" text-anchor="end" font-weight="700">加讓子 HD 5 維（候選）</text><line x1="396.3" y1="79.0" x2="436.2" y2="79.0" stroke="#0b6e69" stroke-width="2" fill="none"/><circle cx="416.6" cy="79.0" r="5" fill="#0b6e69" stroke="#ffffff" stroke-width="1.5"><title>加讓子 HD 5 維（候選）：+0.0071 [+0.0034, +0.0107]</title></circle><text x="548.0" y="83.0" font-size="11.5" fill="#1d1f24" text-anchor="start" font-weight="700">+0.0071</text><text x="178.0" y="109.0" font-size="12" fill="#1d1f24" text-anchor="end">棋力標量：目標 9 維</text><line x1="337.5" y1="105.0" x2="373.0" y2="105.0" stroke="#5d6370" stroke-width="2" fill="none"/><circle cx="355.2" cy="105.0" r="5" fill="#5d6370" stroke="#ffffff" stroke-width="1.5"><title>棋力標量：目標 9 維：−0.0041 [−0.0073, −0.0009]</title></circle><text x="548.0" y="109.0" font-size="11.5" fill="#1d1f24" text-anchor="start">−0.0041</text><text x="178.0" y="135.0" font-size="12" fill="#1d1f24" text-anchor="end">落子品質特徵</text><line x1="334.1" y1="131.0" x2="374.6" y2="131.0" stroke="#5d6370" stroke-width="2" fill="none"/><circle cx="354.5" cy="131.0" r="5" fill="#5d6370" stroke="#ffffff" stroke-width="1.5"><title>落子品質特徵：−0.0042 [−0.0080, −0.0006]</title></circle><text x="548.0" y="135.0" font-size="11.5" fill="#1d1f24" text-anchor="start">−0.0042</text><text x="178.0" y="161.0" font-size="12" fill="#1d1f24" text-anchor="end">最後一層：CORAL</text><line x1="208.7" y1="157.0" x2="258.9" y2="157.0" stroke="#5d6370" stroke-width="2" fill="none"/><circle cx="233.4" cy="157.0" r="5" fill="#5d6370" stroke="#ffffff" stroke-width="1.5"><title>最後一層：CORAL：−0.0263 [−0.0309, −0.0217]</title></circle><text x="548.0" y="161.0" font-size="11.5" fill="#1d1f24" text-anchor="start">−0.0263</text><text x="178.0" y="187.0" font-size="12" fill="#1d1f24" text-anchor="end">最後一層：成對 BT</text><line x1="371.3" y1="183.0" x2="412.4" y2="183.0" stroke="#5d6370" stroke-width="2" fill="none"/><circle cx="391.6" cy="183.0" r="5" fill="#5d6370" stroke="#ffffff" stroke-width="1.5"><title>最後一層：成對 BT：+0.0025 [−0.0012, +0.0063]</title></circle><text x="548.0" y="187.0" font-size="11.5" fill="#1d1f24" text-anchor="start">+0.0025</text><text x="178.0" y="213.0" font-size="12" fill="#1d1f24" text-anchor="end">五折交叉擬合 x5</text><line x1="339.0" y1="209.0" x2="381.7" y2="209.0" stroke="#5d6370" stroke-width="2" fill="none"/><circle cx="360.3" cy="209.0" r="5" fill="#5d6370" stroke="#ffffff" stroke-width="1.5"><title>五折交叉擬合 x5：−0.0032 [−0.0071, +0.0007]</title></circle><text x="548.0" y="213.0" font-size="11.5" fill="#1d1f24" text-anchor="start">−0.0032</text><text x="178.0" y="239.0" font-size="12" fill="#1d1f24" text-anchor="end">每局形狀 8 維</text><line x1="342.9" y1="235.0" x2="379.6" y2="235.0" stroke="#5d6370" stroke-width="2" fill="none"/><circle cx="361.7" cy="235.0" r="5" fill="#5d6370" stroke="#ffffff" stroke-width="1.5"><title>每局形狀 8 維：−0.0029 [−0.0064, +0.0004]</title></circle><text x="548.0" y="239.0" font-size="11.5" fill="#1d1f24" text-anchor="start">−0.0029</text><text x="178.0" y="265.0" font-size="12" fill="#1d1f24" text-anchor="end">每手 pmi 直方圖 10 維</text><line x1="331.0" y1="261.0" x2="363.8" y2="261.0" stroke="#5d6370" stroke-width="2" fill="none"/><circle cx="347.5" cy="261.0" r="5" fill="#5d6370" stroke="#ffffff" stroke-width="1.5"><title>每手 pmi 直方圖 10 維：−0.0055 [−0.0085, −0.0025]</title></circle><text x="548.0" y="265.0" font-size="11.5" fill="#1d1f24" text-anchor="start">−0.0055</text><text x="178.0" y="291.0" font-size="12" fill="#1d1f24" text-anchor="end">TSFEL PCA-16</text><line x1="286.2" y1="287.0" x2="328.4" y2="287.0" stroke="#5d6370" stroke-width="2" fill="none"/><circle cx="307.6" cy="287.0" r="5" fill="#5d6370" stroke="#ffffff" stroke-width="1.5"><title>TSFEL PCA-16：−0.0128 [−0.0167, −0.0090]</title></circle><text x="548.0" y="291.0" font-size="11.5" fill="#1d1f24" text-anchor="start">−0.0128</text><text x="178.0" y="317.0" font-size="12" fill="#1d1f24" text-anchor="end">純雜訊 16 維（對照）</text><line x1="354.7" y1="313.0" x2="384.3" y2="313.0" stroke="#5d6370" stroke-width="2" fill="none"/><circle cx="370.0" cy="313.0" r="5" fill="#5d6370" stroke="#ffffff" stroke-width="1.5"><title>純雜訊 16 維（對照）：−0.0014 [−0.0042, +0.0012]</title></circle><text x="548.0" y="317.0" font-size="11.5" fill="#1d1f24" text-anchor="start">−0.0014</text><text x="178.0" y="343.0" font-size="12" fill="#1d1f24" text-anchor="end">xgboost 代 MLP</text><line x1="325.9" y1="339.0" x2="367.2" y2="339.0" stroke="#5d6370" stroke-width="2" fill="none"/><circle cx="346.0" cy="339.0" r="5" fill="#5d6370" stroke="#ffffff" stroke-width="1.5"><title>xgboost 代 MLP：−0.0058 [−0.0095, −0.0019]</title></circle><text x="548.0" y="343.0" font-size="11.5" fill="#1d1f24" text-anchor="start">−0.0058</text><text x="178.0" y="369.0" font-size="12" fill="#1d1f24" text-anchor="end">MLP h128</text><line x1="332.3" y1="365.0" x2="369.3" y2="365.0" stroke="#5d6370" stroke-width="2" fill="none"/><circle cx="350.5" cy="365.0" r="5" fill="#5d6370" stroke="#ffffff" stroke-width="1.5"><title>MLP h128：−0.0050 [−0.0083, −0.0015]</title></circle><text x="548.0" y="369.0" font-size="11.5" fill="#1d1f24" text-anchor="start">−0.0050</text><text x="178.0" y="395.0" font-size="12" fill="#1d1f24" text-anchor="end">MLP L1 1e-3</text><line x1="363.5" y1="391.0" x2="398.5" y2="391.0" stroke="#5d6370" stroke-width="2" fill="none"/><circle cx="381.0" cy="391.0" r="5" fill="#5d6370" stroke="#ffffff" stroke-width="1.5"><title>MLP L1 1e-3：+0.0006 [−0.0026, +0.0038]</title></circle><text x="548.0" y="395.0" font-size="11.5" fill="#1d1f24" text-anchor="start">+0.0006</text></svg></div><div class="cap">點是差值，線段是玩家 bootstrap 95% CI；藍色是已採用的三步。TSFEL 64／全塊超出軸範圍，未畫</div><div class="sources"><div class="source-chips" role="group" aria-label="出處"><span class="source-chip" data-field="資料"><b>資料</b> results/l1b、results/seq、results/gbdt 的 *_check.json</span><span class="source-chip source-scope" data-field="範圍"><b>範圍</b> folds 1–4</span></div></div></div>
+    <div class="cause"><span class="pair"><span class="k">問題</span><b>每個方向各有道理</b></span><span class="arrow">→</span><span class="pair"><span class="k go">作法</span><b>同一套協定逐項比</b></span><span class="arrow">→</span><span class="pair"><span class="k stuck">限制</span><b>為什麼每手變好、題目不變？</b></span><span class="bridge"><a href="#card-noise">接續：多數是少局題上的抽樣雜訊，不是模型脆弱：16 欄純雜訊只掉 −0.0014，TSFEL 16 欄掉 −0.0128</a><span class="bridge-text">接續：多數是少局題上的抽樣雜訊，不是模型脆弱：16 欄純雜訊只掉 −0.0014，TSFEL 16 欄掉 −0.0128</span></span></div>
+  </div>
+  <button class="deriv-open" data-sec="0" aria-haspopup="dialog">推導 ▸</button>
+</section>
+<section class="lesson" id="sec-0" data-title="6.1 全部比較">
+  <h3>6.1 全部比較</h3>
+  <p class="proves">對應報告卡 1：十六項比較只有對手通道通過；最差的是 CORAL（−0.026）與 TSFEL 全塊（−0.061）</p>
+  <p>論文方法：Chen 等的 Bradley–Terry 棋力標量 head 訓練成功（成對準確率 0.52 → 0.74），但接上 fused_opp 顯著變差；L1b 已有一個有序標量 <code>pmi_sum</code>，兩者只差訓練目標。落子品質（humanv0 9d 的勝率與目數損失）接上 Human SL 有幫助，接上 fused_opp 沒有。CORAL 共用一個標量與 9 個門檻，20 局題差最多（−0.041）：官方分是半徑 1 的帶狀獎勵，差 2 級和差 9 級一樣是 0，全局有序距離不是對的目標。</p>
+<p>資料量：五折交叉擬合讓每個 head 多看一倍玩家，每手 rank CE 確實變好（2.100–2.110 對 2.137／2.111），題目層卻 −0.0032；刻度校正後相同，刻度假設不成立。</p>
+<p>樹模型：同一份特徵上 xgboost 比 MLP 差；ens_top3 + xgb 對 ens_top3 +0.0029 [+0.0010, +0.0048]，但對 ens_top3 + 多一個 MLP 是 −0.0007 [−0.0023, +0.0008]——多一個成員的功勞不能算在樹上。</p>
+  <p class="takeaway">在已有多等級似然的前提下，標量、品質、有序輸出、更多資料、更大模型都沒有額外價值。</p>
+</section>
+<section class="page card" id="card-noise" data-sec="1">
+  <div class="report">
+    <div>
+      <div class="num"><a class="trace" href="#opening-q2">第 6 章 · 問題 2／2</a></div>
+      <h3>多數是少局題上的抽樣雜訊，不是模型脆弱：16 欄純雜訊只掉 −0.0014，TSFEL 16 欄掉 −0.0128</h3>
+      <div class="formula">退步隨維度單調放大：+4 → −0.001，+16 → −0.013，+64 → −0.038，+267 → −0.061</div>
+      <ul><li>純雜訊對照 −0.0014 [−0.0042, +0.0012]：MLP 對多餘欄位有抵抗力</li><li>TSFEL 塊只有 pc1–pc4 可靠，pc5–pc16 的 split-half 相關 0.0–0.34（第 7 章）</li><li>h16、L2、L1、提早停止都救不回 TSFEL；問題在特徵，不在正則化</li></ul>
+    </div>
+    <div class="fig"><div class="stage"><div class="table-wrap"><table><thead><tr><th>加在 fused_opp_diff 上的塊</th><th>維度</th><th>差值</th><th>95% CI</th></tr></thead><tbody><tr><td>純雜訊</td><td class="n">16</td><td class="n">−0.0014</td><td class="n">[−0.0042, +0.0012]</td></tr><tr><td>每局形狀（對 fused_opp）</td><td class="n">8</td><td class="n">−0.0029</td><td class="n">[−0.0064, +0.0004]</td></tr><tr><td>每手 pmi 直方圖</td><td class="n">10</td><td class="n">−0.0055</td><td class="n">[−0.0085, −0.0025]</td></tr><tr><td>TSFEL PCA</td><td class="n">16</td><td class="n">−0.0128</td><td class="n">[−0.0167, −0.0090]</td></tr><tr><td>TSFEL PCA</td><td class="n">64</td><td class="n">−0.0375</td><td class="n">[−0.0423, −0.0326]</td></tr><tr><td>TSFEL 全塊</td><td class="n">267</td><td class="n">−0.0610</td><td class="n">[−0.0667, −0.0551]</td></tr></tbody></table></div></div><div class="cap">同一套 CV；TSFEL 與雜訊對照來自 PR #39／#43 的結果檔</div><div class="sources"><div class="source-chips" role="group" aria-label="出處"><span class="source-chip" data-field="資料"><b>資料</b> results/seq/{shape,hist}_check.json、tsfel_check.json、qmodel_check.json</span><span class="source-chip source-scope" data-field="範圍"><b>範圍</b> folds 1–4</span></div></div></div>
+    <div class="cause"><span class="pair"><span class="k">問題</span><b>三條線都是「加欄位就退步」</b></span><span class="arrow">→</span><span class="pair"><span class="k go">作法</span><b>用純雜訊對照分開模型與特徵</b></span><span class="arrow">→</span><span class="pair"><span class="k stuck">限制</span><b>錯誤到底在哪裡？</b></span><span class="bridge"><a href="ch07.html#opening">接續：第 7 章　錯誤結構與診斷</a><span class="bridge-text">接續：第 7 章　錯誤結構與診斷</span></span></div>
+  </div>
+  <button class="deriv-open" data-sec="1" aria-haspopup="dialog">推導 ▸</button>
+</section>
+<section class="lesson" id="sec-1" data-title="6.2 雜訊對照">
+  <h3>6.2 雜訊對照</h3>
+  <p class="proves">對應報告卡 2：多數是少局題上的抽樣雜訊，不是模型脆弱：16 欄純雜訊只掉 −0.0014，TSFEL 16 欄掉 −0.0128</p>
+  <p>純雜訊幾乎不掉，所以「MLP 對多餘欄位沒抵抗力」不成立；TSFEL、直方圖、形狀帶的是在 5–20 局的題上估不準的量。第 7 章用同玩家重抽與同 n 比較把這件事量化，並發現訓練題局數混合是傷害的一大半來源。</p>
+  <p class="takeaway">新特徵塊要先問「同一位玩家換一組棋，它穩不穩」，再問它有沒有訊號。</p>
+</section>
+<section class="after" id="recap">
+  <h3>本章結論</h3><p>通過門檻的只有對手通道三步；每手層級的進步常傳不到題目層級，題目層多加一塊欄位常變差。</p>
+  <div class="next"><b>待解問題　</b>錯誤到底在哪裡？第 7 章切開每題機率，並用三個診斷找原因。</div>
+  <section class="refs"><h3>參考文獻</h3><ol><li>Chen, Shih, &amp; Wu. <em>Strength Estimation and Human-Like Strength Adjustment in Games</em>. ICLR 2025.</li><li>Kuboki, Ogawa, Hsueh, Yen, &amp; Ikeda. <em>Policies of Multiple Skill Levels for Better Strength Estimation in Games</em>. AIIDE 2025. arXiv:2505.00279.</li><li>Cao, W., Mirjalili, V., &amp; Raschka, S. (2020). Rank consistent ordinal regression for neural networks with application to age estimation. <em>Pattern Recognition Letters</em>, 140.</li><li>本專案紀錄：<code>METHOD_NOTES.md</code>、<code>docs/NANO4.md</code>、<code>results/</code>、<code>reports/architecture_v2_2026-11-02.md</code>；GitHub issue #6、#23、#36、#42。</li></ol></section>
+</section>
+<nav class="chapter-nav" aria-label="上一章／下一章"><a class="prev" href="ch05.html">‹ 第 5 章　聚合與第二份證據</a><a class="next" href="ch07.html">第 7 章　錯誤結構與診斷 ›</a></nav>
+</main>
+<dialog class="lesson-dlg" id="dlg" aria-labelledby="dlg-t">
+  <div class="dlg-head"><span class="k" id="dlg-k">第 6 章 · 推導</span><span class="t" id="dlg-t"></span><button class="x" aria-label="關閉">✕</button></div>
+  <div class="dlg-body"></div>
+  <div class="dlg-foot"><button class="prev">‹ 上一節</button><button class="nextb">下一節 ›</button><button class="whole">閱讀全章</button></div>
+</dialog>
+<nav class="pager" aria-label="頁面導覽">
+  <button type="button" class="pg-prev" aria-label="上一頁">‹</button>
+  <span id="pg" title="← → 換頁 · D 推導 · Esc 離開">6 · 1／3</span>
+  <button type="button" class="pg-next" aria-label="下一頁">›</button>
+  <span class="pg-hint" aria-live="polite"></span>
+</nav>
+<script src="assets/core.js"></script>
+<script src="assets/report.js"></script>
+<script src="assets/modes.js"></script>
+</body>
+</html>

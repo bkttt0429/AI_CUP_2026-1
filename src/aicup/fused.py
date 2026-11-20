@@ -22,6 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
+from aicup.handicap import HD_FEATURE_NAMES
 from aicup.evidence import posterior_mean_index
 from aicup.humansl import PROFILES
 from aicup.ladder import environment, to_json
@@ -33,14 +34,18 @@ from aicup.setmodel_io import file_sha256  # noqa: F401  (re-exported for caller
 NAME = "mlp_h32_fused"
 NAME_OPP = "mlp_h32_fused_opp"
 NAME_OPP_DIFF = "mlp_h32_fused_opp_diff"
+NAME_OPP_DIFF_HD = "mlp_h32_fused_opp_diff_hd"
 FORMAT = 1
 FUSED_FEATURE_NAMES = feature_names(PROFILES) + [f"l1b_{n}" for n in feature_names(LEVELS)]
 OPP_FEATURE_NAMES = [f"opp_{n}" for n in feature_names(LEVELS)]
 FUSED_OPP_FEATURE_NAMES = FUSED_FEATURE_NAMES + OPP_FEATURE_NAMES
 DIFF_FEATURE_NAMES = ["opp_minus_own_pmi_mean", "opp_pmi_mean", "opp_pmi_std"]
 FUSED_OPP_DIFF_FEATURE_NAMES = FUSED_OPP_FEATURE_NAMES + DIFF_FEATURE_NAMES
-FEATURE_SETS = {"fused": FUSED_FEATURE_NAMES, "fused_opp": FUSED_OPP_FEATURE_NAMES, "fused_opp_diff": FUSED_OPP_DIFF_FEATURE_NAMES}
-NAMES = {"fused": NAME, "fused_opp": NAME_OPP, "fused_opp_diff": NAME_OPP_DIFF}
+FUSED_OPP_DIFF_HD_FEATURE_NAMES = FUSED_OPP_DIFF_FEATURE_NAMES + HD_FEATURE_NAMES  # + the handicap question features (issue #47)
+FEATURE_SETS = {"fused": FUSED_FEATURE_NAMES, "fused_opp": FUSED_OPP_FEATURE_NAMES, "fused_opp_diff": FUSED_OPP_DIFF_FEATURE_NAMES,
+                "fused_opp_diff_hd": FUSED_OPP_DIFF_HD_FEATURE_NAMES}
+NAMES = {"fused": NAME, "fused_opp": NAME_OPP, "fused_opp_diff": NAME_OPP_DIFF, "fused_opp_diff_hd": NAME_OPP_DIFF_HD}
+DIFF_SETS = ("fused_opp_diff", "fused_opp_diff_hd")
 MODEL_KEYS = ("name", "heads_file", "state_sha256", "trunk_file", "trunk_sha256", "train_folds", "feature_folds")
 
 
@@ -112,7 +117,8 @@ def fused_document(mlp, l1b_models, train_folds, per_player, n_train, questions_
     feature_set = feature_set_of(opponent, feature_set)
     opponent = feature_set != "fused"
     what = ("fused Human SL + L1b question features" + (" + the L1b features of the opponent's moves" if opponent else "")
-            + (" + the opponent-minus-own pmi differences" if feature_set == "fused_opp_diff" else ""))
+            + (" + the opponent-minus-own pmi differences" if feature_set in DIFF_SETS else "")
+            + (" + the handicap (HD) question features" if feature_set == "fused_opp_diff_hd" else ""))
     return {"name": NAMES[feature_set], "format": FORMAT, "features": feature_names_for(feature_set), "opponent": bool(opponent), "feature_set": feature_set,
             "profiles": list(PROFILES), "levels": list(LEVELS),
             "train_folds": [int(f) for f in train_folds], "per_player": int(per_player), "train_questions": int(n_train),
@@ -138,8 +144,8 @@ def load_fused_model(path):
     feats = doc.get("features")
     feature_set = next((k for k, names in FEATURE_SETS.items() if feats == names), None)
     if feature_set is None:
-        raise ValueError(f"{path}: features are neither this code's fused ({len(FUSED_FEATURE_NAMES)}), fused_opp "
-                         f"({len(FUSED_OPP_FEATURE_NAMES)}) nor fused_opp_diff ({len(FUSED_OPP_DIFF_FEATURE_NAMES)}) features ({len(feats or [])} given)")
+        sets = [f"{k} ({len(v)})" for k, v in FEATURE_SETS.items()]
+        raise ValueError(f"{path}: features are neither this code's {', '.join(sets[:-1])} nor {sets[-1]} features ({len(feats or [])} given)")
     opponent = feature_set != "fused"
     if doc.get("opponent", opponent) != opponent:
         raise ValueError(f"{path}: opponent flag {doc.get('opponent')} disagrees with its {len(feats)} features")
@@ -181,16 +187,25 @@ def pairing_order(doc, shard_models):
     return order
 
 
-def fused_predict(mlp, hsl_sums, l1b_sums, n_moves, order, opp_sums=None, opp_n_moves=None, feature_set=None):
+def fused_predict(mlp, hsl_sums, l1b_sums, n_moves, order, opp_sums=None, opp_n_moves=None, feature_set=None, hd_feats=None):
     """[10]: the mean over the document's models (shard columns `order`) of the MLP's probabilities on the features of
     `feature_set` (default: fused_opp when the opponent's L1b sums [m, K, 10] and move counts [m] are given, else
-    fused); fused_opp_diff adds the opponent-minus-own differences. ValueError when the set needs opponent sums and none are given."""
+    fused); fused_opp_diff adds the opponent-minus-own differences, fused_opp_diff_hd also the question's handicap
+    features hd_feats [5] (aicup.handicap.question_hd_features_from_games), the same for every model. ValueError when
+    the set needs opponent sums or handicap features and none are given."""
     feature_set = feature_set_of(opp_sums is not None, feature_set)
     if feature_set == "fused":
         feats = [fused_features(hsl_sums, l1b_sums[:, k, :], n_moves) for k in order]
     else:
         if opp_sums is None:
             raise ValueError(f"the {feature_set} features need the opponent's L1b sums")
-        fn = fused_opp_diff_features if feature_set == "fused_opp_diff" else fused_opp_features
+        fn = fused_opp_diff_features if feature_set in DIFF_SETS else fused_opp_features
         feats = [fn(hsl_sums, l1b_sums[:, k, :], n_moves, opp_sums[:, k, :], opp_n_moves) for k in order]
+        if feature_set == "fused_opp_diff_hd":
+            if hd_feats is None:
+                raise ValueError("the fused_opp_diff_hd features need the question's handicap features (hd_feats)")
+            hd = np.asarray(hd_feats, dtype=float).reshape(-1)
+            if hd.shape != (len(HD_FEATURE_NAMES),):
+                raise ValueError(f"hd_feats must hold the {len(HD_FEATURE_NAMES)} handicap features, got shape {hd.shape}")
+            feats = [np.concatenate([x, hd]) for x in feats]
     return np.mean([mlp.predict_proba(x[None, :])[0] for x in feats], axis=0)

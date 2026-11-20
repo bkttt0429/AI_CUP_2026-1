@@ -1,0 +1,84 @@
+{
+  "binary_choice_coverage": {
+    "10": {
+      "mean": 4.699245418613008,
+      "median": 4.0,
+      "questions": 5566,
+      "zero": 93
+    },
+    "20": {
+      "mean": 9.396382225717657,
+      "median": 9.0,
+      "questions": 2543,
+      "zero": 3
+    },
+    "5": {
+      "mean": 2.3483087597571553,
+      "median": 2.0,
+      "questions": 11530,
+      "zero": 1381
+    }
+  },
+  "competition_and_boundary_checks": {
+    "1D/2D": {
+      "difference": 0.004285175180742007,
+      "player_ci95": [
+        -0.010175901046590696,
+        0.018589415048582275
+      ]
+    },
+    "3D/4D": {
+      "difference": -0.010566853325474024,
+      "player_ci95": [
+        -0.02167755671427914,
+        0.001029798026191751
+      ]
+    },
+    "offer_predictions.npz": {
+      "check_diff": -5.5425552905497e-05,
+      "independent_900_draw_ci95": [
+        -0.00017325213007836902,
+        4.244061958746425e-05
+      ]
+    },
+    "predictions.npz": {
+      "check_diff": -0.0008864370671010091,
+      "independent_900_draw_ci95": [
+        -0.0023884254857860056,
+        0.0006771135216096935
+      ]
+    },
+    "value_response_predictions.npz": {
+      "check_diff": -0.00014868558971670165,
+      "independent_900_draw_ci95": [
+        -0.00045368175971222737,
+        6.105043547237311e-05
+      ]
+    }
+  },
+  "grade_resolution": {
+    "1D/2D": {
+      "binary_choices": 3942,
+      "mean_absolute_probability_gap": 0.0027620216683789185,
+      "mean_fitted_js_bits_per_event": 2.956980796419645e-05,
+      "observed_bits_per_choice_grade_balanced_player_mean": -3.7009508338678725e-05,
+      "player_ci95_bits": [
+        -0.0003407532671921221,
+        0.0002762423685997536
+      ],
+      "players": 414
+    },
+    "3D/4D": {
+      "binary_choices": 4781,
+      "mean_absolute_probability_gap": 0.0034387432697194596,
+      "mean_fitted_js_bits_per_event": 2.7967740208286658e-05,
+      "observed_bits_per_choice_grade_balanced_player_mean": 0.0001866465645017422,
+      "player_ci95_bits": [
+        -8.022770715033693e-05,
+        0.00045671670557486017
+      ],
+      "players": 501
+    }
+  },
+  "source_sha256": "6f3e1231519435011d00ceac6d4d6358dfc76a0d18292c42ad8c0112ac5a841f"
+}

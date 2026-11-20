@@ -1,0 +1,48 @@
+{
+  "baseline_first": {
+    "ci95": [
+      0.0021463818591216516,
+      0.02206286708342618
+    ],
+    "games": 91,
+    "nats_per_move": 0.011933393262583634,
+    "players": 58
+  },
+  "baseline_rank2_or_3": {
+    "ci95": [
+      0.005890254795551301,
+      0.03616715613007544
+    ],
+    "games": 31,
+    "nats_per_move": 0.019642478227615355,
+    "players": 25
+  },
+  "correct_accepts_gained": 4,
+  "correct_accepts_lost": 3,
+  "different_grade_rival": {
+    "ci95": [
+      0.009116968595319325,
+      0.029485999100974623
+    ],
+    "games": 95,
+    "nats_per_move": 0.018956473658955288,
+    "players": 63
+  },
+  "known_games": 144,
+  "outside_shortlist": 22,
+  "same_grade_rival": {
+    "ci95": [
+      -0.00042782276868820186,
+      0.028622799552977085
+    ],
+    "games": 27,
+    "nats_per_move": 0.014411874115467072,
+    "players": 24
+  },
+  "scope": "Exploratory split conditioned on M218 rank on fold 2 after the main readout; intervals conditional on the fixed candidate bank.",
+  "top1_correct_lost": 4,
+  "top1_errors_rescued": 6,
+  "unknown_accepts_removed": 2,
+  "unknown_new_accepts": 1,
+  "verifier_result_sha256": "a99da8255a5598c79a58ed038da308ad92e53c9bfbe9b4af0494a13081ad6feb"
+}

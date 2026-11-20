@@ -1,0 +1,19 @@
+{
+  "games": 9039,
+  "overlap_full_replays": 0,
+  "overlap_raw": 0,
+  "owners": 2317,
+  "sha256": {
+    "corpus_0.tsv.gz": "d86cee827ebcc57de553f504b2976a2561f909f87b05c493918b35245b69712a",
+    "corpus_1.tsv.gz": "670ac68e355419adffac2f49ea2f6e53af481ad5a2b8b635e5f40bc897e1d82a",
+    "corpus_2.tsv.gz": "6324c35edceb2afa7743e0cec18676eed9152f57bb893afcd77a600df82a24b3",
+    "corpus_3.tsv.gz": "60046bae4fe988bfe40b55269076aad8ff8ca3dd26852e6a1501cab7265c434e",
+    "corpus_4.tsv.gz": "3b801704a91bcef03b86de57b784227bf077bf1fded1dee5f50bda098a954fa7",
+    "corpus_5.tsv.gz": "bd76a559085164fd5c65412f1c3790492a017ac29905828927eaabb218d8489b",
+    "corpus_6.tsv.gz": "4d92e5e37246364bea59b13c9437bfa22b7bfee007d9c2e5f3908f88d795de03",
+    "corpus_7.tsv.gz": "719ab343a747819927c741846db69f5e51dc1e2bb4b522a1f5e75c2c032f1021",
+    "extra.py": "1037928e3f4f1f8eb0fc646d1b772a10decad5479cd177d3cb61f7105748b24f",
+    "games.npz": "d2dade4186c0c9ba49a9512d86429ea0c4bd78b6d2c4ddce57da00a3c24d977a",
+    "protocol.json": "5c3f0b30a39d8966d55172ae40c020e2f09966363074474bd2d0b80704e32fdd"
+  }
+}

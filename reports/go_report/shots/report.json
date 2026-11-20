@@ -1,0 +1,53 @@
+{
+ "01 cover": [],
+ "02 route": [],
+ "03 c01-opening": [],
+ "04 c01-card-score": [
+  "stage very short: 105"
+ ],
+ "05 c01-card-evidence": [],
+ "06 c01-card-protocol": [],
+ "07 c02-opening": [],
+ "08 c02-card-scale": [],
+ "09 c02-card-mlp": [],
+ "10 c03-opening": [],
+ "11 c03-card-ladder": [],
+ "12 c03-card-bottleneck": [],
+ "13 c04-opening": [],
+ "14 c04-card-heads": [
+  "stage very short: 106"
+ ],
+ "15 c04-card-disc": [],
+ "16 c05-opening": [],
+ "17 c05-card-opp": [],
+ "18 c05-card-quality": [],
+ "19 c06-opening": [],
+ "20 c06-card-papers": [],
+ "21 c06-card-ordinal": [],
+ "22 c06-card-xfit": [],
+ "23 c07-opening": [],
+ "24 c07-card-errors": [
+  "stage very short: 106"
+ ],
+ "25 c08-opening": [],
+ "26 c08-card-pipeline": [],
+ "27 c08-card-open": [],
+ "desk index": [],
+ "desk ch01": [],
+ "desk ch02": [],
+ "desk ch03": [],
+ "desk ch04": [],
+ "desk ch05": [],
+ "desk ch06": [],
+ "desk ch07": [],
+ "desk ch08": [],
+ "phone index": [],
+ "phone ch01": [],
+ "phone ch02": [],
+ "phone ch03": [],
+ "phone ch04": [],
+ "phone ch05": [],
+ "phone ch06": [],
+ "phone ch07": [],
+ "phone ch08": []
+}

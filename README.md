@@ -6,5 +6,7 @@
 - 方法與實驗結論：[METHOD_NOTES.md](METHOD_NOTES.md)
 - 分層架構與時程：[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - 國網 nano4 操作步驟：[docs/NANO4.md](docs/NANO4.md)
+- 最終提交流程（各階段的程式、權重與不在 repo 的檔案）：[docs/FINAL_PIPELINE.md](docs/FINAL_PIPELINE.md)
+- 完整的實驗紀錄（每一則事前登記與結果）：[reports/architecture_v2_2026-11-02.md](reports/architecture_v2_2026-11-02.md)
 
 訓練資料、KataGo 權重與引擎、虛擬環境都不進 git（見 `.gitignore`），依 REPORT.md 與 docs/NANO4.md 重建。

@@ -1,0 +1,20 @@
+{
+  "denominators_near_mid_far": [
+    5573,
+    5800,
+    7794
+  ],
+  "games": 9039,
+  "misses": 19167,
+  "near_numerators": [
+    3881,
+    1515,
+    519
+  ],
+  "near_rates": [
+    0.6963933249596268,
+    0.26120689655172413,
+    0.0665896843725943
+  ],
+  "sample": "reserved_extra"
+}

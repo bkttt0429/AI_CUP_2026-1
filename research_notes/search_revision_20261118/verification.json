@@ -1,0 +1,323 @@
+{
+  "checked_hashed_sources": 57,
+  "choice_counts_reconciled": true,
+  "competition_changes": {
+    "depth-SQ4": {
+      "by_true_rank_better_worse": {
+        "1D": [
+          0,
+          0
+        ],
+        "2D": [
+          0,
+          0
+        ],
+        "3D": [
+          0,
+          0
+        ],
+        "4D": [
+          0,
+          0
+        ],
+        "5D": [
+          0,
+          0
+        ],
+        "6D": [
+          0,
+          0
+        ],
+        "A": [
+          0,
+          0
+        ],
+        "B": [
+          0,
+          0
+        ],
+        "C": [
+          0,
+          0
+        ],
+        "D": [
+          0,
+          0
+        ]
+      },
+      "changed_equal_score": 0,
+      "lost_exact": 0,
+      "newly_exact": 0
+    },
+    "depth-marginal": {
+      "by_true_rank_better_worse": {
+        "1D": [
+          0,
+          0
+        ],
+        "2D": [
+          0,
+          0
+        ],
+        "3D": [
+          0,
+          0
+        ],
+        "4D": [
+          0,
+          0
+        ],
+        "5D": [
+          0,
+          0
+        ],
+        "6D": [
+          0,
+          0
+        ],
+        "A": [
+          0,
+          0
+        ],
+        "B": [
+          0,
+          0
+        ],
+        "C": [
+          0,
+          0
+        ],
+        "D": [
+          0,
+          0
+        ]
+      },
+      "changed_equal_score": 0,
+      "lost_exact": 0,
+      "newly_exact": 0
+    },
+    "interaction-spatial": {
+      "by_true_rank_better_worse": {
+        "1D": [
+          0,
+          0
+        ],
+        "2D": [
+          0,
+          0
+        ],
+        "3D": [
+          0,
+          0
+        ],
+        "4D": [
+          0,
+          0
+        ],
+        "5D": [
+          0,
+          0
+        ],
+        "6D": [
+          0,
+          0
+        ],
+        "A": [
+          0,
+          0
+        ],
+        "B": [
+          0,
+          0
+        ],
+        "C": [
+          0,
+          0
+        ],
+        "D": [
+          0,
+          0
+        ]
+      },
+      "changed_equal_score": 0,
+      "lost_exact": 0,
+      "newly_exact": 0
+    },
+    "spatial-SQ4": {
+      "by_true_rank_better_worse": {
+        "1D": [
+          3,
+          1
+        ],
+        "2D": [
+          4,
+          2
+        ],
+        "3D": [
+          2,
+          6
+        ],
+        "4D": [
+          3,
+          1
+        ],
+        "5D": [
+          3,
+          4
+        ],
+        "6D": [
+          1,
+          0
+        ],
+        "A": [
+          6,
+          4
+        ],
+        "B": [
+          4,
+          1
+        ],
+        "C": [
+          4,
+          3
+        ],
+        "D": [
+          1,
+          4
+        ]
+      },
+      "changed_equal_score": 0,
+      "lost_exact": 21,
+      "newly_exact": 26
+    },
+    "spatial-exact": {
+      "by_true_rank_better_worse": {
+        "1D": [
+          0,
+          0
+        ],
+        "2D": [
+          0,
+          0
+        ],
+        "3D": [
+          0,
+          0
+        ],
+        "4D": [
+          0,
+          0
+        ],
+        "5D": [
+          0,
+          0
+        ],
+        "6D": [
+          0,
+          0
+        ],
+        "A": [
+          0,
+          0
+        ],
+        "B": [
+          0,
+          0
+        ],
+        "C": [
+          0,
+          0
+        ],
+        "D": [
+          0,
+          1
+        ]
+      },
+      "changed_equal_score": 0,
+      "lost_exact": 1,
+      "newly_exact": 0
+    }
+  },
+  "corpus": {
+    "distinct_full_replays": [
+      57795,
+      57650,
+      11050
+    ],
+    "distinct_raw_SGF": [
+      57795,
+      57650,
+      11050
+    ],
+    "full_replay_overlap": {
+      "eval_vs_new": 0,
+      "fit_vs_eval": 0,
+      "fit_vs_new": 0
+    },
+    "game_records_fit_eval_new": [
+      57795,
+      57650,
+      11050
+    ],
+    "raw_SGF_overlap": {
+      "eval_vs_new": 0,
+      "fit_vs_eval": 0,
+      "fit_vs_new": 0
+    }
+  },
+  "held_out_rows": 19639,
+  "methods_with_independently_recomputed_decisions": [
+    "SQ4",
+    "marginal",
+    "depth",
+    "fixed_depth",
+    "exact",
+    "spatial",
+    "interaction"
+  ],
+  "official_metric": {
+    "depth-SQ4": {
+      "ci95_independent_seed": [
+        0.0,
+        0.0
+      ],
+      "difference": 0.0
+    },
+    "depth-marginal": {
+      "ci95_independent_seed": [
+        0.0,
+        0.0
+      ],
+      "difference": 0.0
+    },
+    "interaction-SQ4": {
+      "ci95_independent_seed": [
+        -0.0002066975976235356,
+        0.0008813829145737354
+      ],
+      "difference": 0.00032149058739783243
+    },
+    "interaction-spatial": {
+      "ci95_independent_seed": [
+        0.0,
+        0.0
+      ],
+      "difference": 0.0
+    },
+    "spatial-SQ4": {
+      "ci95_independent_seed": [
+        -0.00018951556670467103,
+        0.0009025441036632393
+      ],
+      "difference": 0.00032149058739783243
+    },
+    "spatial-exact": {
+      "ci95_independent_seed": [
+        -4.844024131775061e-05,
+        0.0
+      ],
+      "difference": -1.5974742452073976e-05
+    }
+  },
+  "question_rows_reconstructed": 39327
+}

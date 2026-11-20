@@ -1,0 +1,11 @@
+{
+  "events": 169044,
+  "exhaustive_361_point_checks": 169,
+  "sha256": {
+    "available_moves.cpp": "2afd721d40fc668e6be710fd9a9d1f916a3c389ecb5c308c4c96e70a743bbd4e",
+    "menu_extract.py": "60a2f32d8c2e3d15465d4bffa732eb9716feab1844ded48de2a3b443d08e7c68",
+    "menu_protocol.json": "bfc71f68c2a7a30695f6af7ec7489af9cf236f2e560f43521833d9f65bd2bc3b",
+    "offer_events.npz": "2a102797c84f26f4f1770fd3699c3535b69d5ff7e364a94e618b45427cb3586a",
+    "read_alternatives.cpp": "5cb6673f6b8591e1d08669e952602eae92f4b94288241cd818ea3e8962644f6f"
+  }
+}

@@ -1,0 +1,85 @@
+{
+ "tag": "only_03",
+ "cards": [
+  "c03_model.html"
+ ],
+ "scripts": [
+  "a03_model.js",
+  "a90_terms.js"
+ ],
+ "console": [],
+ "slides": {
+  "01 card-arch": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 4 章 · 模型與訓練",
+    "issues": [],
+    "m": {
+     "leftChars": 305,
+     "allChars": 365,
+     "svgTexts": 38,
+     "svgMin": 15,
+     "svgP10": 15,
+     "bottomGap": 19
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 4 章 · 模型與訓練",
+    "issues": [],
+    "m": {
+     "leftChars": 305,
+     "allChars": 365,
+     "svgTexts": 38,
+     "svgMin": 17.6,
+     "svgP10": 17.6,
+     "bottomGap": 68
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "02 card-train": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 4 章 · 模型與訓練",
+    "issues": [],
+    "m": {
+     "leftChars": 312,
+     "allChars": 484,
+     "svgTexts": 27,
+     "svgMin": 14.2,
+     "svgP10": 14.2,
+     "bottomGap": 58
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 4 章 · 模型與訓練",
+    "issues": [],
+    "m": {
+     "leftChars": 312,
+     "allChars": 484,
+     "svgTexts": 27,
+     "svgMin": 16.7,
+     "svgP10": 16.7,
+     "bottomGap": 63
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  }
+ },
+ "static": [],
+ "missing_anims": [],
+ "kpi_missing": [],
+ "notes_drawer": {
+  "page": 2,
+  "open": true,
+  "t": "第 2 頁 · 任務與評分",
+  "len": 899,
+  "closed_again": true
+ }
+}

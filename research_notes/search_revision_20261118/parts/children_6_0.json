@@ -1,0 +1,14 @@
+{
+  "events": 64868,
+  "first": 72,
+  "last": 769135,
+  "part": 0,
+  "sha256": {
+    "child_parts.py": "2e89efaf507820a7765c35e641eed4b0c767f7059de90d5b3bf895a50b5ec535",
+    "children_6_0.npy": "9e8f654f3dfafd7a101a254be5a4420be1c21783064b7ec96e106fc5490965e8",
+    "protocol.json": "54f5dc092611e1f18e72d19826bd8ebda33ff50280d286523ddc7944d02f11bc",
+    "root_6.npz": "e46b6beaccf02f7f122f5acdea26c3277374c526f176f9437b5b7adacfe94541",
+    "search.py": "da65d73522c299550660aeb5a9fbc86cf71d053506c43efcf9541c22512abb85"
+  },
+  "shard": 6
+}

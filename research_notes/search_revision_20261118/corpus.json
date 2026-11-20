@@ -1,0 +1,22 @@
+{
+  "dev_eval_digest_intersection": 0,
+  "fresh_digest_intersection": 0,
+  "fresh_games": 11050,
+  "fresh_owners": 3035,
+  "question_games": 115445,
+  "questions": 39327,
+  "sha256": {
+    "corpus.py": "738e30d61ef1b7f1a4faf1882a7195d3e24dda4dc242787c66540821b3826c6d",
+    "corpus_0.tsv.gz": "67da9e45330387d68469861aeca0aad0d248567808afbf6f3b1c4c6d20fb51bb",
+    "corpus_1.tsv.gz": "1fc2f3bbed4bd375f8f79a57a5d624d69d06c1ec65892b737f2dd4c77cca3f0f",
+    "corpus_2.tsv.gz": "d76e5649bd3777f68b1c86ecd98048a4db70ca0d2cfdde0e478ffe6fa49e5146",
+    "corpus_3.tsv.gz": "3991e71033145485f747b7767a7d722508c9b244b5feb299abb4958e15b0d7d8",
+    "corpus_4.tsv.gz": "e5c94acfca818fbdc5422278b50935b854edd36af0160052da6615e4de45e25c",
+    "corpus_5.tsv.gz": "e93aa2efc83b78f53cb6d00c72b28260f9d933d4315cd088e3d3d9b87f706e2b",
+    "corpus_6.tsv.gz": "7206fac962878784998ed13a8188978d35097d0d3619dcb7315290e04c2d34a8",
+    "corpus_7.tsv.gz": "0511a065ee62c635091006a1d3ab76e99cdcf2b6a5ffe4db12e27a41d686d846",
+    "games.npz": "5532a6d18d88707e3f1c4e4a1904728caeb4ad6d790f6d8f4eb2e114e5e09b02",
+    "m183_dump.npz": "7bc8645f080ec8382146f87f1c5432707486b5399497248bdc313b93838b95ae",
+    "protocol.json": "54f5dc092611e1f18e72d19826bd8ebda33ff50280d286523ddc7944d02f11bc"
+  }
+}

@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 from aicup.evidence import apply_thresholds, fit_thresholds
+from aicup.metric_loss import expected_score_loss_torch, kernel_targets
 
 N_CLASSES = 10
 
@@ -88,20 +89,31 @@ class SoftmaxModel:
 
 class MLPModel:
     """One hidden ReLU layer, full-batch Adam in float64, fixed epochs, deterministic per seed. label_smoothing > 0
-    trains on ordinal_targets' soft labels instead of the one-hot cross-entropy (the same loss when it is 0)."""
+    trains on ordinal_targets' soft labels instead of the one-hot cross-entropy (the same loss when it is 0).
 
-    def __init__(self, hidden=64, l2=1e-4, epochs=300, lr=1e-2, seed=0, balanced=True, label_smoothing=0.0):
+    Regularisation options (issue #41; the defaults leave the training loop bit-identical to before): l1 > 0 adds an L1
+    penalty on the input layer's weights (sparse input selection); fit(..., val=(X_val, y_val)) evaluates the class-
+    balanced cross-entropy on `val` every `eval_every` epochs, keeps the parameters of the best evaluation and stops after
+    `patience` evaluations in a row without improvement (best_epoch records where it stopped; epochs is the cap).
+
+    metric_kernel=True (architecture v2 section 4F) trains on metric_loss.kernel_targets, the official score's kernel normalised
+    per class, in place of the one-hot or label-smoothed targets; finetune_expected_score is that section's second stage."""
+
+    def __init__(self, hidden=64, l2=1e-4, epochs=300, lr=1e-2, seed=0, balanced=True, label_smoothing=0.0, l1=0.0, metric_kernel=False):
         self.hidden, self.l2, self.epochs, self.lr, self.seed, self.balanced = hidden, l2, epochs, lr, seed, balanced
-        self.label_smoothing = float(label_smoothing)
+        self.label_smoothing, self.l1, self.metric_kernel = float(label_smoothing), float(l1), bool(metric_kernel)
+        self.best_epoch = None
         if not 0.0 <= self.label_smoothing < 1.0:
             raise ValueError(f"label_smoothing must be in [0, 1), got {label_smoothing}")
+        if self.l1 < 0:
+            raise ValueError(f"l1 must be >= 0, got {l1}")
 
     def _net(self, n_in):
         torch.manual_seed(self.seed)
         return torch.nn.Sequential(torch.nn.Linear(n_in, self.hidden), torch.nn.ReLU(),
                                    torch.nn.Linear(self.hidden, N_CLASSES)).double()
 
-    def fit(self, X, y, w=None):
+    def fit(self, X, y, w=None, val=None, eval_every=10, patience=5):
         X, y = np.asarray(X, dtype=float), np.asarray(y, dtype=int)
         w = class_weights(y) if (w is None and self.balanced) else (np.ones(len(y)) if w is None else np.asarray(w, float))
         self.mean, self.std = _standardise(X)
@@ -109,16 +121,85 @@ class MLPModel:
         yt, wt = torch.tensor(y), torch.tensor(w, dtype=torch.float64)
         self.net = self._net(X.shape[1])
         opt = torch.optim.Adam(self.net.parameters(), lr=self.lr)
-        soft = torch.tensor(ordinal_targets(y, self.label_smoothing), dtype=torch.float64) if self.label_smoothing > 0 else None
-        for _ in range(self.epochs):
+        if self.metric_kernel:
+            soft = torch.tensor(kernel_targets(y), dtype=torch.float64)
+        else:
+            soft = torch.tensor(ordinal_targets(y, self.label_smoothing), dtype=torch.float64) if self.label_smoothing > 0 else None
+        if val is not None:
+            Xv, yv = np.asarray(val[0], dtype=float), np.asarray(val[1], dtype=int)
+            Xvt, yvt = torch.tensor((Xv - self.mean) / self.std, dtype=torch.float64), torch.tensor(yv)
+            wvt = torch.tensor(class_weights(yv) if self.balanced else np.ones(len(yv)), dtype=torch.float64)
+            best, best_state, bad = float("inf"), None, 0
+        self.best_epoch = None
+        for epoch in range(self.epochs):
             opt.zero_grad()
             if soft is None:
                 ce = torch.nn.functional.cross_entropy(self.net(Xt), yt, reduction="none")
             else:
                 ce = -(soft * torch.log_softmax(self.net(Xt), dim=1)).sum(dim=1)
             loss = (ce * wt).sum() / wt.sum() + self.l2 * sum((p ** 2).sum() for n, p in self.net.named_parameters() if "weight" in n)
+            if self.l1 > 0:
+                loss = loss + self.l1 * self.net[0].weight.abs().sum()
             loss.backward()
             opt.step()
+            if val is not None and (epoch + 1) % eval_every == 0:
+                with torch.no_grad():
+                    cev = torch.nn.functional.cross_entropy(self.net(Xvt), yvt, reduction="none")
+                    score = float((cev * wvt).sum() / wvt.sum())
+                if score < best - 1e-12:
+                    best, bad = score, 0
+                    best_state, self.best_epoch = {k: v.detach().clone() for k, v in self.net.state_dict().items()}, epoch + 1
+                else:
+                    bad += 1
+                    if bad >= patience:
+                        break
+        if val is not None and best_state is not None:
+            self.net.load_state_dict(best_state)
+            self.val_ce = best
+        return self
+
+    def finetune_expected_score(self, X, y, w=None, val=None, lr=1e-3, epochs=300, eval_every=10, patience=5):
+        """Section 4F's second stage: continue the fitted net on the negative expected official score
+        (metric_loss.expected_score_loss_torch), class-balanced, same L2, full-batch Adam at `lr`. With val=(X_val, y_val) the
+        class-balanced loss on val is evaluated before the first epoch and every `eval_every` epochs, the best parameters are
+        kept (the start included, so the stage never leaves the net worse on val) and training stops after `patience`
+        evaluations without improvement; ft_epoch records the epochs of the kept parameters (0: the start). Without val it
+        runs exactly `epochs` epochs."""
+        X, y = np.asarray(X, dtype=float), np.asarray(y, dtype=int)
+        w = class_weights(y) if (w is None and self.balanced) else (np.ones(len(y)) if w is None else np.asarray(w, float))
+        Xt = torch.tensor((X - self.mean) / self.std, dtype=torch.float64)
+        yt, wt = torch.tensor(y), torch.tensor(w, dtype=torch.float64)
+        opt = torch.optim.Adam(self.net.parameters(), lr=lr)
+        self.ft_epoch = epochs
+        if val is not None:
+            Xv, yv = np.asarray(val[0], dtype=float), np.asarray(val[1], dtype=int)
+            Xvt, yvt = torch.tensor((Xv - self.mean) / self.std, dtype=torch.float64), torch.tensor(yv)
+            wvt = torch.tensor(class_weights(yv) if self.balanced else np.ones(len(yv)), dtype=torch.float64)
+
+            def val_loss():
+                with torch.no_grad():
+                    return float((expected_score_loss_torch(self.net(Xvt), yvt) * wvt).sum() / wvt.sum())
+
+            best, bad, self.ft_epoch = val_loss(), 0, 0
+            best_state = {k: v.detach().clone() for k, v in self.net.state_dict().items()}
+        for epoch in range(epochs):
+            opt.zero_grad()
+            es = expected_score_loss_torch(self.net(Xt), yt)
+            loss = (es * wt).sum() / wt.sum() + self.l2 * sum((p ** 2).sum() for n, p in self.net.named_parameters() if "weight" in n)
+            loss.backward()
+            opt.step()
+            if val is not None and (epoch + 1) % eval_every == 0:
+                cur = val_loss()
+                if cur < best - 1e-12:
+                    best, bad = cur, 0
+                    best_state, self.ft_epoch = {k: v.detach().clone() for k, v in self.net.state_dict().items()}, epoch + 1
+                else:
+                    bad += 1
+                    if bad >= patience:
+                        break
+        if val is not None:
+            self.net.load_state_dict(best_state)
+            self.val_es = best
         return self
 
     def predict_proba(self, X):
@@ -128,7 +209,7 @@ class MLPModel:
 
     def state_dict(self):
         return {"type": "mlp", "hidden": self.hidden, "l2": self.l2, "epochs": self.epochs, "lr": self.lr, "seed": self.seed,
-                "label_smoothing": self.label_smoothing, "mean": self.mean.tolist(), "std": self.std.tolist(),
+                "label_smoothing": self.label_smoothing, "l1": self.l1, "best_epoch": self.best_epoch, "mean": self.mean.tolist(), "std": self.std.tolist(),
                 "params": {k: v.tolist() for k, v in self.net.state_dict().items()}}
 
 
@@ -158,7 +239,9 @@ def from_state(d):
         m.mean, m.std, m.W, m.b = (np.array(d[k], dtype=float) for k in ("mean", "std", "W", "b"))
         return m
     if d["type"] == "mlp":
-        m = MLPModel(hidden=d["hidden"], l2=d["l2"], epochs=d["epochs"], lr=d["lr"], seed=d["seed"], label_smoothing=d.get("label_smoothing", 0.0))
+        m = MLPModel(hidden=d["hidden"], l2=d["l2"], epochs=d["epochs"], lr=d["lr"], seed=d["seed"], label_smoothing=d.get("label_smoothing", 0.0),
+                     l1=d.get("l1", 0.0))
+        m.best_epoch = d.get("best_epoch")
         m.mean, m.std = np.array(d["mean"], dtype=float), np.array(d["std"], dtype=float)
         m.net = m._net(len(m.mean))
         m.net.load_state_dict({k: torch.tensor(v, dtype=torch.float64) for k, v in d["params"].items()})

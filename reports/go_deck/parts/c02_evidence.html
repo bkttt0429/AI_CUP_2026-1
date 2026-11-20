@@ -1,0 +1,77 @@
+<!-- ================= 第 3 章：每手棋變證據（全份第 5–7 頁；W2） ================= -->
+<style>
+#card-opp .fig .cap{margin-top:2px}
+#card-hsl .report{grid-template-columns:minmax(0,.66fr) minmax(0,1.34fr)}
+</style>
+
+<section class="page card" id="card-hsl" data-ch="3" data-chtitle="每手棋變證據" data-title="請 AI 老師看每一手">
+  <div class="report">
+    <div class="txt">
+      <div class="num">第 3 章 · 每手棋變證據</div>
+      <div class="solves"><span class="d1">解決 ① 相鄰等級分不開</span></div>
+      <h3>請 AI 老師看每一手：這像幾級的人下的？</h3>
+      <p class="lede">像請一位見過各級棋手的老師，看一手棋就說出「這像幾級的人下的」。</p>
+      <ul class="key">
+        <li>KataGo 是頂尖的開源圍棋 AI。它的 Human SL 是模仿人類版（18 層的殘差卷積網路 ResNet），用大量人類棋譜教出來：告訴它「你是 5 級」，它就預測 5 級的人會下哪裡。下面叫它 AI 老師。</li>
+        <li>我們反過來用：每一手問 AI 老師 18 次（老師尺上的 12 級到 6 段）「如果是這一級的人，會下這手嗎」，最像的那一級就是一筆證據。</li>
+      </ul>
+      <dl class="why">
+        <dt>問題</dt><dd>資料只有棋步，沒有輸贏、沒有用時，只能從棋步看棋力。</dd>
+        <dt>作法</dt><dd>公開的工具裡，只有 AI 老師能直接回答「這像幾級」。</dd>
+        <dt>結果</dt><dd>拿從沒訓練過的那批玩家當考題，主辦方範例做法每 100 題 44.0 分（封面的 0.4631 是它在 Public 榜的分數，考題不同）；用 AI 老師升到 61.1 分。</dd>
+      </dl>
+    </div>
+    <div class="fig">
+      <div class="anim" data-anim="ch2_hsl"></div>
+      <div class="bars" id="ch2-hslbars"></div>
+    </div>
+  </div>
+</section>
+
+<section class="page card" id="card-scale" data-ch="3" data-title="換一把尺、記下印象">
+  <div class="report">
+    <div class="txt">
+      <div class="num">第 3 章 · 每手棋變證據</div>
+      <div class="solves"><span class="d1">解決 ① 相鄰等級分不開</span></div>
+      <h3>替 AI 老師換一把刻度對的尺，也記下它看棋的印象</h3>
+      <p class="lede">AI 老師的級段來自別的網站，本賽的 1D 到 4D 在老師尺上擠成一團。換一把刻度對的新尺，再把 AI 老師看棋時的印象也記下來。</p>
+      <ul class="key">
+        <li>換新尺：在 AI 老師後面接上 10 個小網路（複製 10 份它預測落點的 policy head），第 k 份只用本賽第 k 級玩家的棋微調。每一手都問這 10 個小網路「你這一級的人會下這裡嗎」，10 個答案就是新尺上的刻度。</li>
+        <li>記印象：老師的判斷只有「像幾級」，但它看棋時的內部印象（ResNet 中間層的特徵向量）多得多；我們把印象也存進每一手的描述。</li>
+      </ul>
+      <dl class="why">
+        <dt>問題</dt><dd>在老師尺上，只看一局棋的誤差，比 1D 到 4D 之間的距離還大。</dd>
+        <dt>換新尺</dt><dd>模擬考每 100 題多 3.5 分。把考題隨機重抽幾千次重算，幾乎每次都還是進步，就不是運氣。</dd>
+        <dt>記印象</dt><dd>拿掉印象，每 100 題少 0.5 分；留著印象、拿掉老師和新尺的判斷，幾乎沒差。</dd>
+      </dl>
+    </div>
+    <div class="fig">
+      <div class="anim" data-anim="ch2_scale"></div>
+    </div>
+  </div>
+</section>
+
+<section class="page card" id="card-opp" data-ch="3" data-title="看對手也能猜本人">
+  <div class="report">
+    <div class="txt">
+      <div class="num">第 3 章 · 每手棋變證據</div>
+      <div class="solves"><span class="d1">解決 ① 相鄰等級分不開</span><span class="d2">解決 ② 標籤和實力不一致</span></div>
+      <h3>看對手也能猜本人：伺服器會配實力相近的對手</h3>
+      <p class="lede">就像看一個人平常跟誰打球，就知道他大概多強。</p>
+      <ul class="key">
+        <li>伺服器照每個人當時掛的段位找對手，所以對手的棋也透露本人的段位。只看對手的棋來排本人的強弱，和標籤的吻合程度甚至略高於看本人的棋。</li>
+        <li>對局方式也是線索。互先：棋力相近，猜子決定先後；讓先：弱的一方固定先下；讓子：弱的一方先在盤上多放幾子。伺服器依兩人差幾級決定用哪一種。</li>
+      </ul>
+      <dl class="why">
+        <dt>問題</dt><dd>本人這幾局的棋，不一定等於他的標籤（難點 ②）。</dd>
+        <dt>作法</dt><dd>對手的每一手也請 AI 老師看；再加上「對手比本人強多少」（分別估本人和對手的棋，兩個估計相減）和讓了幾子。</dd>
+        <dt>結果</dt><dd>四項都加分，每項每 100 題多 1.0 到 1.9 分（右下）。</dd>
+      </dl>
+    </div>
+    <div class="fig">
+      <div class="anim" data-anim="ch2_opp"></div>
+      <div class="bars" id="ch2-oppbars"></div>
+      <p class="cap">都是模擬考的分數。前三項用題目特徵接 MLP（多層感知器）量，第四項用第 8 頁讀整局的模型量。</p>
+    </div>
+  </div>
+</section>

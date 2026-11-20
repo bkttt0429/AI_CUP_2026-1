@@ -167,6 +167,33 @@ def test_score_cli_matches_score_folds_layout(tmp_path, monkeypatch, capsys):
         ls.check_unseen({"train_folds": None}, [1], False, str(tmp_path / "s3"))
 
 
+def test_score_cli_game_keys_scores_only_the_listed_games(tmp_path, monkeypatch, capsys):
+    """--game-keys (issue #42): the fold's selection cut to the listed games, e.g. the HD >= 2 games scored again into a patch directory."""
+    import torch
+    from katago.train import modelconfigs
+    from katago.train.model_pytorch import Model
+
+    import l1b_score as ls
+    from aicup import l1b
+    from aicup.scoring import read_scored_games
+
+    games_df, sgfs, folds_csv = _fake_data(tmp_path)
+    monkeypatch.setattr(ls, "player_games", lambda: games_df)
+    monkeypatch.setattr(ls, "load_games", lambda keys: {k: sgfs[k] for k in keys})
+    torch.manual_seed(0)
+    model = Model(modelconfigs.config_of_name["b2c16"], 19)
+    model.initialize()
+    pt = tmp_path / "heads.pt"
+    l1b.save_heads(l1b.RankHeads(model.policy_head), pt, {"train_folds": [3, 4]})
+    fold1_keys = [k for k, pid in zip(games_df["game_key"], games_df["player_id"]) if pid in ("0000a001", "0000a003", "0000a005")]
+    (tmp_path / "keys.txt").write_text("\n".join(fold1_keys[:3]) + "\n")
+    out = tmp_path / "patch"
+    assert ls.main(["--heads", str(pt), "--folds", "1", "--out", str(out), "--model-config", "b2c16", "--device", "cpu", "--workers", "1",
+                    "--min-games", "1", "--folds-csv", str(folds_csv), "--game-keys", str(tmp_path / "keys.txt")]) == 0
+    assert sorted(read_scored_games(out / "fold1")["game_key"]) == sorted(fold1_keys[:3])
+    assert "3 games in this shard" in capsys.readouterr().out
+
+
 def test_score_cli_builds_the_pool_before_the_model_touches_the_device(tmp_path, monkeypatch):
     """Forking the CPU pool after CUDA is initialised is unsupported: the trunk is loaded on the CPU, the pool
     is created, and only then is the model moved to --device."""

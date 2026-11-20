@@ -82,3 +82,26 @@ def test_mlp_label_smoothing_zero_is_bit_identical_and_positive_spreads_mass_to_
     assert d["label_smoothing"] == 0.2 and from_state(d).label_smoothing == 0.2 and np.allclose(from_state(d).predict_proba(X), q, atol=1e-6)
     old = {k: v for k, v in plain.state_dict().items() if k != "label_smoothing"}
     assert from_state(old).label_smoothing == 0.0 and np.allclose(from_state(old).predict_proba(X), p, atol=1e-6)
+
+
+def test_mlp_l1_and_early_stopping_defaults_are_bit_identical_and_options_act():
+    X, y = _separable(seed=5)
+    base = MLPModel(hidden=16, epochs=120, seed=2).fit(X, y)
+    same = MLPModel(hidden=16, epochs=120, seed=2, l1=0.0).fit(X, y)
+    assert np.array_equal(base.predict_proba(X), same.predict_proba(X)) and base.best_epoch is None and same.state_dict()["l1"] == 0.0
+    # L1 on the input layer shrinks its weights
+    sparse = MLPModel(hidden=16, epochs=120, seed=2, l1=5e-2).fit(X, y)
+    assert float(sparse.net[0].weight.abs().sum()) < float(base.net[0].weight.abs().sum())
+    assert (sparse.predict_proba(X).argmax(axis=1) == y).mean() >= 0.9
+    # early stopping on a validation set keeps the best evaluation and records where it stopped
+    Xv, yv = _separable(seed=6)
+    es = MLPModel(hidden=16, epochs=120, seed=2).fit(X, y, val=(Xv, yv), eval_every=10, patience=2)
+    assert es.best_epoch is not None and es.best_epoch % 10 == 0 and 10 <= es.best_epoch <= 120 and np.isfinite(es.val_ce)
+    # with random labels on the validation set the stop comes early
+    rng = np.random.RandomState(0)
+    stop = MLPModel(hidden=16, epochs=300, seed=2).fit(X, y, val=(Xv, rng.randint(0, 10, size=len(yv))), eval_every=5, patience=2)
+    assert stop.best_epoch is not None and stop.best_epoch < 300
+    again = from_state(es.state_dict())
+    assert np.allclose(again.predict_proba(X), es.predict_proba(X), atol=1e-6) and again.best_epoch == es.best_epoch
+    with pytest.raises(ValueError):
+        MLPModel(l1=-1.0)

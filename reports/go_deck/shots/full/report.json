@@ -1,0 +1,573 @@
+{
+ "tag": "full",
+ "cards": [
+  "c01_intro.html",
+  "c02_evidence.html",
+  "c03_model.html",
+  "c04_anchor.html",
+  "c05_private.html"
+ ],
+ "scripts": [
+  "a01_intro.js",
+  "a02_evidence.js",
+  "a03_model.js",
+  "a04_anchor.js",
+  "a05_private.js",
+  "a90_terms.js"
+ ],
+ "console": [
+  "error: Failed to load resource: net::ERR_NETWORK_CHANGED",
+  "error: Failed to load resource: net::ERR_NETWORK_CHANGED",
+  "error: Failed to load resource: net::ERR_NETWORK_CHANGED",
+  "error: Failed to load resource: net::ERR_NETWORK_CHANGED",
+  "error: Failed to load resource: net::ERR_NETWORK_CHANGED",
+  "error: Failed to load resource: net::ERR_NETWORK_CHANGED",
+  "error: Failed to load resource: net::ERR_NETWORK_CHANGED",
+  "error: Failed to load resource: net::ERR_NETWORK_CHANGED",
+  "error: Failed to load resource: net::ERR_NETWORK_CHANGED",
+  "error: Failed to load resource: net::ERR_NETWORK_CHANGED",
+  "error: Failed to load resource: net::ERR_NETWORK_CHANGED",
+  "error: Failed to load resource: net::ERR_NETWORK_CHANGED",
+  "error: Failed to load resource: net::ERR_NETWORK_CHANGED",
+  "error: Failed to load resource: net::ERR_NETWORK_CHANGED"
+ ],
+ "slides": {
+  "01 cover": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "",
+    "issues": [],
+    "m": {
+     "leftChars": 334,
+     "allChars": 334,
+     "svgTexts": 0,
+     "svgMin": null,
+     "svgP10": null,
+     "bottomGap": 57
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "",
+    "issues": [],
+    "m": {
+     "leftChars": 334,
+     "allChars": 334,
+     "svgTexts": 0,
+     "svgMin": null,
+     "svgP10": null,
+     "bottomGap": 57
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "02 card-task": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 1 章 · 比賽在做什麼",
+    "issues": [],
+    "m": {
+     "leftChars": 278,
+     "allChars": 478,
+     "svgTexts": 27,
+     "svgMin": 13.1,
+     "svgP10": 13.1,
+     "bottomGap": 98
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 1 章 · 比賽在做什麼",
+    "issues": [],
+    "m": {
+     "leftChars": 278,
+     "allChars": 478,
+     "svgTexts": 27,
+     "svgMin": 15.4,
+     "svgP10": 15.4,
+     "bottomGap": 164
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "03 card-weak": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 2 章 · 難在哪裡",
+    "issues": [],
+    "m": {
+     "leftChars": 248,
+     "allChars": 424,
+     "svgTexts": 13,
+     "svgMin": 14.8,
+     "svgP10": 14.8,
+     "bottomGap": 49
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 2 章 · 難在哪裡",
+    "issues": [],
+    "m": {
+     "leftChars": 248,
+     "allChars": 424,
+     "svgTexts": 13,
+     "svgMin": 17.4,
+     "svgP10": 17.4,
+     "bottomGap": 76
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "04 card-label": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 2 章 · 難在哪裡",
+    "issues": [],
+    "m": {
+     "leftChars": 269,
+     "allChars": 409,
+     "svgTexts": 29,
+     "svgMin": 13.1,
+     "svgP10": 13.1,
+     "bottomGap": 81
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 2 章 · 難在哪裡",
+    "issues": [],
+    "m": {
+     "leftChars": 269,
+     "allChars": 409,
+     "svgTexts": 29,
+     "svgMin": 15.4,
+     "svgP10": 15.4,
+     "bottomGap": 101
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "05 card-hsl": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 3 章 · 每手棋變證據",
+    "issues": [],
+    "m": {
+     "leftChars": 358,
+     "allChars": 501,
+     "svgTexts": 20,
+     "svgMin": 14.7,
+     "svgP10": 14.7,
+     "bottomGap": 86
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 3 章 · 每手棋變證據",
+    "issues": [],
+    "m": {
+     "leftChars": 358,
+     "allChars": 501,
+     "svgTexts": 20,
+     "svgMin": 17.2,
+     "svgP10": 17.2,
+     "bottomGap": 107
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "06 card-scale": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 3 章 · 每手棋變證據",
+    "issues": [],
+    "m": {
+     "leftChars": 381,
+     "allChars": 486,
+     "svgTexts": 43,
+     "svgMin": 13.1,
+     "svgP10": 13.1,
+     "bottomGap": 69
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 3 章 · 每手棋變證據",
+    "issues": [],
+    "m": {
+     "leftChars": 381,
+     "allChars": 486,
+     "svgTexts": 43,
+     "svgMin": 15.4,
+     "svgP10": 15.4,
+     "bottomGap": 86
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "07 card-opp": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 3 章 · 每手棋變證據",
+    "issues": [],
+    "m": {
+     "leftChars": 315,
+     "allChars": 503,
+     "svgTexts": 31,
+     "svgMin": 13.1,
+     "svgP10": 13.1,
+     "bottomGap": 37
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 3 章 · 每手棋變證據",
+    "issues": [],
+    "m": {
+     "leftChars": 315,
+     "allChars": 503,
+     "svgTexts": 31,
+     "svgMin": 15.4,
+     "svgP10": 15.4,
+     "bottomGap": 63
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "08 card-arch": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 4 章 · 模型與訓練",
+    "issues": [],
+    "m": {
+     "leftChars": 345,
+     "allChars": 405,
+     "svgTexts": 38,
+     "svgMin": 15,
+     "svgP10": 15,
+     "bottomGap": 19
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 4 章 · 模型與訓練",
+    "issues": [],
+    "m": {
+     "leftChars": 345,
+     "allChars": 405,
+     "svgTexts": 38,
+     "svgMin": 17.6,
+     "svgP10": 17.6,
+     "bottomGap": 48
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "09 card-train": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 4 章 · 模型與訓練",
+    "issues": [],
+    "m": {
+     "leftChars": 323,
+     "allChars": 495,
+     "svgTexts": 27,
+     "svgMin": 14.2,
+     "svgP10": 14.2,
+     "bottomGap": 58
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 4 章 · 模型與訓練",
+    "issues": [],
+    "m": {
+     "leftChars": 323,
+     "allChars": 495,
+     "svgTexts": 27,
+     "svgMin": 16.7,
+     "svgP10": 16.7,
+     "bottomGap": 63
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "10 card-anchor-idea": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 5 章 · 破局：認出對手",
+    "issues": [],
+    "m": {
+     "leftChars": 311,
+     "allChars": 421,
+     "svgTexts": 28,
+     "svgMin": 13.1,
+     "svgP10": 13.1,
+     "bottomGap": 87
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 5 章 · 破局：認出對手",
+    "issues": [],
+    "m": {
+     "leftChars": 311,
+     "allChars": 421,
+     "svgTexts": 28,
+     "svgMin": 15.4,
+     "svgP10": 15.4,
+     "bottomGap": 94
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "11 card-anchor-fuse": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 5 章 · 破局：認出對手",
+    "issues": [],
+    "m": {
+     "leftChars": 365,
+     "allChars": 546,
+     "svgTexts": 47,
+     "svgMin": 13.1,
+     "svgP10": 13.1,
+     "bottomGap": 72
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 5 章 · 破局：認出對手",
+    "issues": [],
+    "m": {
+     "leftChars": 365,
+     "allChars": 546,
+     "svgTexts": 47,
+     "svgMin": 15.4,
+     "svgP10": 15.4,
+     "bottomGap": 80
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "12 card-gate": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 5 章 · 破局：認出對手",
+    "issues": [],
+    "m": {
+     "leftChars": 303,
+     "allChars": 461,
+     "svgTexts": 48,
+     "svgMin": 13.1,
+     "svgP10": 13.1,
+     "bottomGap": 69
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 5 章 · 破局：認出對手",
+    "issues": [],
+    "m": {
+     "leftChars": 303,
+     "allChars": 461,
+     "svgTexts": 48,
+     "svgMin": 15.4,
+     "svgP10": 15.4,
+     "bottomGap": 69
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "13 card-ledger": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 6 章 · 從 Public 到 Private",
+    "issues": [],
+    "m": {
+     "leftChars": 268,
+     "allChars": 385,
+     "svgTexts": 23,
+     "svgMin": 16.6,
+     "svgP10": 16.6,
+     "bottomGap": 76
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 6 章 · 從 Public 到 Private",
+    "issues": [],
+    "m": {
+     "leftChars": 268,
+     "allChars": 385,
+     "svgTexts": 23,
+     "svgMin": 19.5,
+     "svgP10": 19.5,
+     "bottomGap": 76
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "14 card-map": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 6 章 · 從 Public 到 Private",
+    "issues": [],
+    "m": {
+     "leftChars": 265,
+     "allChars": 389,
+     "svgTexts": 19,
+     "svgMin": 14.4,
+     "svgP10": 14.4,
+     "bottomGap": 82
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 6 章 · 從 Public 到 Private",
+    "issues": [],
+    "m": {
+     "leftChars": 265,
+     "allChars": 389,
+     "svgTexts": 19,
+     "svgMin": 17,
+     "svgP10": 17,
+     "bottomGap": 87
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "15 card-floor": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 6 章 · 從 Public 到 Private",
+    "issues": [],
+    "m": {
+     "leftChars": 329,
+     "allChars": 497,
+     "svgTexts": 20,
+     "svgMin": 14.7,
+     "svgP10": 14.7,
+     "bottomGap": 25
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 6 章 · 從 Public 到 Private",
+    "issues": [],
+    "m": {
+     "leftChars": 329,
+     "allChars": 497,
+     "svgTexts": 20,
+     "svgMin": 17.2,
+     "svgP10": 17.2,
+     "bottomGap": 22
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "16 after": {
+   "1366x768": {
+    "fs": 14.6,
+    "ch": "第 7 章 · 收穫",
+    "issues": [],
+    "m": {
+     "leftChars": 535,
+     "allChars": 556,
+     "svgTexts": 0,
+     "svgMin": null,
+     "svgP10": null,
+     "bottomGap": 46
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 7 章 · 收穫",
+    "issues": [],
+    "m": {
+     "leftChars": 535,
+     "allChars": 556,
+     "svgTexts": 0,
+     "svgMin": null,
+     "svgP10": null,
+     "bottomGap": 123
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "17 card-disclose": {
+   "1366x768": {
+    "fs": 13.9,
+    "ch": "第 7 章 · 收穫",
+    "issues": [],
+    "m": {
+     "leftChars": 633,
+     "allChars": 633,
+     "svgTexts": 0,
+     "svgMin": null,
+     "svgP10": null,
+     "bottomGap": 35
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 7 章 · 收穫",
+    "issues": [],
+    "m": {
+     "leftChars": 633,
+     "allChars": 633,
+     "svgTexts": 0,
+     "svgMin": null,
+     "svgP10": null,
+     "bottomGap": 120
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  }
+ },
+ "static": [],
+ "missing_anims": [],
+ "kpi_missing": [],
+ "notes_drawer": {
+  "page": 5,
+  "open": true,
+  "t": "第 5 頁 · 請 AI 老師看每一手",
+  "len": 797,
+  "closed_again": true
+ }
+}

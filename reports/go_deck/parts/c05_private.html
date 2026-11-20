@@ -1,0 +1,153 @@
+<!-- ================= 第 6 章 從 Public 到 Private（第 13–15 頁）＋第 7 章 收穫、揭露（第 16–17 頁）；W5 =================
+     白話版（PLAIN.md）：每頁一個問題、一個答案、一個比喻；左欄最多約 3 個數字。
+     數字出處逐項寫在 a05_private.js 的 NUM.ch5 與講稿_05.md 的「出處」行（投影片上不印出處碼）；卡片上的數字是手打的，改數字要兩邊一起改。 -->
+<section class="page card" id="card-ledger" data-ch="6" data-chtitle="從 Public 到 Private" data-title="Public 分數是精確的尺">
+  <style>
+    #card-ledger .key b,#card-map .key b,#card-floor .key b{color:var(--accent)}
+    #card-ledger .report{grid-template-columns:minmax(0,.66fr) minmax(0,1.34fr)}
+    #card-ledger .an-stage>svg{max-height:calc(100vh - 290px)}
+  </style>
+  <div class="report">
+    <div class="txt">
+      <div class="num">第 6 章 · 從 Public 到 Private <span class="tag t-p">用到 Public 資訊</span></div>
+      <div class="solves"><span class="d0">守住 Private</span></div>
+      <h3>Public 分數是一把精確的尺</h3>
+      <p class="lede">像從總價反推買了幾顆蘋果、幾顆橘子：每題只有三種得分，分數又顯示到小數第 7 位，從分數差就算得出幾題變對。</p>
+      <dl class="why"><dt>問題</dt><dd>模擬考看不出測試題各級有幾題、哪些改法會錯。</dd><dt>作法</dt><dd>故意只改一小批題上傳，看分數怎麼變。</dd><dt>結果</dt><dd>量出 Public 各級的題數，也找出會改錯的方向。</dd></dl>
+      <ul class="key">
+        <li>例：8 題從 1D 改成 A，分數剛好多了「8 題全變對」的量，於是定案、不再改。</li>
+        <li>會改錯的方向，看過試探結果後寫成四條固定的<b>禁止規則</b>：原本答 A 的不改、原本答 D 的不改、不從 5D 改 6D、不一次跳兩級。</li>
+      </ul>
+    </div>
+    <div class="fig">
+      <div class="anim" data-anim="ch5_ledger"></div>
+    </div>
+  </div>
+</section>
+
+<section class="page card" id="card-map" data-ch="6" data-title="把 Public 學到的用到 Private">
+  <style>
+    #card-map .report{grid-template-columns:minmax(0,.68fr) minmax(0,1.32fr)}
+    #card-map .an-stage>svg{max-height:calc(100vh - 260px)}
+  </style>
+  <div class="report">
+    <div class="txt">
+      <div class="num">第 6 章 · 從 Public 到 Private <span class="tag t-p">用到 Public 資訊</span></div>
+      <div class="solves"><span class="d0">守住 Private</span></div>
+      <h3>Public 學到的，怎麼用到看不見的 Private</h3>
+      <p class="lede">像民調：同一套抽法在兩個城市各抽一批人，甲城的結果能拿來估乙城。我們用同一條不看答案的規則，在兩榜各圈一批同類題。</p>
+      <dl class="why"><dt>問題</dt><dd>Public 的分數只說得出 Public 那些題。</dd><dt>作法</dt><dd>先改 Public 那批看分數；過了事先寫好的門檻，才連 Private 那批一起改。</dd><dt>結果</dt><dd>11-18 試了四批，都沒過門檻，Private 一題都沒動。</dd></dl>
+      <ul class="key">
+        <li>圈題只看模型的把握，例如「答 2D，但 3D 也很可能」。</li>
+        <li><b>門檻</b>在看分數前寫好：每改 4 題，要淨多拿 1 分。</li>
+      </ul>
+    </div>
+    <div class="fig">
+      <div class="anim" data-anim="ch5_band"></div>
+    </div>
+  </div>
+</section>
+
+<section class="page card" id="card-floor" data-ch="6" data-title="Private 大約幾分">
+  <style>
+    #card-floor .report{grid-template-columns:minmax(0,.66fr) minmax(0,1.34fr)}
+    #card-floor .an-stage>svg{max-height:calc(100vh - 230px)}
+  </style>
+  <div class="report">
+    <div class="txt">
+      <div class="num">第 6 章 · 從 Public 到 Private</div>
+      <div class="solves"><span class="d0">守住 Private</span></div>
+      <h3>Private 大約幾分：是估計，不是保證</h3>
+      <p class="lede">兩個榜像同一題庫抽出的期中考和期末考：題目不同、難度相近，所以 Public 量到的可以拿來估 Private。</p>
+      <dl class="why"><dt>問題</dt><dd>Private 要到比賽結束才看得到分數。</dd><dt>作法</dt><dd>先確認兩榜很像，再用 Public 量到的各級題數重算。</dd><dt>結果</dt><dd>以 ct112 估，最可能 0.81–0.83；九成把握在 0.77–0.84（較早的計算）；ct116 另有 8 題例外，沒加進去。</dd></dl>
+      <ul class="key">
+        <li><b>兩榜很像</b>：看起來像隨機分成兩半；五項看不出差別，一項 Private 略低約 0.01（0.81–0.83 沒扣掉）。</li>
+        <li><b>Private 凍結在 ct116</b>（最終答案）：之後只改 Public。Public 的分數含運氣，Private 比它低是正常的。</li>
+      </ul>
+    </div>
+    <div class="fig">
+      <div class="anim" data-anim="ch5_floor"></div>
+    </div>
+  </div>
+</section>
+
+<section class="page after" id="after" data-ch="7" data-chtitle="收穫" data-title="收穫">
+  <style>
+    body.m-present #after,body.m-present #card-disclose{font-size:clamp(15px,1.65vh,19px)}
+    #after .af-head{margin:0 0 10px}
+    #after .af-head h2,#card-disclose .af-head h2{margin:2px 0 0}
+    #after .af-top{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:30px;align-items:start;font-size:1.18em}
+    #after h4{margin:0 0 6px;font-size:1em;color:var(--accent)}
+    #after ol{margin:0;padding-left:1.4em}
+    #after ol li{margin:0 0 8px;line-height:1.5}
+    #after ol li b{display:block}
+    #after figure.af-rank{margin:12px 0 0;background:var(--accent-soft);border-radius:8px;padding:10px 14px 8px;line-height:1.5}
+    #after .af-rank img{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:6px;background:#fff}
+    #after .af-rank figcaption{margin-top:6px;font-size:.86em;color:var(--muted)}
+    #after .af-rank figcaption b{color:var(--ink)}
+    #after table{font-size:.95em}
+    #after th,#after td{padding:7px 12px;line-height:1.45}
+    #after td.d{font-weight:700;white-space:nowrap}
+    #after tr.g1 td.d{background:#e1eefa;color:#0a5a91}
+    #after tr.g2 td.d{background:#fbf0d2;color:#7a5a00}
+    #after td.n{white-space:nowrap;text-align:right}
+    @media (max-width:820px){#after .af-top{grid-template-columns:minmax(0,1fr);font-size:1em}#after td.n{white-space:normal}}
+  </style>
+  <div class="af-head">
+    <div class="num">第 7 章 · 收穫</div>
+    <h2>收穫：靠新證據加分，靠驗證守分</h2>
+  </div>
+  <div class="af-top">
+    <div>
+      <h4>三個收穫</h4>
+      <ol>
+        <li><b>進步來自新證據，不是更大的模型。</b>注意力池化、GRU、Transformer 等六種序列模型、放大 6 倍、梯度提升樹 GBDT，都沒有確定比 MLP＋平均好（每 100 題 −0.88 到 +0.02 分）；加分的是 AI 老師、對手的棋、認出的老玩家。</li>
+        <li><b>模擬考過關，不等於正式考過關。</b>一版模擬考每 100 題多 0.96 分，Public 卻少 0.95 分；從此每個零件都單獨驗。</li>
+        <li><b>剩下的誤差，大頭是跟著人走的。</b>每 100 題失 21.0 分，約 13.8 分（三分之二）看再多局也補不回（推論：多半來自標籤）。</li>
+      </ol>
+      <figure class="af-rank" id="after-rank"><img src="asset:lb_public_1118_top4.png" width="1075" height="239" alt="AIdea 競賽二 Public 排行榜截圖（2026-11-18）前 4 列：排名、隊伍名稱、成績、上傳時間與次數"><figcaption>Public 排行榜截圖（11-18）。我們的隊伍：<b>TEAM_11819</b>；最終名次以 Private 為準。</figcaption></figure>
+    </div>
+    <div>
+      <h4>難點和對策（每 100 題多幾分；沒註明的是模擬考）</h4>
+      <div class="table-wrap">
+        <table>
+          <tr><th>難點</th><th>對策</th><th class="n">量到</th></tr>
+          <tr class="g1"><td class="d" rowspan="5">① 相鄰等級<br>分不開</td><td>請 AI 老師判斷每一手像幾級</td><td class="n">多 17.1 分<br>（考沒訓練過的那批玩家）</td></tr>
+          <tr class="g1"><td>10 個專門判斷「像不像某一級」的小網路</td><td class="n">多 3.5 分</td></tr>
+          <tr class="g1"><td>整局一起讀，累積每一手的證據</td><td class="n">多 2.1 分</td></tr>
+          <tr class="g1"><td>同一個人的兩份棋譜，判斷要接近</td><td class="n">多 0.6 分</td></tr>
+          <tr class="g1"><td>沒把握時選平均拿分最多的答案</td><td class="n">多 0.23 分</td></tr>
+          <tr class="g2"><td class="d" rowspan="3">② 標籤和<br>實力不一致</td><td>看對手的棋，和對手比本人強多少</td><td class="n">多 3.7 分<br>（兩步：1.9＋1.8）</td></tr>
+          <tr class="g2"><td>認出對手是哪位老玩家，借他的等級</td><td class="n">多 4.4 分</td></tr>
+          <tr class="g2"><td>禁止規則擋住會改錯的方向</td><td class="n">Public 上的試驗：<br>擋下 11 題，免輸 0.57 分</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="page after" id="card-disclose" data-ch="7" data-title="揭露與資料來源">
+  <style>
+    #card-disclose .af-head{margin:0 0 6px}
+    #card-disclose .af-sub{margin:0 0 18px;color:var(--muted);font-size:1.08em}
+    #card-disclose .dc-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 22px;font-size:1.14em}
+    #card-disclose .dc{border:1px solid var(--line);border-left:5px solid var(--accent);border-radius:8px;padding:13px 18px;line-height:1.65;background:var(--paper)}
+    #card-disclose .dc.pub{border-left-color:var(--hot);background:#fdf6f6}
+    #card-disclose .dc.wide{grid-column:1/-1}
+    #card-disclose .dc b{display:block;color:var(--accent);margin-bottom:2px}
+    #card-disclose .dc.pub b{color:#9b2226}
+    @media (max-width:820px){#card-disclose .dc-grid{grid-template-columns:minmax(0,1fr);font-size:1em}}
+  </style>
+  <div class="af-head">
+    <div class="num">第 7 章 · 收穫</div>
+    <h2>揭露與資料來源</h2>
+  </div>
+  <p class="af-sub">比賽允許用外部公開資料，條件是寫出來源、說明它貢獻了什麼；用到 Public 分數資訊的地方，我們也一併列出。</p>
+  <div class="dc-grid af-disc">
+    <div class="dc"><b>別人訓練好的模型（預訓練權重）</b>KataGo 公開的 Human SL 模型 humanv0（＝第 5 頁的 AI 老師；權重檔 b18c384nbt-humanv0）。我們對每一手棋的描述，全部從它來。</div>
+    <div class="dc"><b>另一場比賽的程式</b>認對手用的棋風特徵和比對模型，沿用同一隊在「玩家辨識」比賽寫的程式，再用本賽的訓練資料重新訓練。</div>
+    <div class="dc wide"><b>外部公開資料</b>Fox Go Dataset（野狐圍棋的公開棋譜，GPL-3.0 授權）。<strong>有採用：</strong>9,685 個帳號、每個 20 局，用在第 11 頁第 ③ 路的一個認人模型裡：訓練時每一步摻入 64 個外部帳號當陌生人。單獨的貢獻很小（每 100 題多 0.08–0.12 分，分不出是不是運氣）。<strong>沒採用：</strong>第 12 頁那個用同一資料集 17.6 萬個帳號的實驗。帳號名已換成無法還原的代碼，對不到真實身分。</div>
+    <div class="dc pub wide"><b>用到 Public 分數資訊的地方</b>Public 確認後定案、不再改的兩批題（兩榜合計 38 題）；四條看過試探結果後寫成的禁止規則；例外：定案檔 ct116 由參賽者依 Public 回推結果，解除其中 6 題，並把 2 題 A 改 B；5 次「整份都答同一級」的上傳，用來量各級題數；從 Public 分數回推生成的標籤，只套在 Public 題、不影響 Private（ct116 7 題、ct118d 18 題）。</div>
+    <div class="dc wide"><b>生成式 AI</b>程式、實驗與分析由 Claude（Anthropic）執行；採用哪個做法、上傳哪個檔，由參賽者決定。</div>
+  </div>
+</section>

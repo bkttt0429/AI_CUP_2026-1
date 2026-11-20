@@ -1,0 +1,178 @@
+{
+ "tag": "only_05",
+ "cards": [
+  "c05_private.html"
+ ],
+ "scripts": [
+  "a05_private.js",
+  "a90_terms.js"
+ ],
+ "console": [],
+ "slides": {
+  "01 card-ledger": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 6 章 · 從 Public 到 Private",
+    "issues": [],
+    "m": {
+     "leftChars": 268,
+     "allChars": 385,
+     "svgTexts": 23,
+     "svgMin": 16.6,
+     "svgP10": 16.6,
+     "bottomGap": 76
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 6 章 · 從 Public 到 Private",
+    "issues": [],
+    "m": {
+     "leftChars": 268,
+     "allChars": 385,
+     "svgTexts": 23,
+     "svgMin": 19.5,
+     "svgP10": 19.5,
+     "bottomGap": 76
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "02 card-map": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 6 章 · 從 Public 到 Private",
+    "issues": [],
+    "m": {
+     "leftChars": 265,
+     "allChars": 389,
+     "svgTexts": 19,
+     "svgMin": 14.4,
+     "svgP10": 14.4,
+     "bottomGap": 82
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 6 章 · 從 Public 到 Private",
+    "issues": [],
+    "m": {
+     "leftChars": 265,
+     "allChars": 389,
+     "svgTexts": 19,
+     "svgMin": 17,
+     "svgP10": 17,
+     "bottomGap": 87
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "03 card-floor": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 6 章 · 從 Public 到 Private",
+    "issues": [],
+    "m": {
+     "leftChars": 321,
+     "allChars": 443,
+     "svgTexts": 20,
+     "svgMin": 14.7,
+     "svgP10": 14.7,
+     "bottomGap": 42
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 6 章 · 從 Public 到 Private",
+    "issues": [],
+    "m": {
+     "leftChars": 321,
+     "allChars": 443,
+     "svgTexts": 20,
+     "svgMin": 17.2,
+     "svgP10": 17.2,
+     "bottomGap": 39
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "04 after": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 7 章 · 收穫",
+    "issues": [],
+    "m": {
+     "leftChars": 535,
+     "allChars": 556,
+     "svgTexts": 0,
+     "svgMin": null,
+     "svgP10": null,
+     "bottomGap": 35
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 7 章 · 收穫",
+    "issues": [],
+    "m": {
+     "leftChars": 535,
+     "allChars": 556,
+     "svgTexts": 0,
+     "svgMin": null,
+     "svgP10": null,
+     "bottomGap": 123
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "05 card-disclose": {
+   "1366x768": {
+    "fs": 13.9,
+    "ch": "第 7 章 · 收穫",
+    "issues": [],
+    "m": {
+     "leftChars": 633,
+     "allChars": 633,
+     "svgTexts": 0,
+     "svgMin": null,
+     "svgP10": null,
+     "bottomGap": 35
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 7 章 · 收穫",
+    "issues": [],
+    "m": {
+     "leftChars": 633,
+     "allChars": 633,
+     "svgTexts": 0,
+     "svgMin": null,
+     "svgP10": null,
+     "bottomGap": 120
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  }
+ },
+ "static": [],
+ "missing_anims": [],
+ "kpi_missing": [],
+ "notes_drawer": {
+  "page": 5,
+  "open": true,
+  "t": "第 5 頁 · 請 AI 老師看每一手",
+  "len": 797,
+  "closed_again": true
+ }
+}

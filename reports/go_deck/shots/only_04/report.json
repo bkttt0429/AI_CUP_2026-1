@@ -1,0 +1,116 @@
+{
+ "tag": "only_04",
+ "cards": [
+  "c04_anchor.html"
+ ],
+ "scripts": [
+  "a04_anchor.js",
+  "a90_terms.js"
+ ],
+ "console": [],
+ "slides": {
+  "01 card-anchor-idea": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 5 章 · 破局：認出對手",
+    "issues": [],
+    "m": {
+     "leftChars": 311,
+     "allChars": 421,
+     "svgTexts": 28,
+     "svgMin": 13.1,
+     "svgP10": 13.1,
+     "bottomGap": 87
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 5 章 · 破局：認出對手",
+    "issues": [],
+    "m": {
+     "leftChars": 311,
+     "allChars": 421,
+     "svgTexts": 28,
+     "svgMin": 15.4,
+     "svgP10": 15.4,
+     "bottomGap": 94
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "02 card-anchor-fuse": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 5 章 · 破局：認出對手",
+    "issues": [],
+    "m": {
+     "leftChars": 365,
+     "allChars": 546,
+     "svgTexts": 47,
+     "svgMin": 13.1,
+     "svgP10": 13.1,
+     "bottomGap": 72
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 5 章 · 破局：認出對手",
+    "issues": [],
+    "m": {
+     "leftChars": 365,
+     "allChars": 546,
+     "svgTexts": 47,
+     "svgMin": 15.4,
+     "svgP10": 15.4,
+     "bottomGap": 80
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  },
+  "03 card-gate": {
+   "1366x768": {
+    "fs": 15,
+    "ch": "第 5 章 · 破局：認出對手",
+    "issues": [],
+    "m": {
+     "leftChars": 303,
+     "allChars": 461,
+     "svgTexts": 48,
+     "svgMin": 13.1,
+     "svgP10": 13.1,
+     "bottomGap": 69
+    }
+   },
+   "1757x855": {
+    "fs": 15,
+    "ch": "第 5 章 · 破局：認出對手",
+    "issues": [],
+    "m": {
+     "leftChars": 303,
+     "allChars": 461,
+     "svgTexts": 48,
+     "svgMin": 15.4,
+     "svgP10": 15.4,
+     "bottomGap": 69
+    }
+   },
+   "400x800": {
+    "issues": []
+   }
+  }
+ },
+ "static": [],
+ "missing_anims": [],
+ "kpi_missing": [],
+ "notes_drawer": {
+  "page": 3,
+  "open": true,
+  "t": "第 3 頁 · 難點 ①：相鄰等級分不開",
+  "len": 963,
+  "closed_again": true
+ }
+}

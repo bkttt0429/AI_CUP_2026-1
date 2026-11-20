@@ -1,0 +1,99 @@
+{
+ "format": 1,
+ "arm": "C",
+ "n_r": 64,
+ "pool": "meanstd",
+ "token_enc": "linear",
+ "state_sha256": "22390530fa306515481efeb550bcb8a243ce75466a17fc4294b96b42da3e6783",
+ "d_token": 162,
+ "n_scores": 30,
+ "hidden": 110,
+ "game_dim": 64,
+ "q_dim": 32,
+ "tag": "C-pc-f0-x40-oh",
+ "seed": 1,
+ "val_fold": 4,
+ "train_folds": [
+  0,
+  1,
+  2,
+  3
+ ],
+ "drop": null,
+ "mix": 0.0,
+ "loss": "ce",
+ "pooling": "meanstd",
+ "clip_weight": 0.1,
+ "player_contrast": 0.1,
+ "epochs": 8,
+ "batch": 32,
+ "lr": 0.001,
+ "wd": 0.0001,
+ "dropout": 0.1,
+ "inner_frac": 0.1,
+ "inner_questions": 4000,
+ "held_players": 636,
+ "train_questions": 183200,
+ "best_step": 24327,
+ "best_inner": 0.7521342554568868,
+ "steps_per_epoch": 5725,
+ "n_params": 115866,
+ "block_params": 62150,
+ "l1b_set": 3,
+ "l1b_heads": [
+  "heads3_A",
+  "heads3_B"
+ ],
+ "l1b_dirs": {
+  "0": "scores3_hd",
+  "1": "scores3_B_hd",
+  "2": "scores3_B_hd",
+  "3": "scores3_hd"
+ },
+ "opp_dirs": {
+  "0": "scores3_opp_hd",
+  "1": "scores3_B_opp_hd",
+  "2": "scores3_B_opp_hd",
+  "3": "scores3_opp_hd"
+ },
+ "hsl_dir": "results/scores_hd",
+ "vec_dir": "results/trunk_vec",
+ "cache": "/home/u2507115/BK_AICUP_2026-1/results/trunk_seq",
+ "train_folds_n": 0,
+ "train_games": 0,
+ "train_sizes": null,
+ "with_fold0": true,
+ "extra_games": 40,
+ "extra_dirs": {
+  "40": {
+   "hsl": "/home/u2507115/BK_AICUP_2026-1/results/scores_hd_x40",
+   "vec": "/home/u2507115/BK_AICUP_2026-1/results/trunk_vec_x40"
+  }
+ },
+ "opp_hsl": true,
+ "opp_hsl_r": false,
+ "opp_hsl_dirs": [
+  "results/scores_opp_hd",
+  "results/scores_opp_hd_x40"
+ ],
+ "swa": 0,
+ "pseudo": null,
+ "pseudo_weight": 1.0,
+ "final": 0.7409552263744601,
+ "final_nll": 1.0040695416104164,
+ "wall_s": 2046.3925995826721,
+ "git_head": "24207b2",
+ "git_dirty": true,
+ "code_sha256": "eef9a86c1cd14f32e032dccc1e60d0cf185e1071e99fd0cdb5966aa88079d647",
+ "code_files": [
+  "src/aicup/gamevec.py",
+  "src/aicup/ladder_data.py",
+  "src/aicup/aggregators.py",
+  "src/aicup/settrain.py",
+  "src/aicup/rankmodel.py",
+  "src/aicup/qfeatures.py",
+  "src/aicup/metric.py"
+ ],
+ "torch_version": "2.14.1+cu126",
+ "device_name": "NVIDIA H200"
+}

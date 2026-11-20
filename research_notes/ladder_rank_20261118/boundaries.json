@@ -1,0 +1,90 @@
+{
+  "pairs": {
+    "1D|2D": {
+      "base_auc_conditional": 0.7353991221101136,
+      "questions": 1270,
+      "roles": {
+        "attack": {
+          "auc_change": -0.004332346865813963,
+          "improved": 18,
+          "worsened": 27
+        },
+        "defense": {
+          "auc_change": -0.0016485262572495385,
+          "improved": 14,
+          "worsened": 12
+        }
+      },
+      "truth_by_level": [
+        614,
+        656
+      ]
+    },
+    "3D|4D": {
+      "base_auc_conditional": 0.7467000687690343,
+      "questions": 1427,
+      "roles": {
+        "attack": {
+          "auc_change": -0.004122212398074421,
+          "improved": 8,
+          "worsened": 24
+        },
+        "defense": {
+          "auc_change": 0.0003222320463699413,
+          "improved": 11,
+          "worsened": 10
+        }
+      },
+      "truth_by_level": [
+        702,
+        725
+      ]
+    },
+    "B|A": {
+      "base_auc_conditional": 0.7948360756069921,
+      "questions": 2254,
+      "roles": {
+        "attack": {
+          "auc_change": 0.0005417421828419755,
+          "improved": 5,
+          "worsened": 6
+        },
+        "defense": {
+          "auc_change": -0.00022980608630762678,
+          "improved": 4,
+          "worsened": 5
+        }
+      },
+      "truth_by_level": [
+        1065,
+        1189
+      ]
+    },
+    "C|B": {
+      "base_auc_conditional": 0.8104949314251639,
+      "questions": 2206,
+      "roles": {
+        "attack": {
+          "auc_change": -0.0023506672424074004,
+          "improved": 19,
+          "worsened": 26
+        },
+        "defense": {
+          "auc_change": -0.0005082968354820361,
+          "improved": 10,
+          "worsened": 12
+        }
+      },
+      "truth_by_level": [
+        1075,
+        1131
+      ]
+    }
+  },
+  "selection": "Folds 3/4; two leading SQ4 posterior probabilities are the indicated pair and truth belongs to the pair. Overlapping questions. Retrospective description only.",
+  "sources": {
+    "attack_predictions.npz": "8c1097918a2239b7beb1270bd36ac50f7db22dd3ed6652f553114c3b81d16ccf",
+    "defense_predictions.npz": "1168c22d8e2943aac5a3c4be6596d58061b2989f7e48984e7e7831d257268e51",
+    "m183_dump.npz": "7bc8645f080ec8382146f87f1c5432707486b5399497248bdc313b93838b95ae"
+  }
+}

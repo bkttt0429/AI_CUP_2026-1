@@ -1,0 +1,76 @@
+<!-- ===== 第 5 章 破局：認出對手（W4；全份第 10–12 頁）===== -->
+<section class="page card" id="card-anchor-idea" data-ch="5" data-chtitle="破局：認出對手" data-title="認出對手、借他的等級">
+  <div class="report">
+    <div class="txt">
+      <div class="num">第 5 章 · 破局：認出對手</div>
+      <div class="solves"><span class="d2">解決 ② 標籤和實力不一致</span><span class="d1">解決 ① 相鄰等級分不開</span></div>
+      <h3>認出對手是誰，借他的等級推回本人</h3>
+      <p class="lede">新同學程度不明，但他常和一位已知 3 段的老玩家下互先，那他大概也是 3 段。</p>
+      <ul class="key">
+        <li>測試題的對手約 75%（估計）是訓練資料裡的老玩家，等級已知。</li>
+        <li>認人模型（Transformer：把一局前 256 手壓成一個棋風指紋，和每位老玩家的平均指紋比對）認出對手，他的等級就是借來的參考等級。</li>
+        <li>再用配對規則推回本人：互先（棋力相近）多半同級，讓先（弱的一方固定先下）多半差一級。</li>
+      </ul>
+      <dl class="why">
+        <dt>問題</dt><dd>少數常下棋的人下了將近一半的棋，第一版認人模型卻把每個人看得一樣常見。</dd>
+        <dt>作法</dt><dd>常下棋的人比較常遇到，練習和猜的時候都優先猜他們。</dd>
+        <dt>結果</dt><dd>第一個猜的就猜中的比例，從三成多升到四成以上。</dd>
+      </dl>
+    </div>
+    <div class="fig">
+      <div class="anim" data-anim="ch4_ident"></div>
+    </div>
+  </div>
+</section>
+
+<section class="page card" id="card-anchor-fuse" data-ch="5" data-title="借來的等級要打折">
+  <style>#card-anchor-fuse .formula dl{font-size:.95em}#card-anchor-fuse .formula dd{color:var(--ink)}</style>
+  <div class="report">
+    <div class="txt">
+      <div class="num">第 5 章 · 破局：認出對手</div>
+      <div class="solves"><span class="d2">解決 ② 標籤和實力不一致</span><span class="d1">解決 ① 相鄰等級分不開</span></div>
+      <h3>認人不一定對，所以按把握度決定聽多少</h3>
+      <p class="lede">像法庭聽證詞：證人越可信，證詞份量越重；不可信的證詞，聽了也不改判決。</p>
+      <div class="formula">
+        <div class="eq">認人越有把握，借來的等級份量越重</div>
+        <dl>
+          <dt>把握低</dt><dd>幾乎不動。</dd>
+          <dt>把握高</dt><dd>往借來的等級推，越有把握推越多。</dd>
+          <dt>每一局</dt><dd>影響有上限，一局認錯翻不了整題。</dd>
+        </dl>
+      </div>
+      <dl class="why">
+        <dt>問題</dt><dd>認錯人時，借來的等級只是雜訊。</dd>
+        <dt>作法</dt><dd>最後用學出來的權重（多類別邏輯斯迴歸，5／10／20 局各一組）合併五路證據：模型自己看棋的判斷、看開局和棋形認對手、五個讀整局的認人模型、常客優先的新認人模型、本人棋風像哪群老玩家。</dd>
+        <dt>結果</dt><dd>模擬考每 100 題多 4.4 分（74.6 → 79.0）。Public 榜漲得更多，但不全是這一招的功勞：有兩步靠試探性上傳（故意只改一小批題、看分數變化的上傳，第 13 頁）調整；最後一步每 100 題約 1.3 分，估計是運氣好。</dd>
+      </dl>
+    </div>
+    <div class="fig">
+      <div class="anim" data-anim="ch4_climb"></div>
+    </div>
+  </div>
+</section>
+
+<section class="page card" id="card-gate" data-ch="5" data-title="採用門檻擋掉了什麼">
+  <div class="report">
+    <div class="txt">
+      <div class="num">第 5 章 · 破局：認出對手</div>
+      <div class="solves"><span class="d0">把關</span></div>
+      <h3>每個改動都要過門檻，重訓兩次都要成立</h3>
+      <p class="lede">像新藥要過兩次獨立試驗才上市：模擬考的進步要超過門檻，換一批隨機起點重訓，也要再過一次。</p>
+      <ul class="key">
+        <li>門檻依階段不同：11-06 以前每 100 題 0.5 分，之後 0.25 分；後來認人模型的改良放進整套系統測，門檻 0.10 分。</li>
+        <li>有一版模擬考過了，Public 榜卻掉分。從此每個零件都先單獨測，再放進整套系統測。</li>
+        <li>認人模型又變準了七次以上，總分卻沒動：借來的等級本身就有誤差，認人再準，能借到的資訊也有上限。</li>
+      </ul>
+      <dl class="why">
+        <dt>問題</dt><dd>小的進步常常只是運氣，重訓一次就消失。</dd>
+        <dt>作法</dt><dd>事先定好門檻，同一階段的改動都用同一把尺量。</dd>
+        <dt>結果</dt><dd>留下 14 個訊號（右圖綠卡）；11-06 之後的 16 個代表方向<span style="white-space:nowrap">只過了 2 個。</span></dd>
+      </dl>
+    </div>
+    <div class="fig">
+      <div class="anim" data-anim="ch4_forest"></div>
+    </div>
+  </div>
+</section>

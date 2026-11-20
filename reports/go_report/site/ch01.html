@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AICUP 棋力預測 第 1 章：任務與資料</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/report.css">
+</head>
+<body class="m-read" data-chapter="1" data-next="ch02.html">
+<header class="top"><h1><button type="button" class="ch-menu-btn" aria-haspopup="dialog" aria-controls="ch-menu" aria-expanded="false">AICUP 棋力預測 · 第 1 章 任務與資料 <span class="ch-menu-caret" aria-hidden="true">▾</span></button></h1><div class="modes" role="group" aria-label="模式">
+    <button data-mode="present" aria-pressed="false">簡報</button>
+    <button data-mode="read" aria-pressed="true">閱讀</button>
+    <button data-mode="notes" aria-pressed="false">筆記</button>
+  </div></header>
+<dialog class="ch-menu-dlg" id="ch-menu" aria-label="章節"><a href="index.html"><span>章節架構</span> <span class="ch-menu-meta"></span></a><hr><a href="ch01.html" aria-current=page><span>1 · 任務與資料</span> <span class="ch-menu-meta">4 頁 · 目前</span></a><a href="ch02.html"><span>2 · 工具：KataGo 與 Human SL</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch03.html"><span>3 · 現行架構：提交候選</span> <span class="ch-menu-meta">3 頁</span></a><a href="ch04.html"><span>4 · 每手證據：Human SL 到 L1b</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch05.html"><span>5 · 聚合與第二份證據</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch06.html"><span>6 · 沒有通過的方向</span> <span class="ch-menu-meta">3 頁</span></a><a href="ch07.html"><span>7 · 錯誤結構與診斷</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch08.html"><span>8 · 架構 v2 與規則</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch09.html"><span>9 · 提交流程與未確認事項</span> <span class="ch-menu-meta">3 頁</span></a><hr><a href="talk.html"><span>整份報告（35 頁）</span> <span class="ch-menu-meta"></span></a></dialog>
+<main>
+<section class="page opening" id="opening">
+  <div class="kicker">AICUP 棋力預測 · 第 1 章 · 任務與資料</div>
+  <p class="hook">只憑 5–20 局棋譜，<br>要判斷一位陌生玩家屬於哪個等級。</p>
+  <p class="lead">AI CUP 2026 秋季賽「棋力預測」給同一位未知玩家的 5–20 局 SGF 棋譜，要求預測他在 10 個有序等級中的哪一級。本章先把題目、計分、資料與驗證方式說清楚，後面每一章的數字都建立在這些約定上。</p>
+  <nav class="opening-route" aria-label="本章路線"><a href="#card-task">任務</a><span aria-hidden="true">→</span><a href="#card-data">資料</a><span aria-hidden="true">→</span><a href="#card-protocol">驗證</a></nav>
+  <ol><li id="opening-q1"><b>1</b><a href="#card-task">題目到底給什麼、要我們交什麼？</a></li><li id="opening-q2"><b>2</b><a href="#card-data">訓練資料裡有什麼、沒有什麼？</a></li><li id="opening-q3"><b>3</b><a href="#card-protocol">離線分數怎樣才可信？</a></li></ol>
+  <div class="meta"><span>訓練 100 萬局 · 8,007 人 · 測試 Public 400 + Private 400 題</span><span>3 張報告卡 · 推導見「推導 ▸」</span></div>
+</section>
+<section class="page card" id="card-task" data-sec="0">
+  <div class="report">
+    <div>
+      <div class="num"><a class="trace" href="#opening-q1">第 1 章 · 問題 1／3</a></div>
+      <h3>每題給一位玩家的 5–20 局 SGF 與他的執色，交一個等級；猜中 1 分、差一級 0.368 分、其餘 0 分</h3>
+      <div class="formula">k̂ = argmax<sub>k</sub> [ q<sub>k</sub> + e<sup>−1</sup> ( q<sub>k−1</sub> + q<sub>k+1</sub> ) ]</div>
+      <ul><li>輸入：一題一列，question_id、num_games、sgf_1…sgf_20、color_1…color_20；每局是完整 SGF（雙方著手），color 是目標玩家的執色</li><li>輸出：submission_rank.csv，每題一個標籤 D、C、B、A、1D–6D；Public 400 題先、Private 400 題後，名次依 Private</li><li>2026-11-04 11:00 釋出測試集，11-24 23:59:59 截止；每天 5 次上傳，以最後一次計分</li></ul>
+    </div>
+    <div class="fig"><div class="stage"><div class="strip-wrap"><div class="strip" id="rankStrip" role="group" aria-label="點選真實等級，看每個預測的得分"><button type="button" data-i="0" aria-pressed="false"><span class="lv">D</span><span class="rg">10–12k</span><span class="sc"></span></button><button type="button" data-i="1" aria-pressed="false"><span class="lv">C</span><span class="rg">7–9k</span><span class="sc"></span></button><button type="button" data-i="2" aria-pressed="false"><span class="lv">B</span><span class="rg">4–6k</span><span class="sc"></span></button><button type="button" data-i="3" aria-pressed="false"><span class="lv">A</span><span class="rg">1–3k</span><span class="sc"></span></button><button type="button" data-i="4" aria-pressed="false"><span class="lv">1D</span><span class="rg">1d</span><span class="sc"></span></button><button type="button" data-i="5" aria-pressed="false"><span class="lv">2D</span><span class="rg">2d</span><span class="sc"></span></button><button type="button" data-i="6" aria-pressed="false"><span class="lv">3D</span><span class="rg">3d</span><span class="sc"></span></button><button type="button" data-i="7" aria-pressed="false"><span class="lv">4D</span><span class="rg">4d</span><span class="sc"></span></button><button type="button" data-i="8" aria-pressed="false"><span class="lv">5D</span><span class="rg">5d</span><span class="sc"></span></button><button type="button" data-i="9" aria-pressed="false"><span class="lv">6D</span><span class="rg">6d</span><span class="sc"></span></button></div><p class="strip-note">點一格設定真實等級，格內數字是猜這一級能拿的分數。D–A 各涵蓋 3 個級位，1D–6D 各 1 段。</p></div></div><div class="cap">互動示意：點一格設定真實等級，看猜每一級各拿幾分</div><div class="sources"><div class="source-chips" role="group" aria-label="出處"><span class="source-chip" data-field="資料"><b>資料</b> AIdea 競賽頁面、Tutorial README</span></div></div></div>
+    <div class="cause"><span class="pair"><span class="k">問題</span><b>10 類有序，差一級仍有分</b></span><span class="arrow">→</span><span class="pair"><span class="k go">作法</span><b>輸出機率，選期望得分最高的等級</b></span><span class="arrow">→</span><span class="pair"><span class="k stuck">限制</span><b>資料裡有什麼、沒有什麼？</b></span><span class="bridge"><a href="#card-data">接續：100 萬局、8,007 位玩家、每級 10 萬局；每局只有一方是標籤玩家，沒有勝負、用時、對手等級；v1.1 補了讓子數 HD[n]</a><span class="bridge-text">接續：100 萬局、8,007 位玩家、每級 10 萬局；每局只有一方是標籤玩家，沒有勝負、用時、對手等級；v1.1 補了讓子數 HD[n]</span></span></div>
+  </div>
+  <button class="deriv-open" data-sec="0" aria-haspopup="dialog">推導 ▸</button>
+</section>
+<section class="lesson" id="sec-0" data-title="1.1 任務與計分">
+  <h3>1.1 任務與計分</h3>
+  <p class="proves">對應報告卡 1：每題給一位玩家的 5–20 局 SGF 與他的執色，交一個等級；猜中 1 分、差一級 0.368 分、其餘 0 分</p>
+  <p>十個等級由弱到強是 D、C、B、A、1D、2D、3D、4D、5D、6D：D–A 各涵蓋三個級位（10–12k、7–9k、4–6k、1–3k），1D–6D 各一段。計分對相鄰等級給 e⁻¹ 的部分分數、差兩級以上給 0，所以它是半徑 1 的帶狀獎勵，不是有序距離；最佳決策是對每個 k 算「猜 k 的期望得分」q<sub>k</sub> + e⁻¹(q<sub>k−1</sub> + q<sub>k+1</sub>）再取最大，不一定是機率最高的那一類。</p>
+<p>官方只說每題 5–20 局、以 num_games 給定；實際分布要等測試集釋出才知道。官方 baseline（Tutorial notebook：整局畫成平面進 ResNet，逐局 softmax 平均）在 Public 是 0.4631。</p>
+<p>本報告的主要指標是「各級平均官方分」：先按 5、10、20 局分開算，每種題長在 10 個等級間等權平均，再取三種題長的平均；它比官方的直接平均低約 0.007（提交候選：平衡版 0.6916、直接平均 0.6845），差來自各級題數不均。兩種口徑都會報，差值與信賴區間一律用同一份配對預測表。</p>
+  <p class="takeaway">任務是十類有序分類，但計分讓「差一級」有一半以上的價值；決策規則要照計分來，不是照準確率。</p>
+</section>
+<section class="page card" id="card-data" data-sec="1">
+  <div class="report">
+    <div>
+      <div class="num"><a class="trace" href="#opening-q2">第 1 章 · 問題 2／3</a></div>
+      <h3>100 萬局、8,007 位玩家、每級 10 萬局；每局只有一方是標籤玩家，沒有勝負、用時、對手等級；v1.1 補了讓子數 HD[n]</h3>
+      <div class="formula">train_{rank}.csv：player_id、game_id、rank、color、sgf_content</div>
+      <ul><li>每位玩家只屬一個等級，平均 125 局；對手不在資料集中，等級未知；game_id 在同人同色內是隨機排列，沒有時間序</li><li>SGF 只有雙方著手與棋盤大小，沒有 RE、用時、目數；v1.1 加了 HD[n]：HD0 互先 79.3%、HD1 讓先 17.1%、HD2–9 讓子 3.6%（36,421 局、3,474 人）</li><li>讓子局的讓子石未記錄、著手 B/W 標記相反，color 欄是實際顏色（上手執白）；舊流程因此把 3.6% 的局在缺子棋盤上拿對手的手評分</li></ul>
+    </div>
+    <div class="fig"><div class="stage"><div class="table-wrap"><table><thead><tr><th>欄位或事實</th><th>內容</th></tr></thead><tbody><tr><td>局數、玩家</td><td>1,000,000 局、8,007 人；每級 100,000 局</td></tr><tr><td>每局</td><td>一方是標籤玩家（player_id、rank、color），另一方未知</td></tr><tr><td>沒有的</td><td>勝負、目數、用時、玩家名、對手等級、時間序</td></tr><tr><td>讓子（v1.1）</td><td>HD0 79.3%、HD1 17.1%、HD2–9 3.6%；讓子石未記錄，B/W 相反</td></tr><tr><td>貼目</td><td>資料約定 HD0 6.5、HD≥1 0；舊流程一律輸入 7.5（第 2 章）</td></tr><tr><td>評分時取樣</td><td>每位玩家只取 20 局（全量評分 7,948 人、147,780 局）</td></tr></tbody></table></div></div><div class="cap">資料集 v1.1（2026-11-01），issue #42 的普查</div><div class="sources"><div class="source-chips" role="group" aria-label="出處"><span class="source-chip" data-field="資料"><b>資料</b> data/training、results/data/hd_table.csv</span></div></div></div>
+    <div class="cause"><span class="pair"><span class="k">問題</span><b>要知道哪些訊號根本不在資料裡</b></span><span class="arrow">→</span><span class="pair"><span class="k go">作法</span><b>逐欄盤點，讓子資訊另外普查</b></span><span class="arrow">→</span><span class="pair"><span class="k stuck">限制</span><b>離線分數怎樣才可信？</b></span><span class="bridge"><a href="#card-protocol">接續：所有實驗依玩家整人留出，通過條件事先指定，fold 0 只作採用前的單次檢查</a><span class="bridge-text">接續：所有實驗依玩家整人留出，通過條件事先指定，fold 0 只作採用前的單次檢查</span></span></div>
+  </div>
+  <button class="deriv-open" data-sec="1" aria-haspopup="dialog">推導 ▸</button>
+</section>
+<section class="lesson" id="sec-1" data-title="1.2 資料與棋譜">
+  <h3>1.2 資料與棋譜</h3>
+  <p class="proves">對應報告卡 2：100 萬局、8,007 位玩家、每級 10 萬局；每局只有一方是標籤玩家，沒有勝負、用時、對手等級；v1.1 補了讓子數 HD[n]</p>
+  <p>這些事實決定了後面的路：沒有勝負與目數，所以「這盤誰贏」不能當特徵；對手等級未知，但線上配對依實力，對手的落子仍帶有目標玩家的資訊（第 5 章）；讓子數由配對系統依兩人等級差決定，是資料裡唯一直接寫著「標籤側」的欄位（第 5 章的 HD 特徵）。</p>
+<p>讓子局的三個問題（缺子、B/W 相反、實際顏色）在 v1.1 之前無從得知；修正寫在 <code>aicup.sgf.setup_and_moves</code>，只重評那 3.6% 的局正在進行（第 8 章）。</p>
+  <p class="takeaway">資料只給落子、執色、讓子數；凡是需要勝負或對手等級的方法，一開始就排除。</p>
+</section>
+<section class="page card" id="card-protocol" data-sec="2">
+  <div class="report">
+    <div>
+      <div class="num"><a class="trace" href="#opening-q3">第 1 章 · 問題 3／3</a></div>
+      <h3>所有實驗依玩家整人留出，通過條件事先指定，fold 0 只作採用前的單次檢查</h3>
+      <div class="formula">(1) CI 下界 &gt; 0　(3) ≥ 3／4 折為正　(4) 差 ≥ 0.005</div>
+      <ul><li>同一人不會同時出現在訓練與驗證；folds 1–4 留一折 CV，39,327 題</li><li>fold 0：9,872 題、1,594 人；已用四次（r3_pma、fused、fused_opp、fused_opp_diff），再用要使用者本人同意</li><li>驗證題每人 1×20 + 2×10 + 4×5 局是內部設計；官方只說 5–20 局，實際分布 11/04 才知道</li></ul>
+    </div>
+    <div class="fig"><div class="stage"><div class="table-wrap"><table><thead><tr><th>項目</th><th>設定</th></tr></thead><tbody><tr><td>切分</td><td>依 player_id 分 5 折（seed 42）</td></tr><tr><td>驗證題</td><td>每人 1 題 20 局、2 題 10 局、4 題 5 局</td></tr><tr><td>訓練題</td><td>每人 32 題，5–20 局隨機；約 152,000 題</td></tr><tr><td>不確定性</td><td>玩家層級 bootstrap，5,000 次，兩模型共用抽樣</td></tr><tr><td>學習式特徵</td><td>PCA、標準化、校準、選特徵都只在訓練內玩家擬合</td></tr></tbody></table></div></div><div class="cap">條件編號沿用聚合器梯子；條件 (2) 是多 seed 一致，單次確定性擬合的模型不適用</div><div class="sources"><div class="source-chips" role="group" aria-label="出處"><span class="source-chip" data-field="資料"><b>資料</b> METHOD_NOTES §2.1</span></div></div></div>
+    <div class="cause"><span class="pair"><span class="k">問題</span><b>反覆比較容易選到運氣</b></span><span class="arrow">→</span><span class="pair"><span class="k go">作法</span><b>條件事先指定，fold 0 只當檢查</b></span><span class="arrow">→</span><span class="pair"><span class="k stuck">限制</span><b>我們用什麼工具把棋譜變成數字？</b></span><span class="bridge"><a href="ch02.html#opening">接續：第 2 章　工具：KataGo 與 Human SL</a><span class="bridge-text">接續：第 2 章　工具：KataGo 與 Human SL</span></span></div>
+  </div>
+  <button class="deriv-open" data-sec="2" aria-haspopup="dialog">推導 ▸</button>
+</section>
+<section class="lesson" id="sec-2" data-title="1.3 驗證協議">
+  <h3>1.3 驗證協議</h3>
+  <p class="proves">對應報告卡 3：所有實驗依玩家整人留出，通過條件事先指定，fold 0 只作採用前的單次檢查</p>
+  <p>5 折切分依 <code>player_id</code> 整人留出。比較時以玩家為重抽樣單位，因為同一人的多題高度相關（第 5 章有實測）。新實驗只比 folds 1–4，並事先指定要比哪一條、條件是什麼；接近門檻才補預先固定的少量種子。單折雜訊底線：同一特徵的 float32 捨入可讓單折動 ±0.001。</p>
+<p>離線分數不能和排行榜直接比：題目、玩家與題長分布都可能不同。官方 baseline 在 Public 是 0.4631，同一模型在本協議下是 0.399（argmax）與 0.440（期望得分決策）。</p>
+  <p class="takeaway">以玩家為單位切分與重抽樣；比較事先指定；fold 0 不參與選擇，所以 0.69 左右的分數可以互相比較，但不等於排行榜分數。</p>
+</section>
+<section class="after" id="recap">
+  <h3>本章結論</h3><p>輸出是十類機率加期望得分決策；資料裡只有落子、執色與讓子數，沒有勝負與對手等級；離線比較一律依玩家留出，並事先指定通過條件。</p>
+  <div class="next"><b>待解問題　</b>我們用什麼工具把一手棋變成數字？第 2 章介紹 KataGo 與 Human SL。</div>
+  <section class="refs"><h3>參考文獻</h3><ol><li>本專案紀錄：<code>METHOD_NOTES.md</code>、<code>docs/NANO4.md</code>、<code>results/</code>、<code>reports/architecture_v2_2026-11-02.md</code>；GitHub issue #6、#23、#36、#42。</li></ol></section>
+</section>
+<nav class="chapter-nav" aria-label="上一章／下一章"><a class="next" href="ch02.html">第 2 章　工具：KataGo 與 Human SL ›</a></nav>
+</main>
+<dialog class="lesson-dlg" id="dlg" aria-labelledby="dlg-t">
+  <div class="dlg-head"><span class="k" id="dlg-k">第 1 章 · 推導</span><span class="t" id="dlg-t"></span><button class="x" aria-label="關閉">✕</button></div>
+  <div class="dlg-body"></div>
+  <div class="dlg-foot"><button class="prev">‹ 上一節</button><button class="nextb">下一節 ›</button><button class="whole">閱讀全章</button></div>
+</dialog>
+<nav class="pager" aria-label="頁面導覽">
+  <button type="button" class="pg-prev" aria-label="上一頁">‹</button>
+  <span id="pg" title="← → 換頁 · D 推導 · Esc 離開">1 · 1／4</span>
+  <button type="button" class="pg-next" aria-label="下一頁">›</button>
+  <span class="pg-hint" aria-live="polite"></span>
+</nav>
+<script src="assets/core.js"></script>
+<script src="assets/report.js"></script>
+<script src="assets/modes.js"></script>
+</body>
+</html>

@@ -1,0 +1,76 @@
+{
+  "method": "Exploratory grade-standardized observed take-up, folds 3/4. Five value bands times original chain size times three phases. Weight each common cell by n1*n2/(n1+n2), recalculated in each of 5000 within-grade player bootstrap draws. No regression, shrinkage, or extrapolation to absent offers.",
+  "pairs": {
+    "1D/2D": {
+      "adjusted_high_minus_low": 0.01181594219612079,
+      "available_strata": 30,
+      "data": {
+        "1D": {
+          "choices": 1559,
+          "players": 170,
+          "rates_by_value": {
+            "above_1": 0.9372197309417041,
+            "below_minus_1": 0.3561643835616438,
+            "within_1": 0.8221476510067114
+          },
+          "rescues": 1342
+        },
+        "2D": {
+          "choices": 2383,
+          "players": 244,
+          "rates_by_value": {
+            "above_1": 0.9487485101311085,
+            "below_minus_1": 0.41203703703703703,
+            "within_1": 0.8220858895705522
+          },
+          "rescues": 2083
+        }
+      },
+      "overlap_choices": [
+        1559,
+        2383
+      ],
+      "player_cluster_ci95": [
+        -0.00662490462377616,
+        0.030239897043722954
+      ],
+      "total_strata": 30
+    },
+    "3D/4D": {
+      "adjusted_high_minus_low": 0.0006928909823668998,
+      "available_strata": 30,
+      "data": {
+        "3D": {
+          "choices": 2342,
+          "players": 246,
+          "rates_by_value": {
+            "above_1": 0.9583828775267539,
+            "below_minus_1": 0.37037037037037035,
+            "within_1": 0.8626126126126126
+          },
+          "rescues": 2075
+        },
+        "4D": {
+          "choices": 2439,
+          "players": 255,
+          "rates_by_value": {
+            "above_1": 0.9594298245614035,
+            "below_minus_1": 0.3684210526315789,
+            "within_1": 0.8494117647058823
+          },
+          "rescues": 2181
+        }
+      },
+      "overlap_choices": [
+        2342,
+        2439
+      ],
+      "player_cluster_ci95": [
+        -0.014087021916117154,
+        0.0159472659479403
+      ],
+      "total_strata": 30
+    }
+  },
+  "source_sha256": "d493c4ade3a1ecf1b5162c7e3352be5fa41207e96caa354808fab2798f95815f"
+}

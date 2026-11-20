@@ -1,0 +1,107 @@
+{
+  "status": "exploratory_closed_set_reanalysis",
+  "source": "results/r_variants/m197_probe.npz",
+  "source_sha256": "f2e75d16b01feb880e234bfddce1a91ca1d658926654efc84db1b44923abb792",
+  "numpy_version": "2.5.4",
+  "protocol": {
+    "players": 300,
+    "games_per_player": 40,
+    "enrol_per_player": 30,
+    "query_per_player": 10,
+    "standardize": "enrol-only mean and std plus 1e-9",
+    "covariance": "enrol within-player covariance, ddof=1",
+    "ridge": 0.05,
+    "bootstrap": "5000 paired player clusters",
+    "caveat": "Repeated splits of the same players are not independent replications; not an open-set or downstream score test."
+  },
+  "splits": [
+    {
+      "seed": 20261116,
+      "u": {
+        "top1": 0.16933333333333334,
+        "top5": 0.36866666666666664
+      },
+      "r": {
+        "top1": 0.22333333333333333,
+        "top5": 0.443
+      },
+      "mu": {
+        "top1": 0.092,
+        "top5": 0.23133333333333334
+      },
+      "u+r": {
+        "top1": 0.27466666666666667,
+        "top5": 0.51
+      },
+      "u+mu": {
+        "top1": 0.24466666666666667,
+        "top5": 0.481
+      },
+      "ur_minus_u_player_bootstrap_95": [
+        0.089,
+        0.12100000000000001
+      ]
+    },
+    {
+      "seed": 20261117,
+      "u": {
+        "top1": 0.17366666666666666,
+        "top5": 0.37033333333333335
+      },
+      "r": {
+        "top1": 0.219,
+        "top5": 0.45
+      },
+      "mu": {
+        "top1": 0.09266666666666666,
+        "top5": 0.23066666666666666
+      },
+      "u+r": {
+        "top1": 0.26966666666666667,
+        "top5": 0.5126666666666667
+      },
+      "u+mu": {
+        "top1": 0.25166666666666665,
+        "top5": 0.4766666666666667
+      },
+      "ur_minus_u_player_bootstrap_95": [
+        0.08,
+        0.11166666666666666
+      ]
+    },
+    {
+      "seed": 20261118,
+      "u": {
+        "top1": 0.17866666666666667,
+        "top5": 0.37633333333333335
+      },
+      "r": {
+        "top1": 0.216,
+        "top5": 0.43633333333333335
+      },
+      "mu": {
+        "top1": 0.096,
+        "top5": 0.241
+      },
+      "u+r": {
+        "top1": 0.25966666666666666,
+        "top5": 0.5033333333333333
+      },
+      "u+mu": {
+        "top1": 0.249,
+        "top5": 0.4796666666666667
+      },
+      "ur_minus_u_player_bootstrap_95": [
+        0.06533333333333334,
+        0.09767499999999989
+      ]
+    }
+  ],
+  "transported_metric_check": {
+    "seed": 20261116,
+    "coordinate_transform_max_error": 0.0,
+    "distance_max_error": 2.191882231272757e-10,
+    "prediction_disagreements": 0,
+    "top1": 0.27466666666666667
+  }
+}

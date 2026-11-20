@@ -1,0 +1,129 @@
+{
+  "eligible": 17,
+  "pilot_all_ranks_margin": {
+    "ci95": [
+      0.014433737947256303,
+      0.030695654766095686
+    ],
+    "mean": 0.021933558958698994
+  },
+  "pilot_all_ranks_nll": {
+    "background": {
+      "ci95": [
+        0.003119332790374756,
+        0.0289592211693525
+      ],
+      "mean": 0.016637852787971495
+    },
+    "contextual_no_actions": {
+      "ci95": [
+        0.006438648104667663,
+        0.01740600690245628
+      ],
+      "mean": 0.011809000372886657
+    },
+    "contextual_permute": {
+      "ci95": [
+        0.007584916278719902,
+        0.015457615703344344
+      ],
+      "mean": 0.011040857434272766
+    },
+    "global": {
+      "ci95": [
+        -0.002384418621659279,
+        0.031129391565918922
+      ],
+      "mean": 0.014363804459571838
+    }
+  },
+  "pilot_game_top1": {
+    "background_20261116": 0.05,
+    "background_20261117": 0.05,
+    "contextual_20261116": 0.15,
+    "contextual_20261117": 0.15,
+    "contextual_no_actions_20261116": 0.06666666666666667,
+    "contextual_no_actions_20261117": 0.08333333333333333,
+    "contextual_permute_20261116": 0.08333333333333333,
+    "contextual_permute_20261117": 0.11666666666666667,
+    "global_20261116": 0.13333333333333333,
+    "global_20261117": 0.1
+  },
+  "pilot_verdict": "mechanism_supported_in_pilot",
+  "rank_counts": {
+    "1D": 1,
+    "3D": 2,
+    "4D": 1,
+    "5D": 2,
+    "6D": 4,
+    "A": 4,
+    "B": 3,
+    "C": 1,
+    "D": 2
+  },
+  "scope": "Post-hoc within the 20 original model-heldout players. Within-rank shuffled owner assignments preserve the reference bank and all games of a player.",
+  "source_result_sha256": "2f410847c141e94a06087bca269205b80110261d05d6f11fcb363a7eb702730d",
+  "verified_score_matrices": 10,
+  "within_rank": {
+    "background": {
+      "nats_per_move": 0.0,
+      "null_mean": 0.0,
+      "one_sided_p": 1.0,
+      "per_seed_nats": [
+        0.0,
+        0.0
+      ],
+      "permutations": 27648
+    },
+    "contextual": {
+      "nats_per_move": 0.015402127032965684,
+      "null_mean": 3.482296755479368e-17,
+      "one_sided_p": 0.004195601851851852,
+      "per_seed_nats": [
+        0.012211921168308628,
+        0.018592332897622584
+      ],
+      "permutations": 27648
+    },
+    "contextual_no_actions": {
+      "nats_per_move": 0.0006614752065123089,
+      "null_mean": 2.1716167958524475e-17,
+      "one_sided_p": 0.23310908564814814,
+      "per_seed_nats": [
+        0.00044351309732675444,
+        0.0008794373156977678
+      ],
+      "permutations": 27648
+    },
+    "contextual_permute": {
+      "nats_per_move": 0.00017491148577798403,
+      "null_mean": 4.3496584934677716e-17,
+      "one_sided_p": 0.4392361111111111,
+      "per_seed_nats": [
+        0.0016579433204302657,
+        -0.0013081203488742716
+      ],
+      "permutations": 27648
+    },
+    "global": {
+      "nats_per_move": -0.0002671126641479214,
+      "null_mean": -2.168404344971009e-18,
+      "one_sided_p": 0.5982711226851852,
+      "per_seed_nats": [
+        0.00020061092439042477,
+        -0.0007348362526863
+      ],
+      "permutations": 27648
+    },
+    "intact_minus_permuted": {
+      "nats_per_move": 0.01522721554718767,
+      "null_mean": 2.569960705150825e-19,
+      "one_sided_p": 7.233796296296296e-05,
+      "per_seed_nats": [
+        0.010553977847878464,
+        0.019900453246496877
+      ],
+      "permutations": 27648
+    }
+  }
+}

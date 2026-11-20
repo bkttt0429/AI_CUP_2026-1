@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AICUP 棋力預測 第 7 章：錯誤結構與診斷</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/report.css">
+</head>
+<body class="m-read" data-chapter="7" data-prev="ch06.html" data-next="ch08.html">
+<header class="top"><h1><button type="button" class="ch-menu-btn" aria-haspopup="dialog" aria-controls="ch-menu" aria-expanded="false">AICUP 棋力預測 · 第 7 章 錯誤結構與診斷 <span class="ch-menu-caret" aria-hidden="true">▾</span></button></h1><div class="modes" role="group" aria-label="模式">
+    <button data-mode="present" aria-pressed="false">簡報</button>
+    <button data-mode="read" aria-pressed="true">閱讀</button>
+    <button data-mode="notes" aria-pressed="false">筆記</button>
+  </div></header>
+<dialog class="ch-menu-dlg" id="ch-menu" aria-label="章節"><a href="index.html"><span>章節架構</span> <span class="ch-menu-meta"></span></a><hr><a href="ch01.html"><span>1 · 任務與資料</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch02.html"><span>2 · 工具：KataGo 與 Human SL</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch03.html"><span>3 · 現行架構：提交候選</span> <span class="ch-menu-meta">3 頁</span></a><a href="ch04.html"><span>4 · 每手證據：Human SL 到 L1b</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch05.html"><span>5 · 聚合與第二份證據</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch06.html"><span>6 · 沒有通過的方向</span> <span class="ch-menu-meta">3 頁</span></a><a href="ch07.html" aria-current=page><span>7 · 錯誤結構與診斷</span> <span class="ch-menu-meta">4 頁 · 目前</span></a><a href="ch08.html"><span>8 · 架構 v2 與規則</span> <span class="ch-menu-meta">4 頁</span></a><a href="ch09.html"><span>9 · 提交流程與未確認事項</span> <span class="ch-menu-meta">3 頁</span></a><hr><a href="talk.html"><span>整份報告（35 頁）</span> <span class="ch-menu-meta"></span></a></dialog>
+<main>
+<section class="page opening" id="opening">
+  <div class="kicker">AICUP 棋力預測 · 第 7 章 · 錯誤結構與診斷</div>
+  <p class="hook">這麼多方向都停住，<br>錯誤到底在哪裡？</p>
+  <p class="lead">本章切開 39,327 題的 out-of-fold 機率看錯誤落在哪裡，再用三個診斷回答「新特徵為什麼傷人」：同玩家留出局、同 n 的已見玩家相對優勢、特徵重抽穩定性。</p>
+  <nav class="opening-route" aria-label="本章路線"><a href="#card-errors">錯誤結構</a><span aria-hidden="true">→</span><a href="#card-fingerprint">已見玩家</a><span aria-hidden="true">→</span><a href="#card-stability">穩定性</a></nav>
+  <ol><li id="opening-q1"><b>1</b><a href="#card-errors">錯誤主要來自哪裡？</a></li><li id="opening-q2"><b>2</b><a href="#card-fingerprint">新特徵塊是在記玩家嗎？</a></li><li id="opening-q3"><b>3</b><a href="#card-stability">特徵本身穩不穩？</a></li></ol>
+  <div class="meta"><span>fused_opp OOF · 39,327 題、6,354 人 · 三個診斷 job 670875／671226／671227</span><span>3 張報告卡 · 推導見「推導 ▸」</span></div>
+</section>
+<section class="page card" id="card-errors" data-sec="0">
+  <div class="report">
+    <div>
+      <div class="num"><a class="trace" href="#opening-q1">第 7 章 · 問題 1／3</a></div>
+      <h3>錯誤是玩家層級的：帶號誤差的變異數 63.6% 在玩家之間</h3>
+      <div class="formula">到 0.80：若 ±1 內維持 0.919，命中要 73.1%（現在 0.548）</div>
+      <ul><li>同一人全對 18.4%（獨立期望 5.1%）、全錯 14.1%（3.8%）</li><li>多給棋局只壓玩家內：n=5／10／20 命中 0.496／0.544／0.570</li><li>校準貼對角線；偷看標籤扣每人偏差的 0.844 不是可達目標</li></ul>
+    </div>
+    <div class="fig"><div class="stage"><div class="table-wrap"><table><thead><tr><th>同一人的多題</th><th>實測</th><th>若獨立</th></tr></thead><tbody><tr><td>全對</td><td class="n">18.4%</td><td class="n">5.1%</td></tr><tr><td>全錯</td><td class="n">14.1%</td><td class="n">3.8%</td></tr></tbody></table></div></div><div class="cap">fused_opp 的 OOF 題，每人 7 題</div><div class="sources"><div class="source-chips" role="group" aria-label="出處"><span class="source-chip" data-field="資料"><b>資料</b> results/l1b/error_analysis.json</span><span class="source-chip source-scope" data-field="範圍"><b>範圍</b> folds 1–4</span></div></div></div>
+    <div class="cause"><span class="pair"><span class="k">問題</span><b>實驗持續停在 0.69 附近</b></span><span class="arrow">→</span><span class="pair"><span class="k go">作法</span><b>切開每題機率看錯誤結構</b></span><span class="arrow">→</span><span class="pair"><span class="k stuck">限制</span><b>新特徵是在記玩家嗎？</b></span><span class="bridge"><a href="#card-fingerprint">接續：部分是：同 n=5 下 TSFEL 對已見玩家比新玩家少掉 +0.0082，CI 不含 0；但對已見玩家也仍是負增益</a><span class="bridge-text">接續：部分是：同 n=5 下 TSFEL 對已見玩家比新玩家少掉 +0.0082，CI 不含 0；但對已見玩家也仍是負增益</span></span></div>
+  </div>
+  <button class="deriv-open" data-sec="0" aria-haspopup="dialog">推導 ▸</button>
+</section>
+<section class="lesson" id="sec-0" data-title="7.1 錯誤結構">
+  <h3>7.1 錯誤結構</h3>
+  <p class="proves">對應報告卡 1：錯誤是玩家層級的：帶號誤差的變異數 63.6% 在玩家之間</p>
+  <p>同一人多題全對或全錯的比例都比獨立假設高一個量級：伺服器等級與這些局下出來的棋力之間，每人有一個固定落差。對手通道能抵一部分（第 5 章），但加差值後殘差對（對手 − 自己）仍有 −0.130 的相關。</p>
+  <p class="takeaway">短期的分數空間在把差一級變成命中；要往上，需要能估每人固定落差的新證據。</p>
+</section>
+<section class="page card" id="card-fingerprint" data-sec="1">
+  <div class="report">
+    <div>
+      <div class="num"><a class="trace" href="#opening-q2">第 7 章 · 問題 2／3</a></div>
+      <h3>部分是：同 n=5 下 TSFEL 對已見玩家比新玩家少掉 +0.0082，CI 不含 0；但對已見玩家也仍是負增益</h3>
+      <div class="formula">D(5) = gain(已見玩家留出局) − gain(新玩家 n=5)</div>
+      <ul><li>TSFEL：D(5) +0.0082 [+0.0022, +0.0140]（直接平均）；類別平衡 +0.0073 [+0.0010, +0.0135]</li><li>形狀 8 +0.0011、純雜訊 −0.0003：未偵測到已見玩家相對優勢</li><li>訓練題固定 5 局後，TSFEL 對新玩家從 −0.0157 縮到 −0.0049，D(5) 縮到 +0.0040（CI 跨 0）</li></ul>
+    </div>
+    <div class="fig"><div class="stage"><div class="table-wrap"><table><thead><tr><th>特徵塊</th><th>新玩家增益</th><th>已見玩家增益</th><th>D(5)</th><th>95% CI</th></tr></thead><tbody><tr><td>形狀 8</td><td class="n">−0.0030</td><td class="n">−0.0019</td><td class="n">+0.0011</td><td class="n">[−0.0041, +0.0061]</td></tr><tr><td>TSFEL PCA-16</td><td class="n">−0.0157</td><td class="n">−0.0075</td><td class="n">+0.0082</td><td class="n">[+0.0022, +0.0140]</td></tr><tr><td>純雜訊 16</td><td class="n">−0.0013</td><td class="n">−0.0016</td><td class="n">−0.0003</td><td class="n">[−0.0051, +0.0044]</td></tr><tr><td>TSFEL，訓練題固定 5 局</td><td class="n">−0.0049</td><td class="n">−0.0009</td><td class="n">+0.0040</td><td class="n">[−0.0005, +0.0087]</td></tr></tbody></table></div></div><div class="cap">訓練玩家每人 20 局留 5 局組成「已見玩家」題；全域 player_id 整包 bootstrap 5,000 次，兩組共用抽樣</div><div class="sources"><div class="source-chips" role="group" aria-label="出處"><span class="source-chip" data-field="資料"><b>資料</b> results/seq/fingerprint_check_v2.json</span><span class="source-chip source-scope" data-field="範圍"><b>範圍</b> folds 1–4，直接平均</span></div></div></div>
+    <div class="cause"><span class="pair"><span class="k">問題</span><b>TSFEL 在訓練題上好、驗證折上差</b></span><span class="arrow">→</span><span class="pair"><span class="k go">作法</span><b>同一位訓練玩家留出的新局 vs 新玩家</b></span><span class="arrow">→</span><span class="pair"><span class="k stuck">限制</span><b>特徵本身穩不穩？</b></span><span class="bridge"><a href="#card-stability">接續：同一位玩家換一組棋：hsl 的 split-half 相關 0.96，TSFEL PCA-16 只有 0.14，接近純雜訊</a><span class="bridge-text">接續：同一位玩家換一組棋：hsl 的 split-half 相關 0.96，TSFEL PCA-16 只有 0.14，接近純雜訊</span></span></div>
+  </div>
+  <button class="deriv-open" data-sec="1" aria-haspopup="dialog">推導 ▸</button>
+</section>
+<section class="lesson" id="sec-1" data-title="7.2 已見玩家相對優勢">
+  <h3>7.2 已見玩家相對優勢</h3>
+  <p class="proves">對應報告卡 2：部分是：同 n=5 下 TSFEL 對已見玩家比新玩家少掉 +0.0082，CI 不含 0；但對已見玩家也仍是負增益</p>
+  <p>在這套切分與訓練流程下，TSFEL 對已見玩家留出局的相對影響優於新玩家的 5 局題，幅度 0.007–0.008 超過工程門檻，所以「指紋」成分存在；但它量到的是相對優勢，還沒唯一識別出「記住玩家身分」的機制，而且 TSFEL 對已見玩家也仍是 −0.0066 到 −0.0075，不構成採用理由。</p>
+<p>固定 5 局訓練把傷害縮小 0.0108：訓練題局數混合時，TSFEL 在多局題上雜訊較小，MLP 學到的權重對 5 局題過大。同一個改動也換了標準化與優化，機制沒有分離，不能寫成「69% 是局數錯配」。固定 5 局的模型在 10／20 局題上只有 0.13–0.15，因為 log(局數) 在訓練時是常數，模型沿這個方向外推失敗（零變異欄的尺度設為 1，不是數值問題）。</p>
+  <p class="takeaway">已見玩家相對優勢存在但不改結論；採用判準仍是新玩家的增益，D 只當診斷。</p>
+</section>
+<section class="page card" id="card-stability" data-sec="2">
+  <div class="report">
+    <div>
+      <div class="num"><a class="trace" href="#opening-q3">第 7 章 · 問題 3／3</a></div>
+      <h3>同一位玩家換一組棋：hsl 的 split-half 相關 0.96，TSFEL PCA-16 只有 0.14，接近純雜訊</h3>
+      <div class="formula">W = ½·mean<sub>p</sub>(z<sub>pA</sub> − z<sub>pB</sub>)²，between = var<sub>p</sub>(½(z<sub>pA</sub> + z<sub>pB</sub>))；純雜訊時比值 2、相關 0</div>
+      <ul><li>20 局切成不相交兩半（10+10、5+5），特徵以其他三折的 pilot 題定尺度</li><li>TSFEL 玩家內／玩家間 1.30／1.48；只有 pc1–pc4 可靠</li><li>diff 3 只有 0.58／0.41 卻帶來 +0.018：穩定性是診斷，不是採用標準</li></ul>
+    </div>
+    <div class="fig"><div class="stage"><div class="table-wrap"><table><thead><tr><th>特徵塊</th><th>相關 n=10</th><th>n=5</th><th>玩家內／間 n=10</th><th>n=5</th></tr></thead><tbody><tr><td>hsl 24</td><td class="n">0.957</td><td class="n">0.922</td><td class="n">0.09</td><td class="n">0.16</td></tr><tr><td>l1b 16</td><td class="n">0.909</td><td class="n">0.827</td><td class="n">0.18</td><td class="n">0.30</td></tr><tr><td>opp 16</td><td class="n">0.891</td><td class="n">0.799</td><td class="n">0.21</td><td class="n">0.35</td></tr><tr><td>diff 3</td><td class="n">0.578</td><td class="n">0.413</td><td class="n">0.49</td><td class="n">0.69</td></tr><tr><td>形狀 8</td><td class="n">0.705</td><td class="n">0.546</td><td class="n">0.47</td><td class="n">0.71</td></tr><tr><td>TSFEL PCA-16</td><td class="n">0.138</td><td class="n">0.070</td><td class="n">1.30</td><td class="n">1.48</td></tr><tr><td>HD 5</td><td class="n">0.845</td><td class="n">0.733</td><td class="n">0.18</td><td class="n">0.34</td></tr></tbody></table></div></div><div class="cap">split-half 相關中位數與玩家內／玩家間變異比；HD 5 來自 PR #48 的 feature_stability_hd.json</div><div class="sources"><div class="source-chips" role="group" aria-label="出處"><span class="source-chip" data-field="資料"><b>資料</b> results/seq/feature_stability.json</span><span class="source-chip source-scope" data-field="範圍"><b>範圍</b> folds 1–4</span></div></div></div>
+    <div class="cause"><span class="pair"><span class="k">問題</span><b>加欄位就退步</b></span><span class="arrow">→</span><span class="pair"><span class="k go">作法</span><b>量同一玩家換棋後特徵動多少</b></span><span class="arrow">→</span><span class="pair"><span class="k stuck">限制</span><b>證據怎麼變成規則？</b></span><span class="bridge"><a href="ch08.html#opening">接續：第 8 章　架構 v2 與規則</a><span class="bridge-text">接續：第 8 章　架構 v2 與規則</span></span></div>
+  </div>
+  <button class="deriv-open" data-sec="2" aria-haspopup="dialog">推導 ▸</button>
+</section>
+<section class="lesson" id="sec-2" data-title="7.3 特徵重抽穩定性">
+  <h3>7.3 特徵重抽穩定性</h3>
+  <p class="proves">對應報告卡 3：同一位玩家換一組棋：hsl 的 split-half 相關 0.96，TSFEL PCA-16 只有 0.14，接近純雜訊</p>
+  <p>HD 五欄與 l1b／opp 同級（gap 欄最穩，讓先與否最不穩）。對手欄與差值欄因兩半抽到不同對手，天生偏低，所以穩定性不能當硬門檻，也不套用在對手校準與跨通道差值欄。</p>
+<p>穩定性從 n=10 到 n=5 全面下降，而題目層雖有 log 局數作輸入，混合局數訓練仍讓雜訊塊的權重偏向多局題。可測的便宜項（待核定）：按 n 分別標準化或分別訓練、重加權訓練題的局數分布（官方測試是 5–20 局，不把其他 n 歸零）、以玩家內／玩家間變異比做乘法收縮。</p>
+  <p class="takeaway">新特徵塊先做 split-half 診斷：低可靠度成分限維、縮小試驗或整塊消融；採用仍看新玩家增益、CI 與分折穩定性。</p>
+</section>
+<section class="after" id="recap">
+  <h3>本章結論</h3><p>六成的錯誤變異在玩家之間；TSFEL 對已見玩家有 +0.007–0.008 的相對優勢但仍是負增益；它的大半成分是抽樣雜訊，且混合局數訓練讓 5 局題的權重過大。</p>
+  <div class="next"><b>待解問題　</b>這些證據怎麼變成規則與下一步？第 8 章是架構 v2。</div>
+  <section class="refs"><h3>參考文獻</h3><ol><li>本專案紀錄：<code>METHOD_NOTES.md</code>、<code>docs/NANO4.md</code>、<code>results/</code>、<code>reports/architecture_v2_2026-11-02.md</code>；GitHub issue #6、#23、#36、#42。</li></ol></section>
+</section>
+<nav class="chapter-nav" aria-label="上一章／下一章"><a class="prev" href="ch06.html">‹ 第 6 章　沒有通過的方向</a><a class="next" href="ch08.html">第 8 章　架構 v2 與規則 ›</a></nav>
+</main>
+<dialog class="lesson-dlg" id="dlg" aria-labelledby="dlg-t">
+  <div class="dlg-head"><span class="k" id="dlg-k">第 7 章 · 推導</span><span class="t" id="dlg-t"></span><button class="x" aria-label="關閉">✕</button></div>
+  <div class="dlg-body"></div>
+  <div class="dlg-foot"><button class="prev">‹ 上一節</button><button class="nextb">下一節 ›</button><button class="whole">閱讀全章</button></div>
+</dialog>
+<nav class="pager" aria-label="頁面導覽">
+  <button type="button" class="pg-prev" aria-label="上一頁">‹</button>
+  <span id="pg" title="← → 換頁 · D 推導 · Esc 離開">7 · 1／4</span>
+  <button type="button" class="pg-next" aria-label="下一頁">›</button>
+  <span class="pg-hint" aria-live="polite"></span>
+</nav>
+<script src="assets/core.js"></script>
+<script src="assets/report.js"></script>
+<script src="assets/modes.js"></script>
+</body>
+</html>

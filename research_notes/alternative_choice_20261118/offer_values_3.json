@@ -1,0 +1,14 @@
+{
+  "all": 14254,
+  "audited_accepts": 182,
+  "delta_duplicate_p95": 0.027225235000000927,
+  "max_duplicate_delta": 0.08544899999998279,
+  "new": 2459,
+  "sha256": {
+    "judge_3.npz": "a927afb7c5d188b2a1ec675f61739da1ec76ff1dec429498c78280983d8405c9",
+    "judge_offers.py": "7ad9f3ef05cdd96ad2d78dd9512feab26fdc1b87dbcb089c8752d42878de58fc",
+    "offer_events.npz": "2a102797c84f26f4f1770fd3699c3535b69d5ff7e364a94e618b45427cb3586a",
+    "offer_values_3.npz": "bf233ecc5b2463444e34256837c92357cc33742daa7c4183cf5b87e9aa74123e",
+    "offered_value_protocol.json": "ac4b63fa83342ec6f4ce812bf0a348399f39a6ae71f14496d77dc1ff1047e040"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "actions": {
+    "capture": 2439,
+    "immediate_rescue": 48019,
+    "new_atari": 15645,
+    "other_far": 10749,
+    "other_near": 9412,
+    "pass": 0
+  },
+  "complete": 85098,
+  "events": 86264,
+  "games": 115445,
+  "per_game_old_cells_identical": true,
+  "sha256": {
+    "events.npz": "0bdb5a788945c192a3e373372c189c3649c36160fec9f175e562fe80aa05f802",
+    "extract.py": "d10ae57fc4f81446e4ae0c508f10879c2eec4a6daa8708b1564cac032b663a07",
+    "game_counts.npz": "02c0e48c9c90b21eecaaf939c086a5b109d6ee3e34cc6d6246ca43195fdd273f",
+    "protocol.json": "073267f8c40e6a4a557b3e67f5482d2ef2515f979b42c9051eb5b30a5355ed6d",
+    "read_alternatives.cpp": "5cb6673f6b8591e1d08669e952602eae92f4b94288241cd818ea3e8962644f6f"
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "code_sha256": "82498bb0b44ec3a7312f17549b6f25df367c3bf8270acddedb14185584c04567",
+  "hard_margin_replicated": true,
+  "hard_rival_margin": {
+    "ci95": [
+      0.004220385307615454,
+      0.025824840807101943
+    ],
+    "mean": 0.014353855089707808,
+    "players": 44
+  },
+  "known_query_games": 288,
+  "operational": {
+    "known_closed_top1": {
+      "adjusted_games": 172,
+      "baseline_games": 168,
+      "delta": {
+        "ci95": [
+          -0.010416666666666666,
+          0.03819444444444445
+        ],
+        "mean": 0.013888888888888888,
+        "players": 144
+      },
+      "total_games": 288
+    },
+    "known_correct_accept": {
+      "adjusted_games": 103,
+      "baseline_games": 103,
+      "delta": {
+        "ci95": [
+          -0.020833333333333332,
+          0.024305555555555556
+        ],
+        "mean": 0.0,
+        "players": 144
+      },
+      "total_games": 288
+    },
+    "known_wrong_accept": {
+      "adjusted_games": 8,
+      "baseline_games": 9,
+      "delta": {
+        "ci95": [
+          -0.013888888888888888,
+          0.006944444444444444
+        ],
+        "mean": -0.003472222222222222,
+        "players": 144
+      },
+      "total_games": 288
+    },
+    "unknown_accept": {
+      "adjusted_games": 22,
+      "baseline_games": 20,
+      "delta": {
+        "ci95": [
+          -0.020833333333333332,
+          0.05555555555555555
+        ],
+        "mean": 0.013888888888888888,
+        "players": 72
+      },
+      "total_games": 144
+    }
+  },
+  "operational_gate": false,
+  "per_pool": {
+    "1": {
+      "hard_games": 23,
+      "hard_margin": 0.01601765269324893,
+      "hard_owners": 21,
+      "known_shortlisted_games": 107
+    },
+    "2": {
+      "hard_games": 23,
+      "hard_margin": 0.012834735538648523,
+      "hard_owners": 23,
+      "known_shortlisted_games": 107
+    }
+  },
+  "players": 216,
+  "scores_sha256": "c3c9cdcf6c30aa97cc582087fee91d399a3c06dce483c2c8e93cfa1302266d91",
+  "unknown_query_games": 144
+}

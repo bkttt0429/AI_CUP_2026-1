@@ -1,0 +1,10 @@
+{
+  "menus": 9285,
+  "roots": 12351,
+  "sha256": {
+    "corpus_3.tsv.gz": "60046bae4fe988bfe40b55269076aad8ff8ca3dd26852e6a1501cab7265c434e",
+    "protocol.json": "5c3f0b30a39d8966d55172ae40c020e2f09966363074474bd2d0b80704e32fdd",
+    "root_3.npz": "b2dadbc8283e4ee53ae4b0cf3de2c5b21e9ed01916198fe8c6702e8cbc9e03c6",
+    "search.py": "da65d73522c299550660aeb5a9fbc86cf71d053506c43efcf9541c22512abb85"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "counts_sha256": "02c0e48c9c90b21eecaaf939c086a5b109d6ee3e34cc6d6246ca43195fdd273f",
+  "cross_fold_duplicate_game_rows": 0,
+  "games": 115445,
+  "games_with_event": 102230,
+  "invalid_parse": 0,
+  "invalid_replay_or_parse": 0,
+  "katago_revision": "d91ea855110dae533f0aada947b2b7d78cc8a4e1",
+  "sha256": {
+    "/home/u2507115/BK_AICUP_2026-1/research_notes/ladder_rank_20261118/build.sh": "8a751e02d93aaaaa5014356d19a898c47d9805510f186c08f293c251dd159ba5",
+    "/home/u2507115/BK_AICUP_2026-1/research_notes/ladder_rank_20261118/extract_games.py": "9bda393ac21b8469b862ae1e7bec03c2c7c7ccb1014d6b06997017668ca2efd7",
+    "/home/u2507115/BK_AICUP_2026-1/research_notes/ladder_rank_20261118/protocol.json": "8f51f2c1824de7de417abce072a0c3da125c0d752cf6cab388751662fa98548a",
+    "/home/u2507115/BK_AICUP_2026-1/research_notes/ladder_rank_20261118/read_ladders.cpp": "e1ed8e8fb617047a7e2b0c864f895203751281e507d7623aef982c2d1214986f",
+    "/home/u2507115/BK_AICUP_2026-1/results/r_variants/m183_dump.npz": "7bc8645f080ec8382146f87f1c5432707486b5399497248bdc313b93838b95ae",
+    "/home/u2507115/BK_AICUP_2026-1/results/r_variants/m221_SC_dump.npz": "5a44f70a9ca1c1e5b4f15295b0f397f53ac18b0cf127f3a37bd19aef82d0152e",
+    "/home/u2507115/BK_AICUP_2026-1/results/trunk_seq/r_val1.json": "e9252f66ccd94e1ea0a6729d33ba8093e2fb8ab495b2abe83226922a1b652201",
+    "/home/u2507115/BK_AICUP_2026-1/results/trunk_seq/r_val2.json": "d7e96a1e88f21733f281c5f3115890e09f7fbfe15fdecd0f6ab5417d1ce9fb56",
+    "/home/u2507115/BK_AICUP_2026-1/results/trunk_seq/r_val3.json": "7e01443faba2a2a0b1cb58caa37e6d3fd6ce74546d7d9b4d13e89db1a7663284",
+    "/home/u2507115/BK_AICUP_2026-1/results/trunk_seq/r_val4.json": "8d8dde118c1d2c13333b4a2087883af4c6a7e9312d1ea609b41bab1c55357c8b",
+    "/home/u2507115/BK_AICUP_2026-1/src/aicup/sgf.py": "78e6da3f79f0b91aaaa7956f4c974539bb44851a96292378f27a002d4425ff09"
+  },
+  "unique_events": 314340,
+  "valid": 115445,
+  "valid_own_turns": 12820214
+}

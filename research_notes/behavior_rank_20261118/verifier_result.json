@@ -1,0 +1,169 @@
+{
+  "analysis_sha256": "8186bc6c585fb78f998dd5ea4cb64effe1b34ba12ff0d0bceb86b4b35294c0bd",
+  "chosen_weight": 0.125,
+  "fold1": {
+    "0.0": {
+      "known_correct_accepted_games": 52,
+      "threshold": 0.6462935663889908,
+      "unknown_accepted_games": 3
+    },
+    "0.125": {
+      "known_correct_accepted_games": 53,
+      "threshold": 0.67010895951142,
+      "unknown_accepted_games": 3
+    },
+    "0.25": {
+      "known_correct_accepted_games": 49,
+      "threshold": 0.7953774385532579,
+      "unknown_accepted_games": 3
+    },
+    "0.5": {
+      "known_correct_accepted_games": 45,
+      "threshold": 0.9645449617014392,
+      "unknown_accepted_games": 3
+    },
+    "1.0": {
+      "known_correct_accepted_games": 23,
+      "threshold": 1.6367225240846617,
+      "unknown_accepted_games": 3
+    }
+  },
+  "fold2_baseline": {
+    "known_closed_top1": {
+      "games": 91,
+      "rate": 0.6319444444444444,
+      "total_games": 144
+    },
+    "known_correct_accept": {
+      "games": 53,
+      "rate": 0.3680555555555556,
+      "total_games": 144
+    },
+    "known_wrong_accept": {
+      "games": 5,
+      "rate": 0.034722222222222224,
+      "total_games": 144
+    },
+    "unknown_accept": {
+      "games": 9,
+      "rate": 0.125,
+      "total_games": 72
+    }
+  },
+  "fold2_chosen": {
+    "known_closed_top1": {
+      "games": 93,
+      "rate": 0.6458333333333334,
+      "total_games": 144
+    },
+    "known_correct_accept": {
+      "games": 54,
+      "rate": 0.375,
+      "total_games": 144
+    },
+    "known_wrong_accept": {
+      "games": 5,
+      "rate": 0.034722222222222224,
+      "total_games": 144
+    },
+    "unknown_accept": {
+      "games": 8,
+      "rate": 0.1111111111111111,
+      "total_games": 72
+    }
+  },
+  "fold2_delta": {
+    "known_closed_top1": {
+      "ci95": [
+        -0.027777777777777776,
+        0.05555555555555555
+      ],
+      "mean": 0.013888888888888888
+    },
+    "known_correct_accept": {
+      "ci95": [
+        -0.027777777777777776,
+        0.041666666666666664
+      ],
+      "mean": 0.006944444444444444
+    },
+    "known_wrong_accept": {
+      "ci95": [
+        0.0,
+        0.0
+      ],
+      "mean": 0.0
+    },
+    "unknown_accept": {
+      "ci95": [
+        -0.05555555555555555,
+        0.027777777777777776
+      ],
+      "mean": -0.013888888888888888
+    }
+  },
+  "fold2_fixed_025": {
+    "known_closed_top1": {
+      "games": 92,
+      "rate": 0.6388888888888888,
+      "total_games": 144
+    },
+    "known_correct_accept": {
+      "games": 48,
+      "rate": 0.3333333333333333,
+      "total_games": 144
+    },
+    "known_wrong_accept": {
+      "games": 3,
+      "rate": 0.020833333333333332,
+      "total_games": 144
+    },
+    "unknown_accept": {
+      "games": 8,
+      "rate": 0.1111111111111111,
+      "total_games": 72
+    }
+  },
+  "fold2_fixed_025_delta": {
+    "known_closed_top1": {
+      "ci95": [
+        -0.04861111111111111,
+        0.0625
+      ],
+      "mean": 0.006944444444444444
+    },
+    "known_correct_accept": {
+      "ci95": [
+        -0.08333333333333333,
+        0.013888888888888888
+      ],
+      "mean": -0.034722222222222224
+    },
+    "known_wrong_accept": {
+      "ci95": [
+        -0.041666666666666664,
+        0.013888888888888888
+      ],
+      "mean": -0.013888888888888888
+    },
+    "unknown_accept": {
+      "ci95": [
+        -0.06944444444444445,
+        0.041666666666666664
+      ],
+      "mean": -0.013888888888888888
+    }
+  },
+  "fold2_shortlisted_hard_rival": {
+    "ci95": [
+      0.0068423312157392495,
+      0.02408624723337699
+    ],
+    "eligible_games": 122,
+    "eligible_owners": 69,
+    "mean_nats_per_move_equal_owner": 0.01535202606000762
+  },
+  "scope": "Small equal-reference enrollment pool, no target rank at inference, fold 0 and official data excluded. Measures complementary identity evidence, not the competition's full opponent pool or a rank-score gain.",
+  "scores_sha256": "100aeb40b99565e3ffe0b03029bd9ba9ef0b0774fd3d02016cb3e811920f04a1",
+  "verdict": "shortlist_gain_not_established"
+}

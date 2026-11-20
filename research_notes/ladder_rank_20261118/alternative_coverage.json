@@ -1,0 +1,24 @@
+{
+  "by_n": {
+    "10": {
+      "median": 7.0,
+      "one_or_more": 5553,
+      "questions": 5566,
+      "two_or_more": 5478
+    },
+    "20": {
+      "median": 15.0,
+      "one_or_more": 2543,
+      "questions": 2543,
+      "two_or_more": 2543
+    },
+    "5": {
+      "median": 3.0,
+      "one_or_more": 11074,
+      "questions": 11530,
+      "two_or_more": 9767
+    }
+  },
+  "games": 57650,
+  "unique_events": 43260
+}
