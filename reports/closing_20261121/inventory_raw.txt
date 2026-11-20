@@ -1,0 +1,476 @@
+== 2026-11-21 00:30:02 inventory of /home/u2507115/BK_AICUP_2026-1
+== top level (MB, files)
+   54065 MB    52202 files  results
+    6986 MB    24815 files  .venv
+    1825 MB       87 files  data
+    1742 MB       14 files  models
+    1565 MB      306 files  reports
+     711 MB     4110 files  tools
+     447 MB        4 files  release
+     307 MB     3686 files  .git
+     242 MB      370 files  research_notes
+     178 MB     1956 files  repo
+      92 MB    13118 files  logs
+      29 MB        1 files  submission_rank_shard7of8.npz
+      29 MB        1 files  submission_rank_shard6of8.npz
+      29 MB        1 files  submission_rank_shard5of8.npz
+      29 MB        1 files  submission_rank_shard4of8.npz
+      29 MB        1 files  submission_rank_shard3of8.npz
+      29 MB        1 files  submission_rank_shard2of8.npz
+      29 MB        1 files  submission_rank_shard1of8.npz
+      29 MB        1 files  submission_rank_shard0of8.npz
+       6 MB        6 files  splits
+       6 MB      134 files  tests
+       2 MB       78 files  src
+       2 MB      126 files  scripts
+       1 MB        9 files  docs
+       1 MB        7 files  upload_20261119
+       1 MB        5 files  .pytest_cache
+       1 MB        3 files  upload_20261120
+       1 MB        3 files  outputs
+       1 MB       33 files  upload_next
+       1 MB        2 files  viz
+       1 MB        1 files  .superpowers
+       1 MB        1 files  submission_rank_report.json
+       1 MB        1 files  submission_rank_proba.csv
+       1 MB        1 files  submission_rank_ct_report.json
+       1 MB        1 files  submission_rank_ct_proba.csv
+       1 MB        1 files  submission_rank_ct.csv
+       1 MB        1 files  submission_rank_ct9_report.json
+       1 MB        1 files  submission_rank_ct9_proba.csv
+       1 MB        1 files  submission_rank_ct9.csv
+       1 MB        1 files  submission_rank_ct99.csv
+       1 MB        1 files  submission_rank_ct98_proba.csv
+       1 MB        1 files  submission_rank_ct98.csv
+       1 MB        1 files  submission_rank_ct97.csv
+       1 MB        1 files  submission_rank_ct96_proba.csv
+       1 MB        1 files  submission_rank_ct96.csv
+       1 MB        1 files  submission_rank_ct95.csv
+       1 MB        1 files  submission_rank_ct94_proba.csv
+       1 MB        1 files  submission_rank_ct94.csv
+       1 MB        1 files  submission_rank_ct93.csv
+       1 MB        1 files  submission_rank_ct92_proba.csv
+       1 MB        1 files  submission_rank_ct92.csv
+       1 MB        1 files  submission_rank_ct91.csv
+       1 MB        1 files  submission_rank_ct90_proba.csv
+       1 MB        1 files  submission_rank_ct90.csv
+       1 MB        1 files  submission_rank_ct83.csv
+       1 MB        1 files  submission_rank_ct82_proba.csv
+       1 MB        1 files  submission_rank_ct82.csv
+       1 MB        1 files  submission_rank_ct81.csv
+       1 MB        1 files  submission_rank_ct80_proba.csv
+       1 MB        1 files  submission_rank_ct80.csv
+       1 MB        1 files  submission_rank_ct7_report.json
+       1 MB        1 files  submission_rank_ct7_proba.csv
+       1 MB        1 files  submission_rank_ct7.csv
+       1 MB        1 files  submission_rank_ct79.csv
+       1 MB        1 files  submission_rank_ct78_proba.csv
+       1 MB        1 files  submission_rank_ct78.csv
+       1 MB        1 files  submission_rank_ct77.csv
+       1 MB        1 files  submission_rank_ct76_proba.csv
+       1 MB        1 files  submission_rank_ct76.csv
+       1 MB        1 files  submission_rank_ct75u.csv
+       1 MB        1 files  submission_rank_ct75s_out_up.csv
+       1 MB        1 files  submission_rank_ct75s_out.csv
+       1 MB        1 files  submission_rank_ct75s.csv
+       1 MB        1 files  submission_rank_ct75n.csv
+       1 MB        1 files  submission_rank_ct75.csv
+       1 MB        1 files  submission_rank_ct74n.csv
+       1 MB        1 files  submission_rank_ct74.csv
+       1 MB        1 files  submission_rank_ct73.csv
+       1 MB        1 files  submission_rank_ct72.csv
+       1 MB        1 files  submission_rank_ct71.csv
+       1 MB        1 files  submission_rank_ct70.csv
+       1 MB        1 files  submission_rank_ct6_report.json
+       1 MB        1 files  submission_rank_ct6_proba.csv
+       1 MB        1 files  submission_rank_ct6.csv
+       1 MB        1 files  submission_rank_ct69.csv
+       1 MB        1 files  submission_rank_ct68_proba.csv
+       1 MB        1 files  submission_rank_ct68.csv
+       1 MB        1 files  submission_rank_ct64.csv
+       1 MB        1 files  submission_rank_ct5_report.json
+       1 MB        1 files  submission_rank_ct5_proba.csv
+       1 MB        1 files  submission_rank_ct5.csv
+       1 MB        1 files  submission_rank_ct4_report.json
+       1 MB        1 files  submission_rank_ct4_proba.csv
+       1 MB        1 files  submission_rank_ct4.csv
+       1 MB        1 files  submission_rank_ct45.csv
+       1 MB        1 files  submission_rank_ct45check.csv
+       1 MB        1 files  submission_rank_ct44_proba.csv
+       1 MB        1 files  submission_rank_ct44.csv
+       1 MB        1 files  submission_rank_ct44check_proba.csv
+       1 MB        1 files  submission_rank_ct44check.csv
+       1 MB        1 files  submission_rank_ct43.csv
+       1 MB        1 files  submission_rank_ct42_proba.csv
+       1 MB        1 files  submission_rank_ct42.csv
+       1 MB        1 files  submission_rank_ct41_proba.csv
+       1 MB        1 files  submission_rank_ct41.csv
+       1 MB        1 files  submission_rank_ct40.csv
+       1 MB        1 files  submission_rank_ct40a.csv
+       1 MB        1 files  submission_rank_ct3_report.json
+       1 MB        1 files  submission_rank_ct3_proba.csv
+       1 MB        1 files  submission_rank_ct3.csv
+       1 MB        1 files  submission_rank_ct3b_report.json
+       1 MB        1 files  submission_rank_ct3b_proba.csv
+       1 MB        1 files  submission_rank_ct3b.csv
+       1 MB        1 files  submission_rank_ct39_proba.csv
+       1 MB        1 files  submission_rank_ct39.csv
+       1 MB        1 files  submission_rank_ct38.csv
+       1 MB        1 files  submission_rank_ct38a.csv
+       1 MB        1 files  submission_rank_ct37_proba.csv
+       1 MB        1 files  submission_rank_ct37.csv
+       1 MB        1 files  submission_rank_ct36.csv
+       1 MB        1 files  submission_rank_ct35.csv
+       1 MB        1 files  submission_rank_ct34.csv
+       1 MB        1 files  submission_rank_ct33.csv
+       1 MB        1 files  submission_rank_ct32.csv
+       1 MB        1 files  submission_rank_ct31.csv
+       1 MB        1 files  submission_rank_ct30.csv
+       1 MB        1 files  submission_rank_ct2_report.json
+       1 MB        1 files  submission_rank_ct2_proba.csv
+       1 MB        1 files  submission_rank_ct2.csv
+       1 MB        1 files  submission_rank_ct29.csv
+       1 MB        1 files  submission_rank_ct28.csv
+       1 MB        1 files  submission_rank_ct27.csv
+       1 MB        1 files  submission_rank_ct26.csv
+       1 MB        1 files  submission_rank_ct25.csv
+       1 MB        1 files  submission_rank_ct24.csv
+       1 MB        1 files  submission_rank_ct23.csv
+       1 MB        1 files  submission_rank_ct22.csv
+       1 MB        1 files  submission_rank_ct21.csv
+       1 MB        1 files  submission_rank_ct20.csv
+       1 MB        1 files  submission_rank_ct19.csv
+       1 MB        1 files  submission_rank_ct18.csv
+       1 MB        1 files  submission_rank_ct17.csv
+       1 MB        1 files  submission_rank_ct16.csv
+       1 MB        1 files  submission_rank_ct15.csv
+       1 MB        1 files  submission_rank_ct14.csv
+       1 MB        1 files  submission_rank_ct13_proba.csv
+       1 MB        1 files  submission_rank_ct13.csv
+       1 MB        1 files  submission_rank_ct12_proba.csv
+       1 MB        1 files  submission_rank_ct12.csv
+       1 MB        1 files  submission_rank_ct11_proba.csv
+       1 MB        1 files  submission_rank_ct11.csv
+       1 MB        1 files  submission_rank_ct118f.csv
+       1 MB        1 files  submission_rank_ct118e.csv
+       1 MB        1 files  submission_rank_ct118d.csv
+       1 MB        1 files  submission_rank_ct118.csv
+       1 MB        1 files  submission_rank_ct117.csv
+       1 MB        1 files  submission_rank_ct116.csv
+       1 MB        1 files  submission_rank_ct115c.csv
+       1 MB        1 files  submission_rank_ct115b.csv
+       1 MB        1 files  submission_rank_ct115a.csv
+       1 MB        1 files  submission_rank_ct114.csv
+       1 MB        1 files  submission_rank_ct113.csv
+       1 MB        1 files  submission_rank_ct112.csv
+       1 MB        1 files  submission_rank_ct10_proba.csv
+       1 MB        1 files  submission_rank_ct10.csv
+       1 MB        1 files  submission_rank_ct109.csv
+       1 MB        1 files  submission_rank_ct106.csv
+       1 MB        1 files  submission_rank_ct105.csv
+       1 MB        1 files  submission_rank_ct104.csv
+       1 MB        1 files  submission_rank_ct104b.csv
+       1 MB        1 files  submission_rank_ct104a.csv
+       1 MB        1 files  submission_rank.csv
+       1 MB        1 files  requirements.txt
+       1 MB        1 files  requirements-tsfel.txt
+       1 MB        1 files  REPORT.md
+       1 MB        1 files  README.md
+       1 MB        1 files  pyproject.toml
+       1 MB        1 files  Nano4_SERVER使用指南.md
+       1 MB        1 files  METHOD_NOTES.md
+       1 MB        1 files  .gitignore
+       1 MB        1 files  .gitattributes
+       1 MB        1 files  .claude
+       1 MB       17 files  upload_probe
+== results/* (MB, files; symlinks marked)
+    8347 MB     2977 files  results/trunk_vec
+    7768 MB    27066 files  results/l1b
+    6028 MB     2165 files  results/trunk_vec_x40
+    5337 MB     1000 files  results/m90_ply2
+    5333 MB     1000 files  results/m90_ply1
+    2211 MB       48 files  results/m90
+    1810 MB       22 files  results/m82
+    1631 MB     3270 files  results/trunk_seq
+    1610 MB       50 files  results/m218
+    1328 MB      222 files  results/ct_submission
+    1097 MB     2947 files  results/scores_hd
+    1096 MB     3016 files  results/scores_opp_hd
+    1084 MB       30 files  results/m219
+    1078 MB       20 files  results/m221
+     938 MB       17 files  results/m77
+     792 MB     2200 files  results/scores_opp_hd_x40
+     791 MB     2200 files  results/scores_hd_x40
+     757 MB       17 files  results/m88
+     728 MB       15 files  results/m101c
+     728 MB       15 files  results/m101
+     673 MB      833 files  results/r_variants
+     552 MB       44 files  results/m161q
+     456 MB     1965 files  results/models
+     418 MB       52 files  results/m161
+     397 MB       53 files  results/m120
+     152 MB       10 files  results/m200
+     152 MB       10 files  results/m161r
+     133 MB       13 files  results/m161p
+     113 MB       10 files  results/m200_tta
+     113 MB       10 files  results/m161r_tta
+      49 MB       14 files  results/data
+      39 MB        6 files  results/m216_smoke
+      35 MB        2 files  results/m260
+      34 MB       29 files  results/m255
+      32 MB      520 files  results/attn_scores
+      24 MB        8 files  results/oppview
+      23 MB        8 files  results/oppview_tgt
+      21 MB       16 files  results/ai_search_moves
+      18 MB        8 files  results/meta_pilot
+      16 MB       12 files  results/m216
+      13 MB        8 files  results/rules_pilot
+      11 MB        4 files  results/g_pilot
+       9 MB        8 files  results/ai_quality
+       8 MB       30 files  results/gbdt_hd
+       7 MB        9 files  results/metric_loss
+       7 MB        8 files  results/ai_search_m29
+       7 MB       11 files  results/ai_search
+       6 MB        8 files  results/mock_fold0_40_opp4
+       6 MB        8 files  results/mock_fold0_40_fused4
+       6 MB        6 files  results/mock_fold0_40_opp
+       6 MB        6 files  results/mock_fold0_40_fused
+       6 MB        5 files  results/mock_fold0_40_diff
+       6 MB        4 files  results/mock_fold0_40_v11_r
+       6 MB        4 files  results/mock_fold0_40_v11_old
+       6 MB        4 files  results/mock_fold0_40_v11_hdr
+       5 MB       44 files  results/seq
+       5 MB        1 files  results/ident_local_bundle.tgz
+       5 MB       15 files  results/ident_local
+       4 MB        1 files  results/baseline_official
+       3 MB        7 files  results/mock_fold0_40_x4
+       3 MB        5 files  results/mock_fold0_40_set
+       3 MB        5 files  results/mock_fold0_40_ens
+       3 MB        5 files  results/mock_fold0_40
+       3 MB        4 files  results/mock_fold0_40_v2
+       3 MB        4 files  results/mock_bad_lenient
+       3 MB       24 files  results/tta_val
+       2 MB        7 files  results/replay
+       2 MB        4 files  results/pseudo
+       1 MB        9 files  results/m27_smoke
+       1 MB       47 files  results/m84_cache -> /work/u2507115/aicup1_moved/m84_cache [5268 MB behind the link]
+       1 MB        3 files  results/m262
+       1 MB     3045 files  results/trunk_vec_x80 -> /work/u2507115/aicup1_moved/trunk_vec_x80 [8462 MB behind the link]
+       1 MB        2 files  results/not_candidates
+       1 MB        2 files  results/ai_search_moves_smoke
+       1 MB        1 files  results/viz_examples.json
+       1 MB        1 files  results/rank_model_eval.json
+       1 MB        1 files  results/pilot_humansl.json
+       1 MB        1 files  results/m218_smoke
+       1 MB        1 files  results/gbdt
+       1 MB        1 files  results/famB
+       1 MB        1 files  results/consistency_0A.json
+       1 MB        1 files  results/bench_nano4.json
+       1 MB        1 files  results/bench_0B.log
+       1 MB        1 files  results/bench_0B.json
+       1 MB        1 files  results/baseline_official_eval.json
+       1 MB        1 files  results/ai_search_m29smoke
+       1 MB       16 files  results/m95 -> /work/u2507115/aicup1_moved/m95 [228 MB behind the link]
+       1 MB       11 files  results/sub_old
+       1 MB       11 files  results/sub_hd
+       1 MB     1000 files  results/m90_ply0 -> /work/u2507115/aicup1_moved/m90_ply0 [5333 MB behind the link]
+       1 MB        0 files  results/scores_opp_hd_x40_jp -> /work/u2507115/aicup1_moved/scores_opp_hd_x40_jp [ MB behind the link]
+       1 MB        0 files  results/scores_opp_hd_jp -> /work/u2507115/aicup1_moved/scores_opp_hd_jp [ MB behind the link]
+       1 MB        0 files  results/scores_hd_x80 -> /work/u2507115/aicup1_moved/scores_hd_x80 [ MB behind the link]
+       1 MB        0 files  results/scores_hd_jp -> /work/u2507115/aicup1_moved/scores_hd_jp [ MB behind the link]
+       1 MB        0 files  results/m84_rows -> /work/u2507115/aicup1_moved/m84_rows [ MB behind the link]
+== results/r_variants by extension (MB)
+     687 MB     343 files .npz
+      12 MB      10 files .csv
+       2 MB     477 files .json
+       1 MB       2 files .pt
+       1 MB       1 files .npy
+== results/trunk_seq/* and results/l1b/* (MB)
+690	results/trunk_seq/es
+417	results/l1b/heads4s2_B.pt.ckpt
+417	results/l1b/heads4s2_A.pt.ckpt
+417	results/l1b/heads4_B.pt.ckpt
+417	results/l1b/heads4_A.pt.ckpt
+369	results/l1b/scores3_B_opp_hd
+369	results/l1b/scores3_B_hd
+368	results/l1b/scores4_B_opp_hd
+368	results/l1b/scores4_B_hd
+368	results/l1b/scores3_opp_hd
+368	results/l1b/scores3_hd
+367	results/l1b/scores4_opp_hd
+367	results/l1b/scores4_hd
+266	results/l1b/scores4_B_opp_hd_x40
+266	results/l1b/scores4_B_hd_x40
+266	results/l1b/scores3_opp_hd_x40
+266	results/l1b/scores3_hd_x40
+265	results/l1b/scores4_opp_hd_x40
+265	results/l1b/scores4_hd_x40
+249	results/l1b/scores3_B_opp_hd_x80
+248	results/l1b/scores3_B_hd_x80
+177	results/l1b/scores3_B_opp_hd_x40
+177	results/l1b/scores3_B_hd_x40
+103	results/l1b/heads4s2_B.trunk.pt
+103	results/l1b/heads4s2_A.trunk.pt
+103	results/l1b/heads4_B.trunk.pt
+103	results/l1b/heads4_A.trunk.pt
+103	results/l1b/heads3_B.trunk.pt
+103	results/l1b/heads3_A.trunk.pt
+52	results/trunk_seq/r_all_f0_x40_ohr.json
+52	results/trunk_seq/r_all_f0_x40.json
+52	results/trunk_seq/r_all_f0.json
+44	results/trunk_seq/r_val4_f0_x40_ohr.json
+44	results/trunk_seq/r_val4_f0_x40.json
+44	results/trunk_seq/r_val3_f0_x40_ohr.json
+44	results/trunk_seq/r_val3_f0_x40.json
+43	results/trunk_seq/r_val2_f0_x40_ohr.json
+43	results/trunk_seq/r_val2_f0_x40.json
+43	results/trunk_seq/r_val1_f0_x40_ohr.json
+43	results/trunk_seq/r_val1_f0_x40.json
+== logs by extension (MB)
+      27 MB    8465 files .log
+      15 MB      10 files .json
+      12 MB    3333 files .out
+       5 MB     263 files .pyc
+       4 MB     513 files .py
+       1 MB       3 files .csv
+       0 MB       7 files .1
+       0 MB       4 files .drop
+       0 MB      44 files .0
+       0 MB      41 files .cancel
+== data, models, tools, reports (MB)
+1532	reports/backup_20261118
+1316	data/training
+1138	models/katago
+605	models/baseline_official
+365	tools/katago_v1182
+274	data/mock_tests
+211	data/aicup2026_go_training_v1.1.tar.xz
+178	tools/katago
+118	tools/uv-python
+49	tools/uv
+22	reports/go_deck
+13	data/tests
+13	data/dl_tests_20261030
+6	reports/go_report
+3	tools/go-replay
+2	reports/lab01_go_gpu_capacity_20261015
+2	reports/go_story
+2	reports/architecture_v2_2026-11-02.md
+1	reports/類似任務他人解法.md
+1	reports/難點簡報_給GPT_2026-11-05.md
+1	reports/玩家預測可用之處_給另一個對話_2026-11-11.md
+1	reports/玩家層偏差的新資訊來源.md
+1	reports/測試端新訊號來源.md
+1	reports/測試位移與排行榜探測方法.md
+1	reports/報告素材_2026-11-15_補充.md
+1	reports/報告素材_2026-11-06.md
+1	reports/圍棋等級預測新特徵家族.md
+1	reports/圍棋等級預測 對手影響與混沌.md
+1	reports/問題陳述_認人瓶頸_2026-11-16.md
+1	reports/切割相鄰等級_給GPT_2026-11-05.md
+== all symlinks up to depth 3
+./results/m84_cache -> /work/u2507115/aicup1_moved/m84_cache
+./results/m84_rows -> /work/u2507115/aicup1_moved/m84_rows
+./results/m90_ply0 -> /work/u2507115/aicup1_moved/m90_ply0
+./results/m95 -> /work/u2507115/aicup1_moved/m95
+./results/scores_hd_jp -> /work/u2507115/aicup1_moved/scores_hd_jp
+./results/scores_hd_x80 -> /work/u2507115/aicup1_moved/scores_hd_x80
+./results/scores_opp_hd_jp -> /work/u2507115/aicup1_moved/scores_opp_hd_jp
+./results/scores_opp_hd_x40_jp -> /work/u2507115/aicup1_moved/scores_opp_hd_x40_jp
+./results/sub_hd/submission_rank_shard0of8.npz -> ../../submission_rank_shard0of8.npz
+./results/sub_hd/submission_rank_shard1of8.npz -> ../../submission_rank_shard1of8.npz
+./results/sub_hd/submission_rank_shard2of8.npz -> ../../submission_rank_shard2of8.npz
+./results/sub_hd/submission_rank_shard3of8.npz -> ../../submission_rank_shard3of8.npz
+./results/sub_hd/submission_rank_shard4of8.npz -> ../../submission_rank_shard4of8.npz
+./results/sub_hd/submission_rank_shard5of8.npz -> ../../submission_rank_shard5of8.npz
+./results/sub_hd/submission_rank_shard6of8.npz -> ../../submission_rank_shard6of8.npz
+./results/sub_hd/submission_rank_shard7of8.npz -> ../../submission_rank_shard7of8.npz
+./results/sub_old/submission_rank_shard0of8.npz -> ../../submission_rank_shard0of8.npz
+./results/sub_old/submission_rank_shard1of8.npz -> ../../submission_rank_shard1of8.npz
+./results/sub_old/submission_rank_shard2of8.npz -> ../../submission_rank_shard2of8.npz
+./results/sub_old/submission_rank_shard3of8.npz -> ../../submission_rank_shard3of8.npz
+./results/sub_old/submission_rank_shard4of8.npz -> ../../submission_rank_shard4of8.npz
+./results/sub_old/submission_rank_shard5of8.npz -> ../../submission_rank_shard5of8.npz
+./results/sub_old/submission_rank_shard6of8.npz -> ../../submission_rank_shard6of8.npz
+./results/sub_old/submission_rank_shard7of8.npz -> ../../submission_rank_shard7of8.npz
+./results/trunk_vec_x80 -> /work/u2507115/aicup1_moved/trunk_vec_x80
+./tools/uv-python/cpython-3.12-linux-x86_64-gnu -> /home/u2507115/BK_AICUP_2026-1/tools/uv-python/cpython-3.12.14-linux-x86_64-gnu
+./.venv/bin/python3.12 -> python
+./.venv/bin/python3 -> python
+./.venv/bin/python -> /home/u2507115/BK_AICUP_2026-1/tools/uv-python/cpython-3.12-linux-x86_64-gnu/bin/python3.12
+./.venv/lib64 -> lib
+== symlinks deeper than depth 3 (count by directory)
+    159 ./tools/uv-python/cpython-3.12.14-linux-x86_64-gnu/share/terminfo/d
+    126 ./tools/uv-python/cpython-3.12.14-linux-x86_64-gnu/share/terminfo/w
+    113 ./tools/uv-python/cpython-3.12.14-linux-x86_64-gnu/share/terminfo/t
+    102 ./tools/uv-python/cpython-3.12.14-linux-x86_64-gnu/share/terminfo/a
+     71 ./tools/uv-python/cpython-3.12.14-linux-x86_64-gnu/share/terminfo/n
+     54 ./tools/uv-python/cpython-3.12.14-linux-x86_64-gnu/share/terminfo/h
+     51 ./tools/uv-python/cpython-3.12.14-linux-x86_64-gnu/share/terminfo/c
+     48 ./tools/uv-python/cpython-3.12.14-linux-x86_64-gnu/share/terminfo/v
+     46 ./tools/uv-python/cpython-3.12.14-linux-x86_64-gnu/share/terminfo/p
+     27 ./tools/uv-python/cpython-3.12.14-linux-x86_64-gnu/share/terminfo/s
+     26 ./tools/uv-python/cpython-3.12.14-linux-x86_64-gnu/share/terminfo/i
+     25 ./tools/uv-python/cpython-3.12.14-linux-x86_64-gnu/share/terminfo/m
+     20 ./tools/uv-python/cpython-3.12.14-linux-x86_64-gnu/share/terminfo/o
+     19 ./tools/uv-python/cpython-3.12.14-linux-x86_64-gnu/share/terminfo/z
+     17 ./tools/uv-python/cpython-3.12.14-linux-x86_64-gnu/share/terminfo/P
+     15 ./tools/uv-python/cpython-3.12.14-linux-x86_64-gnu/share/terminfo/q
+     14 ./tools/uv-python/cpython-3.12.14-linux-x86_64-gnu/share/terminfo/x
+     13 ./tools/uv-python/cpython-3.12.14-linux-x86_64-gnu/share/terminfo/b
+     11 ./tools/uv-python/cpython-3.12.14-linux-x86_64-gnu/share/terminfo/g
+     10 ./tools/uv-python/cpython-3.12.14-linux-x86_64-gnu/share/terminfo/f
+== 40 largest files
+    1606 MB ./reports/backup_20261118/pack1_release_A.tar
+    1038 MB ./.venv/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so
+     834 MB ./results/m77/data.npz
+     553 MB ./results/m82/rows_train.npz
+     547 MB ./.venv/lib/python3.12/site-packages/nvidia/cudnn/lib/libcudnn_engines_precompiled.so.9
+     502 MB ./.venv/lib/python3.12/site-packages/triton/_C/libtriton.so
+     491 MB ./.venv/lib/python3.12/site-packages/nvidia/cublas/lib/libcublasLt.so.12
+     452 MB ./.venv/lib/python3.12/site-packages/nvidia/cusparselt/lib/libcusparseLt.so.0
+     446 MB ./.venv/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so
+     436 MB ./results/l1b/heads4s2_B.pt.ckpt
+     436 MB ./results/l1b/heads4s2_A.pt.ckpt
+     436 MB ./results/l1b/heads4_B.pt.ckpt
+     436 MB ./results/l1b/heads4_A.pt.ckpt
+     395 MB ./.venv/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so.2
+     347 MB ./.venv/lib/python3.12/site-packages/xgboost/lib/libxgboost.so
+     324 MB ./models/katago/b18c384nbt-humanv0.ckpt.backup
+     324 MB ./models/katago/b18c384nbt-humanv0.ckpt
+== /work/u2507115 (MB)
+   33810 MB  /work/u2507115/pid_v2
+   31350 MB  /work/u2507115/ext_fox
+   19290 MB  /work/u2507115/aicup1_moved
+    4342 MB  /work/u2507115/behavior_probe_20261116
+    1073 MB  /work/u2507115/m161q_ckpt
+     537 MB  /work/u2507115/m218_ckpt
+     329 MB  /work/u2507115/m262_ai
+     298 MB  /work/u2507115/m161p_ckpt
+       1 MB  /work/u2507115/m197_choice64
+       0 MB  /work/u2507115/m161_ckpt
+== /work/u2507115/aicup1_moved (MB)
+8462	/work/u2507115/aicup1_moved/trunk_vec_x80
+5333	/work/u2507115/aicup1_moved/m90_ply0
+5268	/work/u2507115/aicup1_moved/m84_cache
+228	/work/u2507115/aicup1_moved/m95
+== ~/.cache entries over 5 MB
+445	/home/u2507115/.cache/go_deck_tools
+356	/home/u2507115/.cache/aicup1_final_wt
+113	/home/u2507115/.cache/pidchoice_wt
+106	/home/u2507115/.cache/rptwt
+44	/home/u2507115/.cache/pip
+18	/home/u2507115/.cache/go_deck_jobs
+15	/home/u2507115/.cache/pidbehavior_wt
+10	/home/u2507115/.cache/pidrpt_wt
+8	/home/u2507115/.cache/report_audit
+5	/home/u2507115/.cache/typescript
+== home top level over 100 MB
+68403	/home/u2507115/BK_AICUP_2026-1
+19812	/home/u2507115/BK_AICUP_2026-2
+5182	/home/u2507115/.vscode-server
+1120	/home/u2507115/.cache
+1087	/home/u2507115/.claude
+345	/home/u2507115/.codex
+== links from the player-identification project into this tree
+== done 2026-11-21 00:30:33
