@@ -76,6 +76,6 @@
 
 ## 不在 repo 的檔案
 
-- **認人網路的權重與中間輸出**（共約十餘 GB，單檔多半超過 100 MB）：留在 nano4，清單、大小與 sha256 在 `docs/nano4_large_files.sha256`。
+- **認人網路的權重與中間輸出**（共約十餘 GB，單檔多半超過 100 MB）：2026-11-21 起保存在參賽者的本地備份（nano4 上已刪除）；當時的清單、大小與 sha256 在 `docs/nano4_large_files.sha256`，其中最終流程用到的權重另列在 `docs/OFFICIAL_WEIGHTS.md`，需要驗證時可提供。
 - **已刪除的檢查點**：比賽期間為了騰出磁碟配額，一部分較早的認人檢查點（例如 M82 的配對器、M120 的部分網路）已經刪除，紀錄在 `reports/backup_20261118/deleted_*.txt`；它們的輸出（上面的 `m84_*.npz` 與 `results/m84_cache/var_*.npz`）仍在，第三、四段可以由這些輸出重算。最後幾層實際讀到的檔案清單見 `reports/backup_20261118/audit_chain_files.txt`。
 - 比賽資料、評分中間檔、快取與提交檔。
