@@ -1,11 +1,14 @@
 # 最終提交流程（AI CUP 2026 圍棋棋力等級預測）
 
-2026-11-21 版。這份文件說明最終提交檔是怎麼來的、每一段用到哪些程式、權重放在哪裡，以及哪些東西不在這個 repo。
+2026-11-23 版。這份文件說明最終提交檔是怎麼來的、每一段用到哪些程式、權重放在哪裡，以及哪些東西不在這個 repo。
 
 ## 最終提交檔
 
-- 上傳的檔案是 `submission_rank_ct118e.csv`（md5 `0ef7368fb85cf1eecde2eb18b99367cb`），Public 0.85871825。
-- 它的 Private 400 題與 `submission_rank_ct116.csv`（md5 `6b053db6672cd31cbb2e6b742de18649`，Public 0.8394955）逐題相同；Public 另有 16 題是依歷次上傳的 Public 分數回推後修正的。
+- 定案檔是 `submission_rank_ct118e_a2b4.csv`（md5 `2c2e4ad637a6407a35de7f599c4ac641`），Public 0.8587182。
+- 它的 Public 400 題與 `submission_rank_ct118e.csv`（md5 `0ef7368fb85cf1eecde2eb18b99367cb`，Public 0.85871825）逐題相同，所以 Public 讀數也相同；ct118e 的 Public 有 16 題是依歷次上傳的 Public 分數回推後修正的。
+- 它的 Private 400 題＝`submission_rank_ct116.csv`（md5 `6b053db6672cd31cbb2e6b742de18649`，Public 0.8394955）的 Private，再把 4 題（priv_q_0062、0125、0204、0325）由 A 改成 B（2026-11-23 參賽者決定，見第四段）。
+- 備援是 ct118e（Private 與 ct116 逐題相同）。比賽以最後一次上傳計分，定案檔必須是最後一筆上傳。
+- Private 的預期（2026-11-21 結案時的計算，M264）：約 0.81（中心 0.80–0.82），八成區間 0.785–0.835，九成區間 0.78–0.84；那 4 題自估只多約 0.001–0.0015。
 - 提交檔本身不放在 repo（見 `.gitignore`）。
 - 每一個實驗（事前登記與結果）都記在 `reports/architecture_v2_2026-11-02.md`，以 M 加編號稱呼；下面提到的 M### 都指那份文件裡的條目。
 
@@ -55,6 +58,7 @@
 - **兩條由 Public 讀數選出的推移**（1D→A、4D→5D）：`m53_write_probe.py`；每次上傳的精確分數以 `m58_decode.py`、`m206_decode.py` 解成「完全正確、差一級以內」各變動幾題。
 - **ct116**＝ct112 加上參賽者決定的 8 題 Private（解除 6 題 4D→5D 的鎖定、2 題 A→B；M209），以及 7 題依 Public 讀數修正的 Public 答案（`m210_profile_all.py`、`m211_ledger_ct116.py`）。
 - **ct118e**＝ct116 的 Private，加上依後續讀數修正的 Public 答案（`m220_resolve.py`、`m222_update.py`、`m223_build.py`）。
+- **ct118e_a2b4（定案）**＝ct118e 的 Private 再把 4 題由 A 改成 B。這 4 題的合併後驗本來就答 B（B 的機率 0.50–0.64），只是被「不離開 A」的防護擋住。依據：Public 上同一條規則的探測（`probe_A2B`，被擋住的 7 題改 B，M206）淨多對 2 題（+1.26 分），沒達事先登錄的門檻（+3）。參賽者 11-17 先放寬把握最高的 2 題（priv_q_0084、0087，已在 ct116），11-23 決定再放寬其餘 4 題。自估 Private 多約 0.4–0.6 分（400 題總分），實際落在 ±2.5 分之間。這是參賽者依 Public 讀數做的決定，報告要揭露。
 - 這一段用到了 Public 排行榜的回饋；只改 Public 的修正不影響 Private 的答案。
 
 ## 外部資源（報告需揭露）

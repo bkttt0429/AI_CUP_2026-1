@@ -59,10 +59,10 @@
       <div class="solves"><span class="d0">守住 Private</span></div>
       <h3>Private 大約幾分：是估計，不是保證</h3>
       <p class="lede">兩個榜像同一題庫抽出的期中考和期末考：題目不同、難度相近，所以 Public 量到的可以拿來估 Private。</p>
-      <dl class="why"><dt>問題</dt><dd>Private 要到比賽結束才看得到分數。</dd><dt>作法</dt><dd>先確認兩榜很像，再用 Public 量到的各級題數重算。</dd><dt>結果</dt><dd>以 ct112 估，最可能 0.81–0.83；九成把握在 0.77–0.84（較早的計算）；ct116 另有 8 題例外，沒加進去。</dd></dl>
+      <dl class="why"><dt>問題</dt><dd>Private 要到比賽結束才看得到分數。</dd><dt>作法</dt><dd>先確認兩榜很像，再用 Public 量到的各級題數重算。</dd><dt>結果</dt><dd>最可能約 0.81（0.80–0.82）；八成把握 0.785–0.835，九成把握 0.78–0.84（11-21 結案時的計算）。</dd></dl>
       <ul class="key">
-        <li><b>兩榜很像</b>：看起來像隨機分成兩半；五項看不出差別，一項 Private 略低約 0.01（0.81–0.83 沒扣掉）。</li>
-        <li><b>Private 凍結在 ct116</b>（最終答案）：之後只改 Public。Public 的分數含運氣，Private 比它低是正常的。</li>
+        <li><b>兩榜很像</b>：看起來像隨機分成兩半；五項看不出差別，一項 Private 略難，已算進預估。</li>
+        <li><b>最終答案 ct118e_a2b4</b>：ct116 的 Private 再把 4 題 A 改 B（11-23 參賽者決定）。Public 的分數含運氣和回推標籤，Private 比它低 0.03–0.07 是正常的。</li>
       </ul>
     </div>
     <div class="fig">
@@ -85,6 +85,9 @@
     #after .af-rank img{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:6px;background:#fff}
     #after .af-rank figcaption{margin-top:6px;font-size:.86em;color:var(--muted)}
     #after .af-rank figcaption b{color:var(--ink)}
+    #after .af-rank .lb-table{box-shadow:none}
+    #after .af-rank .lb-table table{font-size:.78em}
+    #after .af-rank .lb-table th,#after .af-rank .lb-table td{padding:4px 6px}
     #after table{font-size:.95em}
     #after th,#after td{padding:7px 12px;line-height:1.45}
     #after td.d{font-weight:700;white-space:nowrap}
@@ -105,7 +108,13 @@
         <li><b>模擬考過關，不等於正式考過關。</b>一版模擬考每 100 題多 0.96 分，Public 卻少 0.95 分；從此每個零件都單獨驗。</li>
         <li><b>剩下的誤差，大頭是跟著人走的。</b>每 100 題失 21.0 分，約 13.8 分（三分之二）看再多局也補不回（推論：多半來自標籤）。</li>
       </ol>
-      <figure class="af-rank" id="after-rank"><img src="asset:lb_public_1118_top4.png" width="1075" height="239" alt="AIdea 競賽二 Public 排行榜截圖（2026-11-18）前 4 列：排名、隊伍名稱、成績、上傳時間與次數"><figcaption>Public 排行榜截圖（11-18）。我們的隊伍：<b>TEAM_11819</b>；最終名次以 Private 為準。</figcaption></figure>
+      <figure class="af-rank" id="after-rank"><div class="lb-table table-wrap"><table aria-label="AIdea 競賽二 Public 排行榜前 4 隊（2026-11-23）">
+        <tr><th class="n">排名</th><th>隊伍名稱</th><th class="n">成績</th><th>上傳時間</th><th class="n">次數</th></tr>
+        <tr class="us"><td class="n">1</td><td>TEAM_11819</td><td class="n">0.8587182</td><td>2026-11-21 00:06:14</td><td class="n">72</td></tr>
+        <tr><td class="n">2</td><td>TEAM_11818</td><td class="n">0.8426561</td><td>2026-11-21 14:01:33</td><td class="n">27</td></tr>
+        <tr><td class="n">3</td><td>TEAM_11348</td><td class="n">0.8311925</td><td>2026-11-19 20:40:13</td><td class="n">15</td></tr>
+        <tr><td class="n">4</td><td>TEAM_11306</td><td class="n">0.8300137</td><td>2026-11-20 15:37:46</td><td class="n">54</td></tr>
+      </table></div><figcaption>Public 排行榜前 4 隊（11-23 抄錄）。我們的隊伍：<b>TEAM_11819</b>；最終名次以 Private 為準。</figcaption></figure>
     </div>
     <div>
       <h4>難點和對策（每 100 題多幾分；沒註明的是模擬考）</h4>
@@ -147,7 +156,7 @@
     <div class="dc"><b>別人訓練好的模型（預訓練權重）</b>KataGo 公開的 Human SL 模型 humanv0（＝第 5 頁的 AI 老師；權重檔 b18c384nbt-humanv0）。我們對每一手棋的描述，全部從它來。</div>
     <div class="dc"><b>另一場比賽的程式</b>認對手用的棋風特徵和比對模型，沿用同一隊在「玩家辨識」比賽寫的程式，再用本賽的訓練資料重新訓練。</div>
     <div class="dc wide"><b>外部公開資料</b>Fox Go Dataset（野狐圍棋的公開棋譜，GPL-3.0 授權）。<strong>有採用：</strong>9,685 個帳號、每個 20 局，用在第 11 頁第 ③ 路的一個認人模型裡：訓練時每一步摻入 64 個外部帳號當陌生人。單獨的貢獻很小（每 100 題多 0.08–0.12 分，分不出是不是運氣）。<strong>沒採用：</strong>第 12 頁那個用同一資料集 17.6 萬個帳號的實驗。帳號名已換成無法還原的代碼，對不到真實身分。</div>
-    <div class="dc pub wide"><b>用到 Public 分數資訊的地方</b>Public 確認後定案、不再改的兩批題（兩榜合計 38 題）；四條看過試探結果後寫成的禁止規則；例外：定案檔 ct116 由參賽者依 Public 回推結果，解除其中 6 題，並把 2 題 A 改 B；5 次「整份都答同一級」的上傳，用來量各級題數；從 Public 分數回推生成的標籤，只套在 Public 題、不影響 Private（ct116 7 題、ct118d 18 題）。</div>
+    <div class="dc pub wide"><b>用到 Public 分數資訊的地方</b>Public 確認後定案、不再改的兩批題（兩榜合計 38 題）；四條看過試探結果後寫成的禁止規則；例外：參賽者依 Public 回推結果，解除其中 6 題，並把 6 題 A 改 B（ct116 2 題、11-23 定案檔 ct118e_a2b4 再 4 題）；5 次「整份都答同一級」的上傳，用來量各級題數；從 Public 分數回推生成的標籤，只套在 Public 題、不影響 Private（ct116 7 題，ct118e 對 ct116 再改 16 題）。</div>
     <div class="dc wide"><b>生成式 AI</b>程式、實驗與分析由 Claude（Anthropic）執行；採用哪個做法、上傳哪個檔，由參賽者決定。</div>
   </div>
 </section>
