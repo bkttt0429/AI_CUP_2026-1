@@ -10,6 +10,7 @@
 - 備援是 ct118e（Private 與 ct116 逐題相同）。比賽以最後一次上傳計分，定案檔必須是最後一筆上傳。
 - Private 的預期（2026-11-21 結案時的計算，M264）：約 0.81（中心 0.80–0.82），八成區間 0.785–0.835，九成區間 0.78–0.84；那 4 題自估只多約 0.001–0.0015。
 - 提交檔本身不放在 repo（見 `.gitignore`）。
+- **核對**：`python3 -I scripts/verify_final_chain.py submission_rank_ct118e_a2b4.csv`（只用標準函式庫）。ct112 之後每一個答案的改動（題號、改前、改後、步驟、出處）都列在這支程式的 STEPS；它先從定案檔逐步還原到 ct118e、ct118d、ct117、ct116、ct112，每一步都要對上建檔時登記的 md5，再從 ct112 依序套用回到定案檔。2026-11-23 在計算節點上全部通過。要從模型輸出開始核對：先在放回本地備份的 repo 裡跑 `python -I logs/nano4/m163_pool.py --new SQ4 --control SPALm --name ctverify`（2026-11-18 的檔案稽核用同一個指令重建出與 ct112 逐位元相同的檔），再加上 `--ct112 submission_rank_ctverify.csv`。`--ct116`／`--ct118e` 等選項可以把存著的檔一起比對，`--write DIR` 會寫出還原的中間檔。
 - 每一個實驗（事前登記與結果）都記在 `reports/architecture_v2_2026-11-02.md`，以 M 加編號稱呼；下面提到的 M### 都指那份文件裡的條目。
 
 ## 環境
@@ -57,8 +58,8 @@
 
 - **兩條由 Public 讀數選出的推移**（1D→A、4D→5D）：`m53_write_probe.py`；每次上傳的精確分數以 `m58_decode.py`、`m206_decode.py` 解成「完全正確、差一級以內」各變動幾題。
 - **ct116**＝ct112 加上參賽者決定的 8 題 Private（解除 6 題 4D→5D 的鎖定、2 題 A→B；M209），以及 7 題依 Public 讀數修正的 Public 答案（`m210_profile_all.py`、`m211_ledger_ct116.py`）。
-- **ct118e**＝ct116 的 Private，加上依後續讀數修正的 Public 答案（`m220_resolve.py`、`m222_update.py`、`m223_build.py`）。
-- **ct118e_a2b4（定案）**＝ct118e 的 Private 再把 4 題由 A 改成 B。這 4 題的合併後驗本來就答 B（B 的機率 0.50–0.64），只是被「不離開 A」的防護擋住。依據：Public 上同一條規則的探測（`probe_A2B`，被擋住的 7 題改 B，M206）淨多對 2 題（+1.26 分），沒達事先登錄的門檻（+3）。參賽者 11-17 先放寬把握最高的 2 題（priv_q_0084、0087，已在 ct116），11-23 決定再放寬其餘 4 題。自估 Private 多約 0.4–0.6 分（400 題總分），實際落在 ±2.5 分之間。這是參賽者依 Public 讀數做的決定，報告要揭露。
+- **ct118e**＝ct116 的 Private，加上依後續讀數修正的 Public 答案（`m220_resolve.py`、`m222_update.py`、`m223_build.py`）；中間經過 ct117（M212，Public 12 題，沒上傳）與 ct118d（M220，再改 Public 6 題）。各步的逐題改動見 `scripts/verify_final_chain.py`。
+- **ct118e_a2b4（定案）**＝ct118e 的 Private 再把 4 題由 A 改成 B（建檔程式 `scripts/build_ct118e_a2b4.py`）。這 4 題的合併後驗本來就答 B（B 的機率 0.50–0.64），只是被「不離開 A」的防護擋住。依據：Public 上同一條規則的探測（`probe_A2B`，被擋住的 7 題改 B，M206）淨多對 2 題（+1.26 分），沒達事先登錄的門檻（+3）。參賽者 11-17 先放寬把握最高的 2 題（priv_q_0084、0087，已在 ct116），11-23 決定再放寬其餘 4 題。自估 Private 多約 0.4–0.6 分（400 題總分），實際落在 ±2.5 分之間。這是參賽者依 Public 讀數做的決定，報告要揭露。
 - 這一段用到了 Public 排行榜的回饋；只改 Public 的修正不影響 Private 的答案。
 
 ## 外部資源（報告需揭露）
