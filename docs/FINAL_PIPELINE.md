@@ -5,7 +5,7 @@
 ## 最終提交檔
 
 - 定案檔是 `submission_rank_ct118e_a2b4.csv`（md5 `2c2e4ad637a6407a35de7f599c4ac641`），Public 0.8587182。
-- 它的 Public 400 題與 `submission_rank_ct118e.csv`（md5 `0ef7368fb85cf1eecde2eb18b99367cb`，Public 0.85871825）逐題相同，所以 Public 讀數也相同；ct118e 的 Public 有 16 題是依歷次上傳的 Public 分數回推後修正的。
+- 它的 Public 400 題與 `submission_rank_ct118e.csv`（md5 `0ef7368fb85cf1eecde2eb18b99367cb`，Public 0.85871825）逐題相同，所以 Public 讀數也相同。依歷次上傳的 Public 分數回推後修正的 Public 答案：相對於合併層輸出 ct112 共 22 題；其中 7 題已在 ct116，ct118e 相對於 ct116 再有 16 題不同（pub_q_0157 在兩個階段各改一次，故 7＋16−1＝22）。
 - 它的 Private 400 題＝`submission_rank_ct116.csv`（md5 `6b053db6672cd31cbb2e6b742de18649`，Public 0.8394955）的 Private，再把 4 題（priv_q_0062、0125、0204、0325）由 A 改成 B（2026-11-23 參賽者決定，見第四段）。
 - 備援是 ct118e（Private 與 ct116 逐題相同）。比賽以最後一次上傳計分，定案檔必須是最後一筆上傳。
 - Private 的預期（2026-11-21 結案時的計算，M264）：約 0.81（中心 0.80–0.82），八成區間 0.785–0.835，九成區間 0.78–0.84；那 4 題自估只多約 0.001–0.0015。
