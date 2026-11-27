@@ -152,8 +152,8 @@ def test_pma_model_forward_and_checkpoint(arm, tmp_path):
 
 def test_fold0_and_extra_games_flags():
     assert ts.training_folds("all", with_fold0=True) == [0, 1, 2, 3, 4] and ts.training_folds("all") == [1, 2, 3, 4]
-    with pytest.raises(SystemExit):
-        ts.training_folds(1, with_fold0=True)
+    # 2026-11-05（section 4M M20）起，第 v 折驗證、第 0 折加入訓練是正式配方（README 的成員訓練指令）
+    assert ts.training_folds(1, with_fold0=True) == [0, 2, 3, 4]
     ns = lambda **kw: argparse.Namespace(**{"train_folds": 0, "train_games": 0, "train_sizes": None, "mix": 0.0, "with_fold0": False, "extra_games": 0, **kw})  # noqa: E731
     assert ts.data_segments(ns(with_fold0=True)) == ["f0"] and ts.data_segments(ns(extra_games=40)) == ["x40"] and ts.data_segments(ns(extra_games=80)) == ["x80"]
     assert ts.data_segments(ns(with_fold0=True, extra_games=40, train_sizes=[5, 10])) == ["f0", "s5-10", "x40"]
@@ -165,8 +165,7 @@ def test_fold0_and_extra_games_flags():
     assert ts.EXTRAS[80]["vec"].name == "trunk_vec_x80" and ts.scores_path("c", 2, ts.EXTRAS[80]["vec"]).name == "scores_x80_fold2.npy"
     assert ts.L1B[0] == "scores3_hd" and ts.OPP[0] == "scores3_opp_hd" and ts.EXTRA["l1b"][1] == "scores3_B_hd_x40" and ts.EXTRA["l1b"][3] == "scores3_hd_x40"
     assert ts.scores_path("c", 2, ts.EXTRA["vec"]).name == "scores_x40_fold2.npy"
-    with pytest.raises(SystemExit):
-        ts.main(["train", "--arm", "C", "--val-fold", "1", "--with-fold0"])
+    # train --val-fold 1 --with-fold0 不再被拒絕（M20 起為正式配方），由上面 training_folds 的斷言涵蓋
 
 
 def test_extra_tables_merge_and_selection_order(tmp_path, monkeypatch):

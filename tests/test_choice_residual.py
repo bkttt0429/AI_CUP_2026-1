@@ -60,6 +60,8 @@ def test_selective_replay_matches_existing_for_handicap_pass_and_empty():
     sys.path.insert(0, str(root / "scripts"))
     import choice_residual_extract as e
     import trunk_extract as te
+    if not te.CKPT.exists():  # 與其他需要權重的測試相同：沒有 Human SL 檢查點時略過
+        pytest.skip("human SL checkpoint not present")
     config = torch.load(te.CKPT, map_location="cpu", weights_only=True)["config"]
     te.init_worker(config)
     for sgf, color in [("(;SZ[19]HD[0];B[aa];W[bb];B[];W[cc])", "B"),
