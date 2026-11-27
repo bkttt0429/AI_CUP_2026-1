@@ -2,7 +2,7 @@
 <section class="page cover" id="cover" data-title="封面">
   <style>
     /* 共用 CSS 在簡報模式把 .page.cur 設成 display:block，封面的置中（flex）失效；這裡用 id 的權重還原。
-       左欄：標題＋三個數字；右欄：Public 排行榜（11-23 起是依使用者貼回的文字做的表格；封面不寫名次，讓聽眾自己對照 0.8587182 在哪一列）；註腳在頁底 */
+       左欄：標題＋三個數字；右欄：Private 排行榜的原始截圖 parts/assets/lb_private_1125.png（使用者 11-26：保持原樣、保留綠紅箭頭；封面不寫名次，讓聽眾自己找 TEAM_11819 那一列）；註腳在頁底 */
     #cover.cur{display:flex}
     #cover .cv-main{flex:1;display:flex;align-items:center;justify-content:center;width:100%}
     #cover .cv-grid{width:min(1240px,100%);display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.3fr);gap:32px;align-items:center;text-align:left}
@@ -20,7 +20,7 @@
     #cover .lb-shot figcaption{margin-top:8px;font-size:.95em;line-height:1.5;color:var(--muted)}
     #cover .lb-shot figcaption b{color:var(--ink)}
     #cover .kpi .v.file{font-size:1.3em}
-    /* 排行榜表格（封面與第 16 頁共用）：資料抄自使用者 11-23 貼回的 Public 排行榜 */
+    /* 排行榜表格的樣式（11-26 起封面與收穫頁都改用原始截圖，這組樣式目前沒有頁面使用；數字仍抄在 10_num.js NUM.boardPriv） */
     .lb-table{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff;box-shadow:0 2px 10px rgba(29,31,36,.10)}
     .lb-table table{font-size:.95em}
     .lb-table th,.lb-table td{padding:6px 10px;white-space:nowrap}
@@ -37,28 +37,18 @@
         <h2>只看棋譜，<br>猜出下棋的人有多強</h2>
         <p class="cover-sub">給一位沒見過的玩家下的 5–20 局棋，猜他是 10 個等級中的哪一級</p>
         <div class="kpis">
-          <div class="kpi"><div class="v">0.8587182</div><div class="l">最後一次上傳的分數（Public 榜：公開的 400 題，滿分 1）</div></div>
+          <div class="kpi"><div class="v">0.7902471</div><div class="l">Private 榜成績（隱藏的 400 題，決定名次；答案檔 ct118e_a2b4）</div></div>
+          <div class="kpi"><div class="v">0.8587182</div><div class="l">同一個答案檔在 Public 榜的分數（公開的 400 題，滿分 1）</div></div>
           <div class="kpi ref"><div class="v">0.4631</div><div class="l">主辦方範例做法在 Public 榜的分數（對照用）</div></div>
-          <div class="kpi"><div class="v file">ct118e_a2b4</div><div class="l">決定名次的答案檔（Private 榜：隱藏的 400 題）</div></div>
         </div>
       </div>
       <figure class="lb-shot" id="cover-lb">
-        <div class="lb-table table-wrap">
-          <table aria-label="AIdea 競賽二 Public 排行榜前 6 隊（2026-11-23）">
-            <tr><th class="n">排名</th><th>隊伍名稱</th><th class="n">成績</th><th>上傳時間</th><th class="n">次數</th></tr>
-            <tr class="us"><td class="n">1</td><td>TEAM_11819</td><td class="n">0.8587182</td><td>2026-11-21 00:06:14</td><td class="n">72</td></tr>
-            <tr><td class="n">2</td><td>TEAM_11818</td><td class="n">0.8426561</td><td>2026-11-21 14:01:33</td><td class="n">27</td></tr>
-            <tr><td class="n">3</td><td>TEAM_11348</td><td class="n">0.8311925</td><td>2026-11-19 20:40:13</td><td class="n">15</td></tr>
-            <tr><td class="n">4</td><td>TEAM_11306</td><td class="n">0.8300137</td><td>2026-11-20 15:37:46</td><td class="n">54</td></tr>
-            <tr><td class="n">5</td><td>TEAM_12405</td><td class="n">0.8198713</td><td>2026-11-19 15:32:50</td><td class="n">18</td></tr>
-            <tr><td class="n">6</td><td>TEAM_12426</td><td class="n">0.8135501</td><td>2026-11-21 23:23:33</td><td class="n">26</td></tr>
-          </table>
-        </div>
-        <figcaption>AIdea 競賽二 Public 排行榜前 6 隊（2026-11-23 抄錄）。我們的隊伍：<b>TEAM_11819</b>，最後一次上傳 0.8587182。</figcaption>
+        <img src="asset:lb_private_1125.png" alt="AIdea 競賽二 Private 排行榜的截圖（2026-11-25 公布），含 TEAM_11819 一列">
+        <figcaption>AIdea 競賽二 Private 排行榜（2026-11-25 公布，原始截圖）。我們的隊伍：<b>TEAM_11819</b>，最後一次上傳 11-24 16:12:12。</figcaption>
       </figure>
     </div>
   </div>
-  <p class="metaline kpi-note">ct 是我們上傳檔的編號。0.8587182 裡約 0.026 來自從 Public 分數回推生成的標籤，只適用 Public 榜；沒用這些標籤的 ct112，Public 榜是 0.8331743。Private 榜預估約 0.81（九成把握 <span style="white-space:nowrap">0.78–0.84</span>）。</p>
+  <p class="metaline kpi-note">ct 是我們上傳檔的編號。0.8587182 裡約 0.026 來自從 Public 分數回推生成的標籤，只適用 Public 榜；沒用這些標籤的 ct112，Public 榜是 0.8331743。Private 榜賽前預估約 0.81（九成把握 <span style="white-space:nowrap">0.78–0.84</span>），實際 0.7902471。</p>
 </section>
 
 <!-- ================= 第 1 章：比賽在做什麼（W1） ================= -->

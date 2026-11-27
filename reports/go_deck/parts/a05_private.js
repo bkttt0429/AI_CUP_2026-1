@@ -48,7 +48,10 @@
     //     定案答案（ct116）在合併後驗下的自估 0.7872（抽樣標準差 0.0142；已含 Private 基礎層略難約 0.016）；下緣 0.793（Public 多出來的全是運氣）、
     //     上緣 0.829（Private 也多出和 Public 一樣的 +0.042）；中心約 0.81（0.80–0.82），八成 0.785–0.835、九成 0.78–0.84（標準差約 0.019）。
     //     11-23 多改的 4 題 A→B 自估約 +0.001–0.0015，不改變這些區間。舊的 est [81, 83]、ci90 [77, 84] 只留在上面的註解裡
-    est: [80, 82], ci90: [78, 84], self: 78.7, comparable: 83.3,
+    //   11-25 公布的 Private 成績（使用者回報；NUM.final.priv）：0.7902471 ＝（276 ＋ 109 × e^-1）÷ 400。在九成範圍內、比中心 0.81 低 0.02、
+    //     比自估 0.787 高 0.003。Public 0.8587 − Private 0.7902 ＝ 0.0685 ＝ 0.0255（回推標籤，只在 Public）＋ 0.042（Public 多出的：
+    //     用 Public 挑的兩批改動 5.0 分、最後一步 ct109→ct112 的運氣 5.3 分、分散的 6.5 分，400 題總分；設計 M201）＋ 0.001（兩榜難度與 12 題改動）
+    est: [80, 82], ci90: [78, 84], self: 78.7, comparable: 83.3, actual: 79.02471,
     ladder: [['模型自己估（最保守）', [78.2], '#5d6370', '78.2'], ['用 Public 量到的各級題數重算', [80.4, 81.6], '#0b6e69', '80.4–81.6']],
   };
 
@@ -169,10 +172,11 @@
 
 
   // 15 右欄：① 左框 800 題看起來像隨機分成兩半（點的顏色是示意）＋右框六個徽章（五個看不出差別、一個 Private 略低）
-  //   ② 下框：九成把握的範圍條，兩端大字「下限約 78／上限約 84」③ 中間填色「最可能 80–82」（11-21 結案時的計算，M264）
-  //   ④ 淡色參考記號 78.7（模型對最終答案的自估）、83.3（沒用回推標籤的 Public＝ct112）；鎖：最終答案＝定案檔
+  //   ② 下框：賽前九成把握的範圍條，兩端大字「下限約 0.78／上限約 0.84」③ 中間填色「最可能 0.80–0.82」（11-21 結案時的計算，M264）
+  //   ④ 淡色參考記號 78.7（模型對最終答案的自估，只畫三角形）、83.3（沒用回推標籤的 Public＝ct112）；
+  //     橘色粗豎線＋大字＝11-25 公布的實際成績 0.7902（11-26 加入）；鎖：最後上傳的答案檔與 276／109／15
   ANIM.ch5_floor = () => {
-    const S = NUM.ch5.sim, E = NUM.ch5.est, CI = NUM.ch5.ci90, SELF = NUM.ch5.self, CMP = NUM.ch5.comparable, fin = NUM.final, K = CH5, PUB = K.ok, PRV = '#0072b2', FAINT = '#9aa0aa';
+    const S = NUM.ch5.sim, E = NUM.ch5.est, CI = NUM.ch5.ci90, SELF = NUM.ch5.self, CMP = NUM.ch5.comparable, ACT = NUM.ch5.actual, fin = NUM.final, K = CH5, PUB = K.ok, PRV = '#0072b2', FAINT = '#9aa0aa';
     const rnd = ch5rng(116), idx = [...Array(800).keys()];
     for (let i = 799; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
     const isPub = new Set(idx.slice(0, 400));
@@ -197,31 +201,35 @@
         + txA(x + 26, y + 18, 'an-k', nm, t0, undefined, `style="fill:${K.ink}"`)
         + txA(x + 9, y + 40, 'an-h', 'Private 略低約 0.01', t0 + 0.2);
     });
-    // ② 下框：九成把握的範圍條（只畫 77–84），兩端粗豎線＋大字
+    // ② 下框：賽前九成把握的範圍條（只畫 78–84），兩端粗豎線＋大字
     const D2 = v => (v / 100).toFixed(2);   // 顯示成排行榜的寫法（0.xx）；資料仍是每 100 題
-    const X = v => 146 + (v - CI[0]) * (348 / (CI[1] - CI[0])), t2 = 3.3, t3 = 4.6, t4 = 6.0, ty = 274, th = 22, BIG = 'font-size:18px;font-weight:700';
-    s += ch5box(12, 214, 616, 137, t2) + txA(26, 238, 'an-t', 'Private 分數預估（和排行榜同一種分數，滿分 1）', t2)
+    const X = v => 146 + (v - CI[0]) * (348 / (CI[1] - CI[0])), t2 = 3.3, t3 = 4.6, t4 = 5.8, t6 = 7.0, ty = 272, th = 22, BIG = 'font-size:18px;font-weight:700';
+    const A4 = (ACT / 100).toFixed(4), xa = X(ACT).toFixed(1);
+    s += ch5box(12, 214, 616, 144, t2) + txA(26, 236, 'an-t', 'Private 分數：賽前預估和實際（和排行榜同一種分數，滿分 1）', t2)
       + `<rect x="${X(CI[0])}" y="${ty}" width="${X(CI[1]) - X(CI[0])}" height="${th}" rx="4" fill="#bfe0db" opacity="0">${aShow(t2)}</rect>`
       + [CI[0], CI[1]].map(v => `<line x1="${X(v)}" y1="${ty - 10}" x2="${X(v)}" y2="${ty + th + 8}" stroke="${K.ok}" stroke-width="4" stroke-linecap="round" opacity="0">${aShow(t2 + 0.2)}</line>`).join('')
       + txA(X(CI[0]) - 10, ty + 17, '', '下限約 ' + D2(CI[0]), t2 + 0.3, undefined, `text-anchor="end" style="${BIG};fill:${K.ink}"`)
       + txA(X(CI[1]) + 10, ty + 17, '', '上限約 ' + D2(CI[1]), t2 + 0.3, undefined, `style="${BIG};fill:${K.ink}"`);
-    // ③ 中間填色：最可能 80–82（11-21 結案時的計算）
+    // ③ 中間填色：賽前最可能 80–82（11-21 結案時的計算）
     s += `<rect x="${X(E[0])}" y="${ty}" width="${X(E[1]) - X(E[0])}" height="${th}" rx="3" fill="${K.ok}" opacity="0">${aShow(t3)}</rect>`
       + txA((X(E[0]) + X(E[1])) / 2, ty - 10, '', '最可能 ' + D2(E[0]) + '–' + D2(E[1]), t3 + 0.2, undefined, `text-anchor="middle" style="${BIG};fill:${K.ok}"`);
-    // ④ 淡色參考記號＋一行小字註明口徑
-    [[SELF, (SELF / 100).toFixed(3) + ' 模型自己估（最保守）'], [CMP, (CMP / 100).toFixed(3) + ' 沒用回推標籤的 Public（含運氣）']].forEach(([v, lab], i) => {
+    // ④ 淡色參考記號：自估只畫三角形（實際成績的大字就在旁邊，說明寫在框底那行），ct112 的 Public 有一行小字
+    [[SELF, ''], [CMP, (CMP / 100).toFixed(3) + ' 沒用回推標籤的 Public（含運氣）']].forEach(([v, lab], i) => {
       const x = X(v), t0 = t4 + i * 0.3;
       s += `<polygon points="${x.toFixed(1)},${ty + th + 2} ${(x - 5).toFixed(1)},${ty + th + 10} ${(x + 5).toFixed(1)},${ty + th + 10}" fill="${FAINT}" opacity="0">${aShow(t0)}</polygon>`
-        + txA(x.toFixed(1), ty + th + 26, 'an-s', lab, t0, undefined, `text-anchor="middle" style="fill:${FAINT}"`);
+        + (lab ? txA(x.toFixed(1), ty + th + 26, 'an-s', lab, t0, undefined, `text-anchor="middle" style="fill:${FAINT}"`) : '');
     });
-    s += txA(26, 342, 'an-s', D2(CI[0]) + '–' + D2(CI[1]) + '＝九成把握；' + D2(E[0]) + '–' + D2(E[1]) + '＝最可能（11-21 結案時的計算，已算進 Private 略難的部分）', t2 + 0.5);
-    // ④ 鎖：最終答案＝定案檔
-    const t5 = 6.8;
-    s += ch5lock(24, 368, 28, K.ok, t5)
-      + txA(64, 374, 'an-t', 'Private 最終答案：' + fin.file, t5 + 0.2)
-      + txA(64, 394, 'an-s', 'ct116 的 Private 再把 4 題 A 改 B（11-23 參賽者決定；預估只多約 0.001）', t5 + 0.5);
-    return {steps: ['① 兩榜很像：五項看不出差別', '② 九成把握：下限約 ' + D2(CI[0]) + '、上限約 ' + D2(CI[1]), '③ 最可能 ' + D2(E[0]) + '–' + D2(E[1]), '④ 參考記號；最終答案 ' + fin.file],
-      svg: `<svg viewBox="0 0 640 402" role="img" aria-label="兩榜看起來像隨機分成兩半、六項比較五項看不出差別；Private 分數九成把握下限約 ${D2(CI[0])}、上限約 ${D2(CI[1])}，最可能 ${D2(E[0])}–${D2(E[1])}；最終答案 ${fin.file}">${s}</svg>`,
-      note: (SELF / 100).toFixed(3) + '：模型對最終答案的自估（最保守）；' + (CMP / 100).toFixed(3) + '：沒用回推標籤的 Public 分數（ct112），含運氣。' + D2(E[0]) + '–' + D2(E[1]) + ' 已算進 Private 略難的部分。分數和排行榜同一種寫法（每 100 題 81 分＝0.81）。點的顏色只是示意。'};
+    // ⑤ 實際成績（11-25 公布）：橘色粗豎線穿過範圍條＋大字
+    s += `<line x1="${xa}" y1="${ty - 12}" x2="${xa}" y2="${ty + th + 14}" stroke="${K.hot}" stroke-width="5" stroke-linecap="round" opacity="0">${aShow(t6)}</line>`
+      + txA(xa, ty + th + 35, '', '實際 ' + A4, t6 + 0.3, undefined, `text-anchor="middle" style="${BIG};fill:${K.hot}"`);
+    s += txA(26, 350, 'an-s', '賽前九成把握 ' + D2(CI[0]) + '–' + D2(CI[1]) + '、最可能 ' + D2(E[0]) + '–' + D2(E[1]) + '。灰色三角形＝模型自己估的 ' + (SELF / 100).toFixed(3), t2 + 0.5);
+    // 鎖：最後上傳的答案檔與成績
+    const t5 = 8.2;
+    s += ch5lock(24, 376, 22, K.ok, t5)
+      + txA(58, 381, 'an-t', '最後上傳的答案檔 ' + fin.file + '：Private ' + fin.priv.toFixed(7), t5 + 0.2)
+      + txA(58, 397, 'an-s', '400 題：猜中 ' + fin.exact + ' 題、差一級 ' + fin.near + ' 題、其餘 ' + fin.miss + ' 題', t5 + 0.5);
+    return {steps: ['① 兩榜很像：五項看不出差別', '② 賽前九成把握 ' + D2(CI[0]) + '–' + D2(CI[1]), '③ 賽前最可能 ' + D2(E[0]) + '–' + D2(E[1]), '④ 實際 ' + A4 + '：在範圍內，比最可能低'],
+      svg: `<svg viewBox="0 0 640 402" role="img" aria-label="兩榜看起來像隨機分成兩半、六項比較五項看不出差別；Private 分數賽前九成把握下限約 ${D2(CI[0])}、上限約 ${D2(CI[1])}，最可能 ${D2(E[0])}–${D2(E[1])}；實際 ${fin.priv.toFixed(7)}，在範圍內、比最可能低；最後上傳的答案檔 ${fin.file}">${s}</svg>`,
+      note: '橘色豎線：11-25 公布的 Private 成績 ' + fin.priv.toFixed(7) + '。灰色三角形 ' + (SELF / 100).toFixed(3) + '：模型對最終答案的自估（賽前最保守的估法）；' + (CMP / 100).toFixed(3) + '：沒用回推標籤的 Public 分數（ct112），含運氣。分數和排行榜同一種寫法。點的顏色只是示意。'};
   };
-  ANIM.ch5_floor.dur = 10;
+  ANIM.ch5_floor.dur = 11;
