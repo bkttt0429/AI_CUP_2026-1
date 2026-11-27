@@ -2,7 +2,11 @@
 data/
 dataset_raw/
 models/
-tools/
+/tools/uv/
+/tools/uv-python/
+/tools/uv-cache/
+/tools/katago/
+/tools/katago-libs/
 repo/
 .venv/
 logs/
@@ -27,6 +31,7 @@ results/ladder/**/*.npz
 results/ladder/cv_smoke*
 !results/scores/games_fold*.csv.gz
 !results/models/
+!results/archive/models/
 !tests/fixtures/**/submission_rank*.csv
 !tests/fixtures/**/submission_rank*.json
 # L1b (plan 2026-10-25): caches, heads, checkpoints and per-move scores stay on nano4; JSON sidecars and reports go to git

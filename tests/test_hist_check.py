@@ -1,4 +1,4 @@
-"""aicup.seqshape.game_pmi_hist and scripts/hist_check.py: the per-move pmi distribution channel on top of fused_opp_diff (issue #29)."""
+"""aicup.seqshape.game_pmi_hist and experiments/hist_check.py: the per-move pmi distribution channel on top of fused_opp_diff (issue #29)."""
 import json
 
 import numpy as np

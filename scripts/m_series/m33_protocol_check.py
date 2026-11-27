@@ -1,7 +1,7 @@
 """M33 protocol check (compute node; after training, before any comparison is read): every -pc member's sidecar against its ct7 (M22)
 twin -- same training questions, held-out players, inner questions, steps per epoch, folds, seed, data and optimiser settings and score
 directories; player_contrast 0.1; the same parameter count (the contrastive head is training-only); validation probabilities on disk.
-  python -I logs/nano4/m33_protocol_check.py
+  python -I scripts/m_series/m33_protocol_check.py
 """
 import json
 import sys

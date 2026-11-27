@@ -1,4 +1,4 @@
-"""scripts/opp_head_check.py: route C's CV of the opponent-side heads' features on top of fused_opp_diff (issue #33)."""
+"""experiments/opp_head_check.py: route C's CV of the opponent-side heads' features on top of fused_opp_diff (issue #33)."""
 import json
 
 import numpy as np

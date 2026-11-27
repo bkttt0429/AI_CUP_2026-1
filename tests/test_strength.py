@@ -1,4 +1,4 @@
-"""aicup.strength (the Bradley-Terry strength head), aicup.sefeat, scripts/se_train.py, se_score.py and se_check.py -- on a
+"""aicup.strength (the Bradley-Terry strength head), aicup.sefeat, experiments/se_train.py, se_score.py and se_check.py -- on a
 random b2c16 model, a tiny real cache and synthetic score tables."""
 import json
 from dataclasses import replace

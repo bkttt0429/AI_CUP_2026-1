@@ -1,4 +1,4 @@
-"""scripts/train_set_model.py on synthetic folds (CPU): the training set, the cross-fitted base and the paired
+"""experiments/train_set_model.py on synthetic folds (CPU): the training set, the cross-fitted base and the paired
 base document, the saved models and their sidecars, the CLI."""
 import json
 

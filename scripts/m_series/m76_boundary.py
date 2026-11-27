@@ -7,7 +7,7 @@ A boundary-only decision module in Jev's shape, on the opponent-anchor evidence 
 against A = the anchors on all ten levels of every question (the current composition), and "A inside the region only".
 Scenarios: CV density with matched weights; test-like density 0.74 with weights x0.74; weights too high (density 0.74, x1.0);
 density lower than assumed (0.5, x0.74). Seeds 0-2 and 6-8. Gain vs the base ensemble, share of changed decisions, share of changes of >= 2 levels.
-  python -I logs/nano4/m76_boundary.py
+  python -I scripts/m_series/m76_boundary.py
 """
 import json
 import sys
@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 from aicup.qeval import SIZES, balanced_mean_over_n, paired_diff  # noqa: E402
 import m71_cv_density as cd  # noqa: E402
 import m71_step2 as s2  # noqa: E402

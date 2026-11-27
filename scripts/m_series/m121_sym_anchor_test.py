@@ -14,7 +14,7 @@ Report only: by question size, the players with <= 40 games, the identifiers of 
 --build (only if both hold): ct100 (ct76-ct99 are taken) by m104_build.py's code path with v7 in place of v5; the same path with v5 must reproduce
 ct75u exactly; the feasible Public readings relative to ct75u.
 
-  python -I logs/nano4/m121_sym_anchor_test.py --id SP2y4 --also SP4e SP2e4 [--build]
+  python -I scripts/m_series/m121_sym_anchor_test.py --id SP2y4 --also SP4e SP2e4 [--build]
 """
 import argparse
 import csv
@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m103_stability as m3  # noqa: E402
 import m105_voters as m5  # noqa: E402
 from aicup.metric import LEVELS  # noqa: E402

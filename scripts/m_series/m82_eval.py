@@ -2,7 +2,7 @@
 + tactic, 5e = five + matcher, seven) through M71 step 2's cross-fitted mixture model. Pre-registered primary: seven vs six when M81
 adopted the six-component identifier (results/r_variants/m81_eval.json), else five + matcher vs five; M37 rule on seeds 0-2 and 6-8.
 Sanity (pre-registered): the five-component anchors against the base must land in +0.010 .. +0.016.
-  python -I logs/nano4/m82_eval.py
+  python -I scripts/m_series/m82_eval.py
 """
 import json
 import sys
@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 from aicup.qeval import SIZES, balanced_mean_over_n, evaluate, paired_diff  # noqa: E402
 import m71_step2 as s2  # noqa: E402
 from ens_compare import ES, FOLDS, load_fold  # noqa: E402

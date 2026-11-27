@@ -24,7 +24,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4"), str(Path.home() / "BK_AICUP_2026-2/src")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series"), str(Path.home() / "BK_AICUP_2026-2/src")]
 import m84_variant as mv  # noqa: E402
 from aicup.qeval import SIZES, balanced_mean_over_n, paired_diff  # noqa: E402
 

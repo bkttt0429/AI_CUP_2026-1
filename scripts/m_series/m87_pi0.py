@@ -2,7 +2,7 @@
 excess; with a share pi of real matches the null mass in band b is (1 - pi) nominal_b. Correction: 1 - pi = min(1, share_0 / nominal_0)
 (the lowest band taken as pure null), a_b = clip(1 - (1 - pi) nominal_b / share_b, 0, 0.98), a_top and K recomputed the same way.
 Identifier 5e (m82_val.npz). Primary: corrected vs current evidence, M37, seeds 0-2 and 6-8.
-  python -I logs/nano4/m87_pi0.py
+  python -I scripts/m_series/m87_pi0.py
 """
 import json
 import sys
@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 from aicup.metric import LEVELS  # noqa: E402
 from aicup.qeval import SIZES, balanced_mean_over_n, paired_diff  # noqa: E402
 import m71_step2 as s2  # noqa: E402

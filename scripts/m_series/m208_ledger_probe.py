@@ -9,7 +9,7 @@ are the cheapest joint assignment under a prior. Added here:
 Prior: the pooled posterior behind ct112. For the questions of the two probes: the weight of each truth
 (exp(-cost) of the best joint assignment with that truth fixed), with and without the composition constraints.
 
-  python -I logs/nano4/m208_ledger_probe.py
+  python -I scripts/m_series/m208_ledger_probe.py
 """
 import json
 import math
@@ -21,7 +21,7 @@ from scipy.optimize import Bounds, LinearConstraint, milp
 from scipy.sparse import lil_matrix
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m58_decode as led  # noqa: E402
 
 LEV = led.LEVELS; PROBES = {"upload_probe/probe_4D5D_locked.csv": 0.8347546, "upload_probe/probe_A2B.csv": 0.8363349}

@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4"), str(Path.home() / "BK_AICUP_2026-2/src")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series"), str(Path.home() / "BK_AICUP_2026-2/src")]
 import ident_pool as ip  # noqa: E402
 import m81_tactic_id as m81  # noqa: E402
 from aicup.metric import LEVELS  # noqa: E402

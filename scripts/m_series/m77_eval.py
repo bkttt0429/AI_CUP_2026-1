@@ -2,7 +2,7 @@
 for fold v never saw fold v's players' games) against the opening-model anchors (m71_queries.npz; same regime, same queries), through
 M71 step 2's cross-fitted mixture model. Stage 1: held-out identification of the all-rows model (>= 0.20 top-1). Stage 2 (adoption):
 encoder vs opening anchors, paired, M37 rule on seeds 0-2 and 6-8.
-  python -I logs/nano4/m77_eval.py
+  python -I scripts/m_series/m77_eval.py
 """
 import json
 import sys
@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 from aicup.qeval import SIZES, balanced_mean_over_n, evaluate, paired_diff  # noqa: E402
 import m71_step2 as s2  # noqa: E402
 from ens_compare import ES, FOLDS, load_fold  # noqa: E402

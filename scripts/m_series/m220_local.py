@@ -13,7 +13,7 @@ ct118 = ct116 with
   the other six questions of probe_C2B -> B (their summed contribution is positive whatever the truth of pub_q_0286 is).
 Private rows = ct116.
 
-  python -I logs/nano4/m220_local.py
+  python -I scripts/m_series/m220_local.py
 """
 import csv
 import hashlib
@@ -26,7 +26,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m58_decode as led  # noqa: E402
 
 LEV = led.LEVELS; X_OBS, Y_OBS = 2, -1

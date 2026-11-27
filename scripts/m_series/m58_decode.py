@@ -4,8 +4,8 @@ differs from the reference file (ct9). All uploads are decoded jointly by a 0/1 
 question over the classes within two of any decision it received, the exact X_u, Y_u of every upload as equality constraints, ct9's posterior
 as the log-prior objective. Report: the MAP truths, which questions are DETERMINED (only one class is feasible), each probe's net vs ct13,
 and the keep decision of single-push probes (Bayes rule, prior signal rate PI, signal precision P1 vs null precision P0).
-  python -I logs/nano4/m58_decode.py add submission_rank_ct16.csv 0.7760000     # record an upload's Public score
-  python -I logs/nano4/m58_decode.py report                                    # decode everything recorded
+  python -I scripts/m_series/m58_decode.py add submission_rank_ct16.csv 0.7760000     # record an upload's Public score
+  python -I scripts/m_series/m58_decode.py report                                    # decode everything recorded
 """
 import argparse
 import json

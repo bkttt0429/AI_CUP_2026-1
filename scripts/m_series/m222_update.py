@@ -8,7 +8,7 @@ where they exist, else its M210 weights, else the pooled posterior behind ct112;
 ledger are ignored. Per question: truth weights before / after, the expected score of ct116's answer, of ct118d's answer and
 of the best answer.
 
-  python -I logs/nano4/m222_update.py
+  python -I scripts/m_series/m222_update.py
 """
 import csv
 import json
@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m58_decode as led  # noqa: E402
 
 LEV = led.LEVELS; TARGET = (2, -1, 9, 1); EPS = 1e-15

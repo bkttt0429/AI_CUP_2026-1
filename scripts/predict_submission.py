@@ -22,7 +22,7 @@ merge in the same process, so it writes the same files.
   python -I scripts/predict_submission.py --merge --nshards 8 ...              # then, on any node, no GPU
 
 With --set-models (item 2) the decision comes from set models instead of the saved L3/L4 model: each
-.pt + .json (aicup.setmodel_io) is a Δ-correction trained by scripts/train_set_model.py on top of the
+.pt + .json (aicup.setmodel_io) is a Δ-correction trained by experiments/train_set_model.py on top of the
 paired base --set-base (a rank_model.json fitted on the same training questions; a sidecar's training
 question hash must equal the base's, exit 2 otherwise). The merge reads the
 shards' per-move log p, builds every game's staged and whole vectors (aicup.gamevec) and the packed
@@ -462,7 +462,7 @@ def load_set_models(paths, device="cpu"):
 
 def check_pairing(models, base_doc, base_path):
     """The set models must be Δ-corrections of --set-base. A sidecar that records its training questions
-    (questions_sha256, scripts/train_set_model.py) needs a base document with the same value: ValueError
+    (questions_sha256, experiments/train_set_model.py) needs a base document with the same value: ValueError
     otherwise, also when the base has none (results/models/rank_model.json is not a paired base). Returns
     warnings: a sidecar's base_model_sha256 that is not the file's (the same base rewritten, or another file
     fitted on the same questions)."""
@@ -579,7 +579,7 @@ def main(argv=None):
     ap.add_argument("--allow-missing-hd", action="store_true", help="let a fused_opp_diff_hd --fused-model decide although some games carry no "
                     "HD[] (their handicap features are zeros); without it such inputs are refused (exit 2)")
     ap.add_argument("--set-models", nargs="*", default=[], metavar="PT",
-                    help="set models (.pt with .json sidecars, scripts/train_set_model.py) whose averaged probabilities decide")
+                    help="set models (.pt with .json sidecars, experiments/train_set_model.py) whose averaged probabilities decide")
     ap.add_argument("--set-base", default=None, help="the paired base of the set models (rank_model.json format); required with them")
     ap.add_argument("--set-device", default="cpu", help="device the set models run on")
     ap.add_argument("--l1b-heads", nargs="*", default=[], metavar="PT",

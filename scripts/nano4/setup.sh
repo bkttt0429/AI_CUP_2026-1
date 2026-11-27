@@ -91,4 +91,4 @@ mkdir -p logs/nano4
 
 step "done"
 echo "env: $ROOT/.venv (package list in logs/nano4/env-freeze.txt)"
-echo "next: cd $ROOT && sbatch scripts/nano4/smoke.sbatch"
+echo "next: cd $ROOT && sbatch experiments/nano4/smoke.sbatch"

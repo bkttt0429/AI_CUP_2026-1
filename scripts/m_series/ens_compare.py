@@ -5,7 +5,7 @@ bound > 0, (3) >= 3 of 4 folds > 0, (4) diff >= 0.005. Also each new arm against
 arms' seeds; with unequal arm lists or seed lists only the combined pair is tested (section 4M M9: 12 = C T C-h4 T-h4 vs 6 = C T,
 and the same-source control 12 = C T seeds 0-5 vs 6 = C T seeds 0-2).
 
-  python -I logs/nano4/ens_compare.py --old C T --new C-ft T-ft --seeds 0 1 2 --out results/trunk_seq/es/ens_m3.json
+  python -I scripts/m_series/ens_compare.py --old C T --new C-ft T-ft --seeds 0 1 2 --out results/trunk_seq/es/ens_m3.json
 """
 import argparse
 import json

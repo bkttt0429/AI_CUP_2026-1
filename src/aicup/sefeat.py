@@ -1,6 +1,6 @@
 """Question features from a strength head's per-game statistics (issue #14, option b).
 
-scripts/se_score.py stores, per game, the moves judged and statistics of the strength scores s of the target's (or,
+experiments/se_score.py stores, per game, the moves judged and statistics of the strength scores s of the target's (or,
 with --opponent, the opponent's) moves: mean, standard deviation, the 10 / 50 / 90 % quantiles and the mean by
 stage (moves with t < 40, 40 <= t < 100, t >= 100; a stage without moves takes the game's mean). se_features
 turns a question's games into SE_FEATURE_NAMES: the move-weighted mean of the per-game means, the move-weighted

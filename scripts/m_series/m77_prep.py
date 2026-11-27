@@ -1,7 +1,7 @@
 """Section 4M M77 data (2026-11-10): every training game and every test game as move arrays for the whole-game identity encoder.
 POS [N, 256] uint16 (0-360 board point y * 19 + x, 361 pass, 362 padding), COL [N, 256] uint8 (0 B, 1 W, 2 padding), the row's
 player index, fold, actual colour, HD; the same for the test games (question id, target colour). Output results/m77/data.npz.
-  python -I logs/nano4/m77_prep.py
+  python -I scripts/m_series/m77_prep.py
 """
 import multiprocessing as mp
 import re

@@ -5,16 +5,16 @@
 set -uo pipefail
 case "$1" in
   one)
-    python -I logs/nano4/m88_seqid.py --stage merge --full --seeds 0 || exit 1
-    python -I logs/nano4/m84_variant.py --stage eval --tag S2
-    python -I logs/nano4/m84_variant.py --stage eval --tag SP2 ;;
+    python -I scripts/m_series/m88_seqid.py --stage merge --full --seeds 0 || exit 1
+    python -I scripts/m_series/m84_variant.py --stage eval --tag S2
+    python -I scripts/m_series/m84_variant.py --stage eval --tag SP2 ;;
   three)
     ok=0
     for s in 0,1,2 0,1 0,2 1,2; do
-      if python -I logs/nano4/m88_seqid.py --stage merge --full --seeds "$s"; then ok=1; echo "merged seeds $s"; break; fi
+      if python -I scripts/m_series/m88_seqid.py --stage merge --full --seeds "$s"; then ok=1; echo "merged seeds $s"; break; fi
     done
     [ "$ok" -eq 1 ] || exit 1
-    python -I logs/nano4/m84_variant.py --stage eval --tag S2e
-    python -I logs/nano4/m84_variant.py --stage eval --tag SP2e ;;
+    python -I scripts/m_series/m84_variant.py --stage eval --tag S2e
+    python -I scripts/m_series/m84_variant.py --stage eval --tag SP2e ;;
   *) echo "usage: $0 one|three" >&2; exit 2 ;;
 esac

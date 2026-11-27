@@ -10,21 +10,22 @@
 - 備援是 ct118e（Private 與 ct116 逐題相同）。比賽以最後一次上傳計分，定案檔必須是最後一筆上傳。
 - Private 的預期（2026-11-21 結案時的計算，M264）：約 0.81（中心 0.80–0.82），八成區間 0.785–0.835，九成區間 0.78–0.84；那 4 題自估只多約 0.001–0.0015。
 - 提交檔本身不放在 repo（見 `.gitignore`）。
-- **核對**：`python3 -I scripts/verify_final_chain.py submission_rank_ct118e_a2b4.csv`（只用標準函式庫）。ct112 之後每一個答案的改動（題號、改前、改後、步驟、出處）都列在這支程式的 STEPS；它先從定案檔逐步還原到 ct118e、ct118d、ct117、ct116、ct112，每一步都要對上建檔時登記的 md5，再從 ct112 依序套用回到定案檔。2026-11-23 在計算節點上全部通過。要從模型輸出開始核對：先在放回本地備份的 repo 裡跑 `python -I logs/nano4/m163_pool.py --new SQ4 --control SPALm --name ctverify`（2026-11-18 的檔案稽核用同一個指令重建出與 ct112 逐位元相同的檔），再加上 `--ct112 submission_rank_ctverify.csv`。`--ct116`／`--ct118e` 等選項可以把存著的檔一起比對，`--write DIR` 會寫出還原的中間檔。
-- 每一個實驗（事前登記與結果）都記在 `reports/architecture_v2_2026-11-02.md`，以 M 加編號稱呼；下面提到的 M### 都指那份文件裡的條目。
+- **核對**：`python3 -I scripts/verify_final_chain.py submission_rank_ct118e_a2b4.csv`（只用標準函式庫）。ct112 之後每一個答案的改動（題號、改前、改後、步驟、出處）都列在這支程式的 STEPS；它先從定案檔逐步還原到 ct118e、ct118d、ct117、ct116、ct112，每一步都要對上建檔時登記的 md5，再從 ct112 依序套用回到定案檔。2026-11-23 在計算節點上全部通過。要從模型輸出開始核對：先在放回本地備份的 repo 裡跑 `python -I scripts/m_series/m163_pool.py --new SQ4 --control SPALm --name ctverify`（2026-11-18 的檔案稽核用同一個指令重建出與 ct112 逐位元相同的檔），再加上 `--ct112 submission_rank_ctverify.csv`。`--ct116`／`--ct118e` 等選項可以把存著的檔一起比對，`--write DIR` 會寫出還原的中間檔。
+- 每一個實驗（事前登記與結果）都記在 `docs/records/architecture_v2_2026-11-02.md`，以 M 加編號稱呼；下面提到的 M### 都指那份文件裡的條目。
 
 ## 環境
 
 - Python 3.12，套件見 `requirements.txt`；在 nano4 上以 `bash scripts/nano4/setup.sh` 建 `.venv`。
 - KataGo v1.15.0 執行檔放在 `tools/katago/`，Human SL 權重 `b18c384nbt-humanv0` 放在 `models/katago/`。
 - 比賽資料放在 `data/training/` 與 `data/tests/`（不隨 repo 散布）。
-- 所有計算以 `sbatch scripts/nano4/run.sbatch <指令>` 送到計算節點；8 卡分片用 `bash scripts/nano4/shards.sh 8 <指令>`。前七步的完整參數見 `docs/NANO4.md` 的對應小節。
-- 2026-11-05 之後的實驗腳本都在 `logs/nano4/`（一個實驗一支，檔名開頭是 M 編號）；正式流程的啟動腳本在 `logs/nano4/report_audit/`。
+- 所有計算以 `sbatch scripts/nano4/run.sbatch <指令>` 送到計算節點；8 卡分片用 `bash scripts/nano4/shards.sh 8 <指令>`。前七步的完整參數見 `docs/records/NANO4.md` 的對應小節。
+- 第二到四段的程式與其啟動腳本在 `scripts/m_series/`（檔名沿用實驗登記的 M 編號）；其餘實驗程式封存於 `experiments/`，需以 tag `pre-restructure-20261127` 的目錄結構執行。新舊路徑對照見 `docs/layout_migration.tsv`。
+- `logs/nano4/` 是執行期的日誌資料夾（不進版控，`scripts/nano4/setup.sh` 會建立）。
 
 ## 第一段：基礎集成（只看棋的內容）
 
 1. **切折**：`splits/player_folds.csv`（`scripts/make_splits.py`）。
-2. **Human SL 18 個剖面評分**：`scripts/score_folds.py`，本人與對手（`--opponent`）各一趟；讓子局以 `scripts/hd_table.py`、`scripts/patch_scored.py` 重評併回；每人第 21–40 局以 `logs/nano4/x40_keys.py` 產生清單後補評。見 NANO4 §4.19、§4.23、§4.25。
+2. **Human SL 18 個剖面評分**：`scripts/score_folds.py`，本人與對手（`--opponent`）各一趟；讓子局以 `scripts/hd_table.py`、`scripts/patch_scored.py` 重評併回；每人第 21–40 局以 `scripts/m_series/x40_keys.py` 產生清單後補評。見 NANO4 §4.19、§4.23、§4.25。
 3. **L1b 等級頭**：`scripts/l1b_build_cache.py` → `scripts/l1b_train.py`（先只訓 head，再以 `--trunk-lr 1e-5` 微調 trunk）得到 `heads3_A`、`heads3_B`；`scripts/l1b_score.py` 交叉評分。見 NANO4 §4.2、§4.19、§4.23。
 4. **trunk 向量**：`scripts/trunk_extract.py`。見 NANO4 §4.21、§4.23。
 5. **token 陣列與題目層特徵**：`scripts/trunk_seq_check.py build --opp-hsl ...` 與 `rfeat`。
@@ -36,13 +37,13 @@
      --out results/trunk_seq/es --save-dir results/models/ct_cv_m33
    ```
 
-7. **測試集推論**：`scripts/predict_submission.py`（分片評分）→ `scripts/trunk_predict.py extract` → `scripts/trunk_predict.py predict --models results/models/ct_cv_m33/val*_*-pc-f0-x40-oh_s*.pt`，產出 `submission_rank_ct9.csv`（md5 前 12 碼 `6ff60b847e26`，Public 0.7622032）與各題的機率檔。啟動腳本：`logs/nano4/report_audit/b1_public.sh`。
+7. **測試集推論**：`scripts/predict_submission.py`（分片評分）→ `scripts/trunk_predict.py extract` → `scripts/trunk_predict.py predict --models results/models/ct_cv_m33/val*_*-pc-f0-x40-oh_s*.pt`，產出 `submission_rank_ct9.csv`（md5 前 12 碼 `6ff60b847e26`，Public 0.7622032）與各題的機率檔。啟動腳本：`experiments/nano4/report_audit/b1_public.sh`。
 
 ## 第二段：認出對手（錨點）
 
 互先局的兩人當局掛牌相同，所以「對手是哪一位有標籤的訓練玩家」就是本人等級的證據。
 
-- **五個手工的習慣成分**：`logs/nano4/ident_pool.py`（開局、落點統計、局部棋形、盤面朝向、讓子類別；改寫自本隊在同屆「玩家辨識」競賽的程式），分數快取 `m84_cache.py`。
+- **五個手工的習慣成分**：`scripts/m_series/ident_pool.py`（開局、落點統計、局部棋形、盤面朝向、讓子類別；改寫自本隊在同屆「玩家辨識」競賽的程式），分數快取 `m84_cache.py`。
 - **學習式配對器**：`m82_cond_id.py`（M82），變體與組檔 `m84_variant.py`。
 - **逐手序列的認人網路**：`m88_seqid.py`（M88；`--full` 是用全部 100 萬局的 M90；`--ext-ply`／`--ext-select` 是加入外部公開帳號的 M101）、`m120_seqid_sym.py`（M120，對稱擴增）、`m161p_prod.py` 與 `m161q_prod.py`（M161：依局數抽樣、加寬、學習式中心）。查詢向量的八向平均：`m124_tta_queries.py`、`m161q_tta.py`。
 - **識別器的組成**：`m164_ident.py`（來源融合、中心來源、活躍度先驗 M163）、`m164_select.py`（不用標籤的選擇規則）、`m127_conf_family.py`（把握統計量 m15）。最後加入合併的來源是 SQ4。
@@ -82,5 +83,5 @@
 ## 不在 repo 的檔案
 
 - **認人網路的權重與中間輸出**（共約十餘 GB，單檔多半超過 100 MB）：2026-11-21 起保存在參賽者的本地備份（nano4 上已刪除）；當時的清單、大小與 sha256 在 `docs/nano4_large_files.sha256`，其中最終流程用到的權重另列在 `docs/OFFICIAL_WEIGHTS.md`，需要驗證時可提供。
-- **已刪除的檢查點**：比賽期間為了騰出磁碟配額，一部分較早的認人檢查點（例如 M82 的配對器、M120 的部分網路）已經刪除，紀錄在 `reports/backup_20261118/deleted_*.txt`；它們的輸出（上面的 `m84_*.npz` 與 `results/m84_cache/var_*.npz`）仍在，第三、四段可以由這些輸出重算。最後幾層實際讀到的檔案清單見 `reports/backup_20261118/audit_chain_files.txt`。
+- **已刪除的檢查點**：比賽期間為了騰出磁碟配額，一部分較早的認人檢查點（例如 M82 的配對器、M120 的部分網路）已經刪除，紀錄在 `docs/records/backup_20261118/deleted_*.txt`；它們的輸出（上面的 `m84_*.npz` 與 `results/m84_cache/var_*.npz`）仍在，第三、四段可以由這些輸出重算。最後幾層實際讀到的檔案清單見 `docs/records/backup_20261118/audit_chain_files.txt`。
 - 比賽資料、評分中間檔、快取與提交檔。

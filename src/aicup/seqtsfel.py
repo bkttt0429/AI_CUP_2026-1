@@ -8,7 +8,7 @@ shorter than MIN_MOVES, and any feature TSFEL cannot compute for a series, give 
 dependent number of outputs, so a fold's table takes the union of the names and NaN where a game has none; the CV side
 standardises with the training questions' statistics and imputes NaN by the training mean (standardise_impute), then
 reduces the block with a PCA fitted on the training questions only (pca_fit / pca_apply). fold_tsfel_table caches nothing
-itself; scripts/tsfel_check.py writes the per-fold tables to disk because extraction costs about 11 ms per series.
+itself; experiments/tsfel_check.py writes the per-fold tables to disk because extraction costs about 11 ms per series.
 """
 import multiprocessing as mp
 import warnings

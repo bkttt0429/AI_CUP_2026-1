@@ -4,7 +4,7 @@
  2 CV expectation at density r (weights x r): anchors on all levels / inside the boundary region only / pairwise act-at-0.6
  3 files: ct<A> = ct28 locked on the pushed questions + anchored decision inside the boundary region (bands >= q90, a = r x validation a);
           ct<B> = the same with the pairwise posterior >= 0.6 rule
-  python -I logs/nano4/m78_build_candidate.py --source fused --out 42 43
+  python -I scripts/m_series/m78_build_candidate.py --source fused --out 42 43
 """
 import argparse
 import hashlib
@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 from aicup.metric import LEVELS  # noqa: E402
 from aicup.qeval import SIZES, paired_diff  # noqa: E402
 from aicup.submission import write_submission  # noqa: E402

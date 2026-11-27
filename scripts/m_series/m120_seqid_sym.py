@@ -8,8 +8,8 @@ net -1 sees everyone), the same outputs (out_<tag>.npz: prototypes of the 8,007 
 queries; train_<tag>.json), and m88's merge. The games are loaded once and one (net, seed) trainer is forked per GPU
 (m112_idaug.py's layout). Checkpoints (resume) go to /work/u2507115/m120_ckpt and are slimmed to the best state at the end.
 
-  sbatch -p 16gpus --gres=gpu:8 -c 96 ... run.sbatch bash logs/nano4/m120_job.sh 1 2 3 4 all all:1 1:1
-  python -I logs/nano4/m120_seqid_sym.py --merge 0,1,2            (-> results/m84_cache/var_S4e.npz, m84_variant.py's format)
+  sbatch -p 16gpus --gres=gpu:8 -c 96 ... run.sbatch bash scripts/m_series/m120_job.sh 1 2 3 4 all all:1 1:1
+  python -I scripts/m_series/m120_seqid_sym.py --merge 0,1,2            (-> results/m84_cache/var_S4e.npz, m84_variant.py's format)
 """
 import argparse
 import json
@@ -22,7 +22,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m88_seqid as base  # noqa: E402  (loader, model, constants; torch is imported lazily there)
 from m112_idaug import sym_table  # noqa: E402
 

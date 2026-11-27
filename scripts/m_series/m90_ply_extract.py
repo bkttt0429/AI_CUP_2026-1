@@ -3,7 +3,7 @@ sequence identity model (M88) can train on, and build prototypes from, all 1,000
 scripts/trunk_extract.py; kept per ply (t < 256): the 128 values quantised to int8 (round((x - mu) / sd * 20), clipped to +-127; mu, sd
 per dimension from stored parts, results/m90/glstats.npz), the played point, the mover; per game: length, the owner's colour.
   --stats                               writes results/m90/glstats.npz from stored parts (CPU)
-  sbatch --gres=gpu:8 -c 96 ... bash scripts/nano4/shards.sh 8 python -I logs/nano4/m90_ply_extract.py --job 0 --njobs 3 --workers 10
+  sbatch --gres=gpu:8 -c 96 ... bash scripts/nano4/shards.sh 8 python -I scripts/m_series/m90_ply_extract.py --job 0 --njobs 3 --workers 10
 """
 import argparse
 import multiprocessing as mp
@@ -17,7 +17,7 @@ import pandas as pd
 import torch
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts"), str(ROOT / "logs/nano4"), str(Path.home() / "BK_AICUP_2026-2/src")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts"), str(ROOT / "scripts/m_series"), str(Path.home() / "BK_AICUP_2026-2/src")]
 import m81_tactic_id as m81  # noqa: E402
 import trunk_extract as te  # noqa: E402
 from aicup.humansl import load_humansl  # noqa: E402

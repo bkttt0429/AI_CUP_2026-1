@@ -11,7 +11,7 @@ train_<net>_s<seed>.json with best = {top1, step, ...}, a slim checkpoint with b
 every evaluation; a restarted job resumes. The best state is the one with the highest row-weighted held-out top-1 on the players
 the network trained on.
 
-  sbatch -p 8gpus --gres=gpu:5 -c 60 ... run.sbatch python -I logs/nano4/m161p_prod.py --jobs 1 2 3 4 all --seed 20 --steps 40000 --gamma 1 --bank proto --mask 0.3
+  sbatch -p 8gpus --gres=gpu:5 -c 60 ... run.sbatch python -I scripts/m_series/m161p_prod.py --jobs 1 2 3 4 all --seed 20 --steps 40000 --gamma 1 --bank proto --mask 0.3
 """
 import argparse
 import json
@@ -24,7 +24,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m88_seqid as base  # noqa: E402
 from m112_idaug import sym_table  # noqa: E402
 

@@ -1,4 +1,4 @@
-"""aicup.seqdata, aicup.seqmodel and scripts/seq_diag.py, seq_crossfit.py, seq_check.py (issue #19)."""
+"""aicup.seqdata, aicup.seqmodel and experiments/seq_diag.py, seq_crossfit.py, seq_check.py (issue #19)."""
 import json
 import shutil
 

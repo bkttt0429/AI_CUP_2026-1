@@ -1,4 +1,4 @@
-"""aicup.seqtsfel and scripts/tsfel_check.py: TSFEL descriptors of the per-move score series on top of fused_opp_diff (issue #36)."""
+"""aicup.seqtsfel and experiments/tsfel_check.py: TSFEL descriptors of the per-move score series on top of fused_opp_diff (issue #36)."""
 import json
 
 import numpy as np

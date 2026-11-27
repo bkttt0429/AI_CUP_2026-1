@@ -7,7 +7,7 @@ opponent's move count and its 18 log p sums (one per profile, own = opp = profil
 question_features gives the 39 columns of one question: the mean and std over its games of the per-game per-move mean log p
 curve centred by its max (18 + 18), the mean and std over games of the opponent's HSL posterior-mean index (2), and the
 target's own HSL posterior-mean index mean minus the opponent's (1). opp_hsl_features is the table form (scored-game tables
-as the training side reads them). The R-level ablation (logs/nano4/r_variants.py opphsl) was +0.0200 [+0.0156, +0.0245].
+as the training side reads them). The R-level ablation (experiments/nano4/r_variants.py opphsl) was +0.0200 [+0.0156, +0.0245].
 """
 import numpy as np
 

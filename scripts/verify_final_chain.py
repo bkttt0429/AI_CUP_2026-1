@@ -2,13 +2,13 @@
 """Check, byte for byte, the chain from the model output ct112 to the final file ct118e_a2b4 (standard library only).
 
 Every answer that differs between ct112 and the final file is listed in STEPS below: question, answer before, answer
-after, the step that changed it and the record entry (M### = reports/architecture_v2_2026-11-02.md).
+after, the step that changed it and the record entry (M### = docs/records/architecture_v2_2026-11-02.md).
 
   backward  start from the final file and undo the steps one by one; every intermediate file must have the md5 that was
             registered when it was built (ct118e, ct118d, ct117, ct116, ct112).
   forward   start from ct112 -- the one rebuilt by the backward pass, or --ct112 FILE, for example the file rebuilt from
             the stored model outputs with
-              python -I logs/nano4/m163_pool.py --new SQ4 --control SPALm --name ctverify
+              python -I scripts/m_series/m163_pool.py --new SQ4 --control SPALm --name ctverify
             (needs the data and results/ of the local backup in the repo layout) -- and apply the steps; every file on
             the way, and the end result, must have its registered md5.
   --ct116 / --ct117 / --ct118d / --ct118e FILE  also compare stored copies of those files with the rebuilt ones.

@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4"), str(Path.home() / "BK_AICUP_2026-2/src")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series"), str(Path.home() / "BK_AICUP_2026-2/src")]
 import ident_pool as ip  # noqa: E402
 import m71_step2 as s2  # noqa: E402
 import m81_tactic_id as m81  # noqa: E402
@@ -370,7 +370,7 @@ def finalize():
     for t in passing:
         a, b = TAGS[t][2]; f = ROOT / f"submission_rank_ct{a}.csv"
         if not f.exists():
-            r = subprocess.run([sys.executable, "-I", "logs/nano4/m78_build_candidate.py", "--source", "file", "--val", str(RV / f"m84_{t}_val.npz"), "--test", str(RV / f"m84_{t}_test.npz"), "--prefix", "f_", "--ref", "ct44", "--out", a, b], capture_output=True, text=True, cwd=ROOT)
+            r = subprocess.run([sys.executable, "-I", "scripts/m_series/m78_build_candidate.py", "--source", "file", "--val", str(RV / f"m84_{t}_val.npz"), "--test", str(RV / f"m84_{t}_test.npz"), "--prefix", "f_", "--ref", "ct44", "--out", a, b], capture_output=True, text=True, cwd=ROOT)
             (UP / f"build_{t}.log").write_text(r.stdout + "\n" + r.stderr[-3000:]); print(r.stdout[-2500:], flush=True)
     desc = DESC; L = [f"# 上傳指示（自動產生，{time.strftime('%Y-%m-%d %H:%M')}）", "", "**2026-11-14 更新：建議的最終檔改為 ct104b**（`submission_rank_ct104b.csv`，md5 7e00dc32133c，Public 0.8126304，2026-11-14 上傳，歷來最高，已是線上最後一筆；說明見 `ct104_decode.md`）。備援依序為 ct75u（0.8101304）→ ct75s → ct44。以下是 11/13 的說明，保留備查。", "", "**（11/13）建議的最終檔：ct75u**（`submission_rank_ct75u.csv`，md5 9974e151b93e，Public 0.8101304，2026-11-13 上傳，歷來最高）。**注意：11/13 最後兩次上傳是拆解檔（ct75s_out 0.8092107、ct75s_out_up 0.8076304），線上最後一筆目前不是 ct75u——請再傳一次 ct75u，讀數應為 0.8101304。** ct75u＝ct75s＋五個配方全票通過的 16 題改動。依事先寫下的規則（讀數不低於 ct75s 即建議採用）。備援：ct75s（md5 926f0e7c2153，Public 0.8092107）→ ct44（md5 367ab951442f，Public 0.8067107）。其他讀數：ct73 0.8060501、ct75n 0.8044698。之後若再傳別的檔，最後一筆必須傳回選定的最終檔。", ""]
     if (UP / "ct75s_decode.md").exists():  # M102: the shared-changes file and its decode table (written by m102_split.py, kept across rewrites of this README)

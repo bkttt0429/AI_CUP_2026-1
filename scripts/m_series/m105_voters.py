@@ -6,7 +6,7 @@ ratio) on ten identifier sources: 5e, P3, S, SP, SP2e, S2, S2b, S2c, S3c, S3. Ru
 CV under the test rules. Thresholds picked on one half of the folds (seeds 0-2), judged on the other half against the ct75u rule
 (unanimity of SP, SP2e, S2, S3c, S3); seeds 6-8 reuse the picks. Pass: CI lower bound > 0, >= 3 of 4 folds > 0, difference
 >= 0.0010 on both seed sets. If it passes: ct75v with the thresholds picked on all four folds, and its Public decode table.
-  python -I logs/nano4/m105_voters.py [--build]
+  python -I scripts/m_series/m105_voters.py [--build]
 """
 import argparse
 import csv
@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m103_stability as m3  # noqa: E402
 import m58_decode as led  # noqa: E402
 from aicup.metric import LEVELS  # noqa: E402

@@ -3,7 +3,7 @@
 
   A  the banding statistic of the opponent anchors: 0 = first minus second (current); 1 = m15 (first minus the mean of the 2nd-5th
      fused score) for recipe v5 only (M126); 2 = m15 for the five recipes v3, v5, s2, s3c, s3 (identifier files m84_<id>~m15_*.npz
-     of logs/nano4/m127_conf_family.py; the test-side density ratio of every m15 identifier computed as in m105_voters.py).
+     of scripts/m_series/m127_conf_family.py; the test-side density ratio of every m15 identifier computed as in m105_voters.py).
   B  the look-alike reading of M123 (mean target-side identity vector of the question, var_S4e, against the prototypes of the seen
      players; balanced level weights, sharpness 20, centred per level), pooled into the base probabilities with a weight per
      question size from {0, 0.1, 0.2, 0.3, 0.5, 0.75, 1.0}.
@@ -13,7 +13,7 @@ choice against "all off" (= the ct75u rule) - CI lower bound > 0, >= 3 of 4 fold
 sets. On a pass the choice made on all four folds is built as --name (ct28's 38 locked answers untouched; with everything off the
 builder must reproduce ct44 and ct75u question by question; the file is never overwritten).
 
-  python -I logs/nano4/m129_bundle2.py [--name ct104]
+  python -I scripts/m_series/m129_bundle2.py [--name ct104]
 """
 import argparse
 import csv
@@ -26,7 +26,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m103_stability as m3  # noqa: E402
 import m105_voters as m5  # noqa: E402
 import m110_fusion as mf  # noqa: E402

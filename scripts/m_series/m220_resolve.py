@@ -15,7 +15,7 @@ ct118 (rule written in the design doc before this ran):
       expected score than ct116's answer;
   (d) the questions of probe_C2B that (b) does not edit -> B (the reading itself: +2 exact, -1 within one over the seven).
 
-  python -I logs/nano4/m220_resolve.py [--workers 88]
+  python -I scripts/m_series/m220_resolve.py [--workers 88]
 """
 import csv
 import hashlib
@@ -28,7 +28,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m58_decode as led  # noqa: E402
 import m208_ledger_probe as m8  # noqa: E402
 

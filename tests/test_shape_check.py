@@ -1,4 +1,4 @@
-"""aicup.seqshape and scripts/shape_check.py: the independent shape channel on top of fused_opp (issue #21)."""
+"""aicup.seqshape and experiments/shape_check.py: the independent shape channel on top of fused_opp (issue #21)."""
 import json
 
 import numpy as np

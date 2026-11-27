@@ -94,7 +94,7 @@ def check_request(rung, out, chosen_from, per_player=DEFAULT_PER_PLAYER, counts=
         raise Refused(f"unknown rung {rung!r}; known: {list(RUNGS)}")
     if not chosen_from.is_file():
         raise Refused(f"{chosen_from} not found: fold 0 is evaluated only for a rung chosen from a CV summary "
-                      f"(scripts/ladder_cv.py)")
+                      f"(experiments/ladder_cv.py)")
     raw = chosen_from.read_bytes()
     try:
         summary = json.loads(raw)
@@ -275,7 +275,7 @@ def run(rung, out=OUT, chosen_from=CHOSEN_FROM, vectors_dir=VECTORS, rank_model=
     chosen = check_request(rung, out, chosen_from, per_player, counts, seeds)
     missing = [str(p) for p in [*(Path(vectors_dir) / f"fold{f}.npz" for f in ALL_FOLDS), Path(rank_model)] if not p.exists()]
     if missing:
-        raise FileNotFoundError(f"inputs not found: {', '.join(missing)} (vectors: scripts/ladder_build_vectors.py)")
+        raise FileNotFoundError(f"inputs not found: {', '.join(missing)} (vectors: experiments/ladder_build_vectors.py)")
     env = environment(device if rung in SET_RUNGS else "cpu")  # the code that runs, read before the hours of training
     raw = Path(rank_model).read_bytes()
     production = json.loads(raw)

@@ -1,4 +1,4 @@
-"""scripts/qmodel_check.py: the regularised question-level model ladder with the TSFEL-16 and noise-16 robustness blocks (issue #41)."""
+"""experiments/qmodel_check.py: the regularised question-level model ladder with the TSFEL-16 and noise-16 robustness blocks (issue #41)."""
 import json
 
 import numpy as np

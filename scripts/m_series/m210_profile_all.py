@@ -6,7 +6,7 @@ For each such question and each candidate truth: the cost of the cheapest joint 
 exp(-(cost - min)), normalised. Output: results/r_variants/m210_profiles.json {question: {level: weight}} and a table of the
 questions where an answer other than the reference file's has a larger expected score.
 
-  python -I logs/nano4/m210_profile_all.py [--ref submission_rank_ct116.csv] [--workers 44]
+  python -I scripts/m_series/m210_profile_all.py [--ref submission_rank_ct116.csv] [--workers 44]
 """
 import json
 import math
@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m58_decode as led  # noqa: E402
 import m208_ledger_probe as m8  # noqa: E402
 

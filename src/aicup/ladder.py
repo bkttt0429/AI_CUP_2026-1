@@ -2,7 +2,7 @@
 
 Protocol (plan 2026-10-19-l3-aggregator-ladder-ctm, Global Constraints):
 - Leave one fold out over the CV folds (1-4). Fold 0 is refused everywhere here: it is evaluated
-  once, for the chosen rung only, by scripts/ladder_eval_fold0.py.
+  once, for the chosen rung only, by experiments/ladder_eval_fold0.py.
 - Validation questions of split v: pilot.pilot_questions of fold v's scoring.fold_players selection
   (nested 1x20 / 2x10 / 4x5 carvings).
 - Training questions of split v: rng = RandomState(42 + v) made once, then qfeatures.sample_questions
@@ -20,7 +20,7 @@ Protocol (plan 2026-10-19-l3-aggregator-ladder-ctm, Global Constraints):
   (inner early stopping) and predicts at each question's most certain tick. EXTRAS (more ticks at
   inference, another tick pick) are extra columns of the same trained model and never enter the gates.
 - The 2026-10-24 follow-up (issue #2, item 3): the probability-mean ensemble ens_top3 of the three best
-  set rungs (build_ensemble, scripts/ladder_ensemble.py), r5_ctm_minmax_pc (the r5_ctm_minmax model and
+  set rungs (build_ensemble, experiments/ladder_ensemble.py), r5_ctm_minmax_pc (the r5_ctm_minmax model and
   loss selected at the tick the loss trains; the recorded r5_ctm_minmax stays as it was) and the U-Net
   synapse r5_ctm_unet are each compared with r5_ctm and with r3_pma (FOLLOWUP_COMPARISONS),
   pre-specified, reported and never gated.
@@ -113,7 +113,7 @@ EXTRAS = {
     "r5_ctm_minmax_pc": {"T16": {"ticks": 16}, "final": {"pick": "final"}},
 }
 # the 2026-10-24 follow-up (issue #2, item 3 of the to-do list): ens_top3, the probability-mean ensemble of
-# ENSEMBLE_MEMBERS built from their CV files by build_ensemble (scripts/ladder_ensemble.py; not a trainable
+# ENSEMBLE_MEMBERS built from their CV files by build_ensemble (experiments/ladder_ensemble.py; not a trainable
 # rung), r5_ctm_minmax_pc and r5_ctm_unet, each vs r5_ctm and vs r3_pma -- the comparison pairs were fixed
 # before the runs; reported in REPORT_ONLY, never gated
 ENSEMBLE_RUNG = "ens_top3"
@@ -205,7 +205,7 @@ def check_folds(folds):
     """Sorted tuple of distinct CV folds; fold 0 is refused."""
     folds = [int(f) for f in folds]
     if 0 in folds:
-        raise ValueError("fold 0 is evaluated once (scripts/ladder_eval_fold0.py) and never enters the CV")
+        raise ValueError("fold 0 is evaluated once (experiments/ladder_eval_fold0.py) and never enters the CV")
     if len(set(folds)) != len(folds) or len(folds) < 2:
         raise ValueError(f"need at least 2 distinct CV folds, got {folds}")
     return tuple(sorted(folds))
@@ -225,7 +225,7 @@ def load_vectors(vectors_dir, folds):
     for f in folds:
         path = Path(vectors_dir) / f"fold{f}.npz"
         if not path.exists():
-            raise FileNotFoundError(f"{path} not built (scripts/ladder_build_vectors.py)")
+            raise FileNotFoundError(f"{path} not built (experiments/ladder_build_vectors.py)")
         with np.load(path) as z:
             parts.append(dict(z))
     names = sorted(parts[0])
@@ -667,7 +667,7 @@ def _rung_summary(run):
            "nll_balanced": balanced(nll, y), "brier": balanced(brier, y),
            "per_seed": per_seed, "seed_sd": float(np.std(list(per_seed.values()), ddof=1)) if len(per_seed) > 1 else None}
     # the code versions its seeds were trained with (None: a file from before provenance was recorded);
-    # more than one is reported loudly (summarize, scripts/ladder_cv.py) but fails no gate
+    # more than one is reported loudly (summarize, experiments/ladder_cv.py) but fails no gate
     versions = {run["meta"][seed]["code_sha256"] for seed in run["seeds"]}
     out["code_sha256"] = sorted(versions, key=lambda x: (x is None, x or ""))
     out["mixed_versions"] = len(versions) > 1

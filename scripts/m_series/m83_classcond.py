@@ -4,7 +4,7 @@ K_c(l) from the top bands (>= q98) minus (1 - a_top) P0_c, both shrunk with KAPP
 the 10 legal labels and renormalised. Bands, a_b, groups and the cross-fit (fold v calibrated on the other folds) are unchanged.
 Identifier: five components + matcher (m82_val.npz, f5e_). Primary: class-conditional vs pooled evidence, M37, seeds 0-2 and 6-8.
 Report only: truncation-only (kappa = infinity); gain by true class.
-  python -I logs/nano4/m83_classcond.py
+  python -I scripts/m_series/m83_classcond.py
 """
 import json
 import sys
@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 from aicup.metric import LEVELS  # noqa: E402
 from aicup.qeval import SIZES, balanced_mean_over_n, paired_diff  # noqa: E402
 import m71_step2 as s2  # noqa: E402

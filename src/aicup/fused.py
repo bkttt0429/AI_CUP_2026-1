@@ -8,9 +8,9 @@ games pair players of similar ranks, so the opponent's moves are a second look a
 fused_opp_diff features (issue #25) append three more: over the question's games the mean of (opponent pmi -
 own pmi), the mean and the std of the opponent pmi, pmi being the posterior-mean rank index of a game's ten
 L1b sums -- the server pairs players by their labels, so the opponents' strength relative to the target's own
-play carries label-side information the 56 features left on the table (scripts/error_analysis.py, +0.018).
+play carries label-side information the 56 features left on the table (experiments/error_analysis.py, +0.018).
 The fused MLP (rankmodel.MLPModel(hidden=32), fitted by scripts/fit_fused_model.py exactly as
-scripts/l1b_fold0_check.py / l1b_opp_fold0_check.py did) is stored as a rank_model.json-like document that
+experiments/l1b_fold0_check.py / l1b_opp_fold0_check.py did) is stored as a rank_model.json-like document that
 also names the L1b models whose scores produced its training features (heads file, state and trunk sha256,
 training folds, the folds they gave features for) and says whether it takes the opponent features. At
 prediction time every L1b model of the document scores the question's games (and their opponents), the MLP
@@ -62,7 +62,7 @@ def fused_opp_features(hsl_sums, l1b_sums, n_moves, opp_sums, opp_n_moves):
 
 def diff_features(l1b_sums, opp_sums):
     """[3]: over a question's games, mean(opponent pmi - own pmi), mean(opponent pmi), std(opponent pmi); pmi is
-    posterior_mean_index of a game's ten L1b sums [m, 10] (scripts/error_analysis.py's mlp_diff features, column for column)."""
+    posterior_mean_index of a game's ten L1b sums [m, 10] (experiments/error_analysis.py's mlp_diff features, column for column)."""
     own = posterior_mean_index(np.ascontiguousarray(l1b_sums, dtype=float))
     opp = posterior_mean_index(np.ascontiguousarray(opp_sums, dtype=float))
     return np.array([(opp - own).mean(), opp.mean(), opp.std()])

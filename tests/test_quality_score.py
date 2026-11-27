@@ -1,4 +1,4 @@
-"""scripts/quality_score.py: per-move point / win-rate loss from the side-to-move values, split by side."""
+"""experiments/quality_score.py: per-move point / win-rate loss from the side-to-move values, split by side."""
 import sys
 from pathlib import Path
 

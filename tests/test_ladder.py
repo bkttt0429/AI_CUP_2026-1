@@ -25,8 +25,8 @@ from aicup.rankmodel import MLPModel, _softmax
 
 ROOT = Path(__file__).resolve().parents[1]
 VECTORS = ROOT / "results" / "ladder" / "vectors"
-SCRIPT = ROOT / "scripts" / "ladder_cv.py"
-FOLD0_SCRIPT = ROOT / "scripts" / "ladder_eval_fold0.py"
+SCRIPT = ROOT / "experiments" / "ladder_cv.py"
+FOLD0_SCRIPT = ROOT / "experiments" / "ladder_eval_fold0.py"
 ALL_FOLDS = (0, 1, 2, 3, 4)
 STAGED, WHOLE_NAMES = vec_names(SEGMENTS), vec_names(WHOLE)
 RANKS = list(RANK_TO_IDX)
@@ -206,7 +206,7 @@ class _NaNDelta(torch.nn.Module):
 
 
 def test_non_finite_set_model_is_refused(tmp_path, monkeypatch):
-    import ladder_cv  # scripts/ladder_cv.py, run in-process so that the rung can be patched
+    import ladder_cv  # experiments/ladder_cv.py, run in-process so that the rung can be patched
 
     folds = (1, 2, 3)
     vec_dir, players = _synthetic(tmp_path, folds, per_rank=1)
@@ -696,7 +696,7 @@ runpy.run_path(sys.argv[0], run_name="__main__")
 
 
 def _run_fold0_cli(*args, canonical):
-    """scripts/ladder_eval_fold0.py in a fresh `python -I`, with ladder_fold0.CANONICAL_OUT moved to `canonical`
+    """experiments/ladder_eval_fold0.py in a fresh `python -I`, with ladder_fold0.CANONICAL_OUT moved to `canonical`
     so that no test depends on (or could write) the real results/ladder/fold0_eval.json."""
     return subprocess.run([sys.executable, "-I", "-c", _FOLD0_CLI, str(ROOT / "src"), str(canonical), str(FOLD0_SCRIPT),
                            *map(str, args)], capture_output=True, text=True, timeout=600)
@@ -930,7 +930,7 @@ def test_fold0_refuses_when_the_canonical_result_exists(tmp_path, monkeypatch, c
 
 
 def _fold0_skip_reason():
-    need = {"results/ladder/vectors/fold0.npz (scripts/ladder_build_vectors.py --folds 0)": VECTORS / "fold0.npz",
+    need = {"results/ladder/vectors/fold0.npz (experiments/ladder_build_vectors.py --folds 0)": VECTORS / "fold0.npz",
             "results/rank_model_eval.json": ROOT / "results" / "rank_model_eval.json",
             "results/models/rank_model.json": ROOT / "results" / "models" / "rank_model.json",
             "data/training (the training CSVs)": ROOT / "data" / "training",
@@ -958,7 +958,7 @@ def test_fold0_production_reproduces_rank_model_eval():
 
 # ---------------------------------------------------------------- the ensemble (2026-10-24 follow-up)
 
-ENSEMBLE_SCRIPT = ROOT / "scripts" / "ladder_ensemble.py"
+ENSEMBLE_SCRIPT = ROOT / "experiments" / "ladder_ensemble.py"
 
 
 def _member_files(cv, keys, rng, shifts=None):
@@ -1035,7 +1035,8 @@ def test_ladder_ensemble_cli(tmp_path):
     _member_files(cv, keys, rng, shifts={"r5_ctm": 0.2})
 
     def run(*args):
-        return subprocess.run([sys.executable, "-I", str(ENSEMBLE_SCRIPT), "--out", str(cv), *args], capture_output=True,
+        # 封存的 ladder_ensemble.py 以同層匯入 ladder_cv；不加 -I，讓腳本所在的 experiments/ 進入 sys.path（-I 不會加入腳本目錄）
+        return subprocess.run([sys.executable, str(ENSEMBLE_SCRIPT), "--out", str(cv), *args], capture_output=True,
                               text=True, timeout=600)
 
     r = run()
@@ -1079,7 +1080,8 @@ def test_across_seeds_report_and_cli(tmp_path):
     ladder.save_cv(_frame(keys, rng, "r3_settf", 0), cv / ladder.cv_filename("r3_settf", 0))
     with pytest.raises(ValueError, match="at least 2"):
         ladder.across_seeds(cv, "r3_settf", n_boot=50)
-    out = subprocess.run([sys.executable, "-I", str(ENSEMBLE_SCRIPT), "--out", str(cv), "--skip-ensemble", "--across-seeds", "r5_ctm",
+    # 封存的 ladder_ensemble.py 以同層匯入 ladder_cv；不加 -I，讓腳本所在的 experiments/ 進入 sys.path（-I 不會加入腳本目錄）
+    out = subprocess.run([sys.executable, str(ENSEMBLE_SCRIPT), "--out", str(cv), "--skip-ensemble", "--across-seeds", "r5_ctm",
                           "r3_pma", "r9_none"], capture_output=True, text=True, timeout=600)
     assert out.returncode == 0, out.stderr
     tail = out.stdout.split("seed-averaged probabilities", 1)[1]

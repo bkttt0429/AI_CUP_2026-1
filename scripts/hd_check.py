@@ -5,7 +5,7 @@ The server's handicap is set from the two players' ranks (HD[1] 讓先 about one
 equal), so it is label-side information like the opponent channel, but direct. aicup.handicap turns each question's games into
 five means (hd_even, hd_sente, hd_stones, hd_gap_up, hd_gap_down; the signed gap seen from the labelled player uses the actual
 colour, W = upper hand) that are appended to the 59 fused_opp_diff features (fused_opp_diff_hd, 64) and to the 56 fused_opp
-features (fused_opp_hd, 61). Protocol as scripts/hist_check.py (pilot questions, 32 training questions per player, MLP h32,
+features (fused_opp_hd, 61). Protocol as experiments/hist_check.py (pilot questions, 32 training questions per player, MLP h32,
 player bootstrap): fused_opp must reproduce 0.6735 and fused_opp_diff 0.6916. Pre-specified (conditions (1) CI lower bound > 0,
 (3) > 0 in >= 3 of 4 folds, (4) >= 0.005): fused_opp_diff_hd vs fused_opp_diff. Reported only: fused_opp_hd vs fused_opp,
 fused_opp_diff_hd vs fused_opp_hd, fused_opp_diff vs fused_opp. Diagnostics: the HD coverage of the scored games; every set's

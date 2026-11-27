@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 CACHE, M82, OUT = ROOT / "results/m84_cache", ROOT / "results/m82", ROOT / "results/m88"
 DIRS = (ROOT / "results/trunk_vec", ROOT / "results/trunk_vec_x40", ROOT / "results/trunk_vec_x80"); TEST = ROOT / "results/ct_submission/vec"
 T_MAX, NETS = 256, (1, 2, 3, 4, -1)

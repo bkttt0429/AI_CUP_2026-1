@@ -1,4 +1,4 @@
-"""scripts/xfit_check.py: the five-fold cross-fit vs A/B comparison and the label-smoothing variants (issue #16)."""
+"""experiments/xfit_check.py: the five-fold cross-fit vs A/B comparison and the label-smoothing variants (issue #16)."""
 import json
 import pathlib
 

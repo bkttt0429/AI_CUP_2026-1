@@ -47,9 +47,9 @@ held-out training players only and the validation fold is scored once, at that p
   Section 4M M39 (2026-11-07): --pc-temp T (tag suffix t<T> when not 0.1) and --pc-views K (K same-player questions a group, tag
       suffix v<K>; K > 2 uses the supervised-contrastive loss, every other question of the player a positive); K = 2 is M33's loss.
   Section 4M M40: --r-extra-npz PATTERN (tag -rh) appends the per-question columns of PATTERN.format(v=val_fold) (X_tr / X_va, in the
-      R cache's question order; logs/nano4/opphist_r_extra.py) to R.
+      R cache's question order; experiments/nano4/opphist_r_extra.py) to R.
   Section 4M M36 (2026-11-06): --r-extra DIR (tag -ra) appends to R the question mean and std of the cross-fitted spatial-attention
-      heads' per-game log-softmax (aicup.attnfeat; DIR = logs/nano4/e2e_pilot.py score parts, --r-extra-games the games CSV): 64 -> 84.
+      heads' per-game log-softmax (aicup.attnfeat; DIR = experiments/nano4/e2e_pilot.py score parts, --r-extra-games the games CSV): 64 -> 84.
 """
 import argparse
 import json
@@ -86,7 +86,7 @@ L1B_SETS = {  # section 4M M9: which L1b heads' per-move log p feed the tokens a
     3: {"l1b": L1B, "opp": OPP, "heads": ["heads3_A", "heads3_B"]},
     4: {"l1b": {0: "scores4_hd", 2: "scores4_hd", 4: "scores4_hd", 1: "scores4_B_hd", 3: "scores4_B_hd"},
         "opp": {0: "scores4_opp_hd", 2: "scores4_opp_hd", 4: "scores4_opp_hd", 1: "scores4_B_opp_hd", 3: "scores4_B_opp_hd"}, "heads": ["heads4_A", "heads4_B"]}}
-EXTRA_MAX_GAMES = 40  # section 4M M8: games 21-40 of fold_players' permutation, scored into these directories (logs/nano4/x40_keys.py)
+EXTRA_MAX_GAMES = 40  # section 4M M8: games 21-40 of fold_players' permutation, scored into these directories (scripts/m_series/x40_keys.py)
 EXTRAS = {k: {"hsl": ROOT / f"results/scores_hd_x{k}", "vec": ROOT / f"results/trunk_vec_x{k}", "suffix": f"_x{k}"} for k in (40, 80)}  # games 21-40 / 41-80
 EXTRA = {**EXTRAS[40], "l1b": {f: v + "_x40" for f, v in L1B.items()}, "opp": {f: v + "_x40" for f, v in OPP.items()}}  # the x40 set (section 4M M8)
 for _k, _d in L1B_SETS.items():  # the extra directories of each L1b set: <dir>_x40, <dir>_x80
@@ -154,7 +154,7 @@ def l1b_set_of(a):
         raise SystemExit(f"--l1b-set {k}: known sets {sorted(L1B_SETS)}")
     return k
 N_SCORES = 30  # L1b: level + 10 centred; Human SL: level + 18 centred, target plies only (zero elsewhere)
-# section 4M M74 (2026-11-10): AICUP_AI=1 appends 8 per-ply STATE columns from a strong non-human net (scripts/ai_state_extract.py):
+# section 4M M74 (2026-11-10): AICUP_AI=1 appends 8 per-ply STATE columns from a strong non-human net (experiments/ai_state_extract.py):
 # win probability and score lead of the side to move, what the move cost (points, win probability), and the strong policy's view of it.
 AI_TAG = "ai" if os.environ.get("AICUP_AI") else ""
 N_AI = 8 if AI_TAG else 0
@@ -262,7 +262,7 @@ EXT_FOLD = 9  # section 4M M135: the pseudo-fold of an external-players set
 
 def ext_dirs(root):
     """Section 4M M135: the files of an external-players set, the competition's layout under one root with pseudo-fold EXT_FOLD
-    (logs/nano4/m135_ext_prep.py writes the game tables; the scoring scripts run with AICUP_TRAIN_DIR / AICUP_FOLDS_CSV)."""
+    (experiments/nano4/m135_ext_prep.py writes the game tables; the scoring scripts run with AICUP_TRAIN_DIR / AICUP_FOLDS_CSV)."""
     root = Path(root)
     f = f"fold{EXT_FOLD}"
     return {"vec": root / "trunk_vec" / f, "hsl": root / "scores_hd" / f, "ohsl": root / "scores_opp_hd" / f, "l1b": root / "l1b" / "scores3_hd" / f,

@@ -2,7 +2,7 @@
 share 1 - rho of the opponent queries is replaced by an impostor draw (the target-side label and margin of a random other query scored
 on the same model colour, same fold), so real anchors are thinned to rho of their validation density; the evidence uses
 a_b = scale x the cross-fitted validation a_b. Report only (no selection): scale = rho is the deployed setting.
-  python -I logs/nano4/m71_cv_density.py
+  python -I scripts/m_series/m71_cv_density.py
 """
 import json
 import sys
@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 from aicup.qeval import SIZES, balanced_mean_over_n, evaluate, paired_diff  # noqa: E402
 import m71_step2 as s2  # noqa: E402
 from ens_compare import ES, FOLDS, load_fold  # noqa: E402

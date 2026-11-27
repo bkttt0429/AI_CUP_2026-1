@@ -1,4 +1,4 @@
-"""aicup.ordinal (CORAL and the pairwise Bradley-Terry score) and scripts/ordinal_check.py."""
+"""aicup.ordinal (CORAL and the pairwise Bradley-Terry score) and experiments/ordinal_check.py."""
 import json
 
 import numpy as np

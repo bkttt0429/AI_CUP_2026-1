@@ -4,7 +4,7 @@
 score * 400 = E + exp(-1) * (W - E) with E = exact answers, W = answers within one level; the leaderboard truncates to 7
 decimals. For a probe with n changed Public answers: the integer pairs (dE, dW) compatible with the two printed scores.
 
-  python -I logs/nano4/m206_decode.py upload_probe/probe_4D5D_locked.csv 0.8300000 [--ref submission_rank_ct112.csv --ref-score 0.8331743]
+  python -I scripts/m_series/m206_decode.py upload_probe/probe_4D5D_locked.csv 0.8300000 [--ref submission_rank_ct112.csv --ref-score 0.8331743]
 """
 import csv
 import math

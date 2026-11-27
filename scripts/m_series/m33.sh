@@ -25,12 +25,12 @@ P=""; for f in $A/m33_cmds_0*; do P="$P,$(submit m33p$(basename $f | sed 's/.*_/
 echo "pack jobs ${P#,}"; wait_jobs "$P"; for j in ${P//,/ }; do [ -z "$j" ] && continue; echo "$j $(state $j) $(sacct -n -X -j $j -o Elapsed | head -1)"; done
 ok_all "$P" || echo "a pack failed (the protocol check will name what is missing)"
 echo "== $(date '+%F %T') M33 stage 2: member protocol check"
-C=$(submit m33chk "-c 12 -t 00:20:00" python -I logs/nano4/m33_protocol_check.py); wait_jobs "$C"
+C=$(submit m33chk "-c 12 -t 00:20:00" python -I scripts/m_series/m33_protocol_check.py); wait_jobs "$C"
 grep -v "^==\|^+" logs/nano4/m33chk-$C.out | tail -26
 [ "$(state $C)" = "COMPLETED" ] || { echo "protocol check FAILED: comparisons not run"; exit 1; }
 echo "== $(date '+%F %T') M33 stage 3: compare"
 K=$(submit m33cmp "-c 12 -t 01:00:00" $TR compare --val-folds 1 2 3 4 --arms C-f0-x40-oh T-f0-x40-oh C-pc-f0-x40-oh T-pc-f0-x40-oh --seeds 0 1 2 --pairs C-pc-f0-x40-oh:C-f0-x40-oh T-pc-f0-x40-oh:T-f0-x40-oh --tag m33_ --out results/trunk_seq/es)
-E=$(submit m33ens "-c 12 -t 01:00:00" python -I logs/nano4/ens_compare.py --old C-f0-x40-oh T-f0-x40-oh --new C-pc-f0-x40-oh T-pc-f0-x40-oh --seeds 0 1 2 --out results/trunk_seq/es/ens_m33.json)
+E=$(submit m33ens "-c 12 -t 01:00:00" python -I scripts/m_series/ens_compare.py --old C-f0-x40-oh T-f0-x40-oh --new C-pc-f0-x40-oh T-pc-f0-x40-oh --seeds 0 1 2 --out results/trunk_seq/es/ens_m33.json)
 wait_jobs "$K,$E"
 echo "== compare $K $(state $K)"; grep -v "^==\|^+" logs/nano4/m33cmp-$K.out | tail -8
 echo "== ensemble 6v6 $E $(state $E)"; grep -v "^==\|^+" logs/nano4/m33ens-$E.out | tail -8

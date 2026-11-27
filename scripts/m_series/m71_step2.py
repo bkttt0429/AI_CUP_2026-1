@@ -5,7 +5,7 @@ band edges = impostor-margin quantiles (per model colour); groups = HD0, HD1 x t
 K(d) = the pooled bands > q98 minus (1 - a_top) P0, clipped at 0, normalised; per-game evidence e(c) = (1 - a_b) + a_b min(K(d)/P0(d), 30)
 with d = candidate label - c. Question posterior = ensemble posterior x prod_g e_g(c); expected-score decision.
 Base = standard 6 members (seeds 0-2); replication = standard seeds 6-8. Rule (M37): CI lower bound > 0, >= 3 of 4 folds > 0, diff >= 0.0025, in both.
-  python -I logs/nano4/m71_step2.py
+  python -I scripts/m_series/m71_step2.py
 """
 import json
 import sys
@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 from aicup.qeval import SIZES, balanced_mean_over_n, evaluate, paired_diff  # noqa: E402
 from ens_compare import ES, FOLDS, load_fold  # noqa: E402
 

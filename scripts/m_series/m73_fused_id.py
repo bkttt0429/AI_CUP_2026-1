@@ -3,7 +3,7 @@
 Pools: all training rows except 2 held-out games per player (the weight-fitting queries). Queries, test regime (only the own player
 excluded): the 20 games of every validation player's n = 20 question, opponent side and target side (impostor); the test games.
 Saves per query, for the fused score and for the opening component alone: top-1 candidate label, margin, candidate.
-  python -I logs/nano4/m73_fused_id.py
+  python -I scripts/m_series/m73_fused_id.py
 """
 import json
 import multiprocessing as mp
@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4"), str(Path.home() / "BK_AICUP_2026-2/src")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series"), str(Path.home() / "BK_AICUP_2026-2/src")]
 import ident_pool as ip  # noqa: E402
 from aicup.metric import LEVELS  # noqa: E402
 

@@ -2,7 +2,7 @@
 """Section 4M M161q: orientation-averaged queries (m124_tta_queries.py, unchanged) for the networks of m161q_prod.py, and the
 learned centres as a second source.
 
-  python -I logs/nano4/m161q_tta.py --seeds 30,31,32 --name S7t
+  python -I scripts/m_series/m161q_tta.py --seeds 30,31,32 --name S7t
       reads results/m161q and /work/u2507115/m161q_ckpt (width 512 / feed-forward 2,048), parts in results/m161q_tta, writes
       results/m84_cache/var_S7t.npz (prototypes; m84_variant's format) and var_S7tc.npz (protos = the learned centres,
       has = the players with a centre [members, 5, C], the same query vectors) for m164_ident.py.
@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m124_tta_queries as t  # noqa: E402
 
 base = t.base

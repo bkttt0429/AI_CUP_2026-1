@@ -6,7 +6,7 @@ with a clear margin (largest excess of the opponent side's m15 over the target s
 first tag in the given order whose value is within --tol (0.003) of the best one. No level label is involved.
 The table goes to stderr and results/r_variants/m164_selected.json; stdout carries the chosen tag only.
 
-  best=$(python -I logs/nano4/m164_select.py SQ1 SQ2 SQ3)
+  best=$(python -I scripts/m_series/m164_select.py SQ1 SQ2 SQ3)
 """
 import argparse
 import json

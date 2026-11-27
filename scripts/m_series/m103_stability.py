@@ -9,7 +9,7 @@ of ct44's changes) is characterised by
 CV under the test rules (as m90_testmimic.py): precision and mean gain of the changes by each characteristic, and the scores of
 composition rules against "shared with SP" (ct75s's rule). Then the same characteristics on the test set for the 20 Public
 questions whose group outcome is known (A shared: +1.0 point; B: -1.26; C: -1.90) - the back-test of every rule.
-  python -I logs/nano4/m103_stability.py
+  python -I scripts/m_series/m103_stability.py
 """
 import json
 import sys
@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 from aicup.metric import LEVELS  # noqa: E402
 from aicup.qeval import SIZES, balanced_mean_over_n, paired_diff  # noqa: E402
 import m71_step2 as s2  # noqa: E402

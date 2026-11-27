@@ -2,7 +2,7 @@
 m82_cond_id.py's rows stage) of every training row that has NO stored trunk vectors yet (results/trunk_vec, _x40, _x80 hold about 405k of
 the 1,000,000 games). Same network, projection, replay and fp16 rounding as scripts/trunk_extract.py; the per-ply vectors are not kept
 (disk), only the two 256-dim rows per game. Resumes per part.
-  sbatch --gres=gpu:8 -c 96 ... bash scripts/nano4/shards.sh 8 python -I logs/nano4/m84_rows_extract.py --job 0 --njobs 3 --workers 10
+  sbatch --gres=gpu:8 -c 96 ... bash scripts/nano4/shards.sh 8 python -I scripts/m_series/m84_rows_extract.py --job 0 --njobs 3 --workers 10
 """
 import argparse
 import multiprocessing as mp
@@ -16,7 +16,7 @@ import pandas as pd
 import torch
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts"), str(ROOT / "logs/nano4"), str(Path.home() / "BK_AICUP_2026-2/src")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts"), str(ROOT / "scripts/m_series"), str(Path.home() / "BK_AICUP_2026-2/src")]
 import m81_tactic_id as m81  # noqa: E402
 import trunk_extract as te  # noqa: E402
 from aicup.humansl import load_humansl  # noqa: E402

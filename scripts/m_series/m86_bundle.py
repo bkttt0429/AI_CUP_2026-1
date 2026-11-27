@@ -11,7 +11,7 @@ difference >= 0.0025, >= 3 of 4 folds positive, on seeds 0-2 and 6-8 (same picks
 folds is written as --out (ct28 locked + boundary region, each source with its own lower density ratio, evidence from the margin bands
 >= --floor: 3 = q90 as ct44, 1 = every band with a positive weight, which is what the CV comparison scores); the builder must reproduce
 ct44 exactly with every switch off and floor 3.
-  v1 (ct64):  python -I logs/nano4/m86_bundle.py --ids 5e,P3 --floor 3 --out ct64 --json m86_bundle.json
+  v1 (ct64):  python -I scripts/m_series/m86_bundle.py --ids 5e,P3 --floor 3 --out ct64 --json m86_bundle.json
   v2 (ct70):  ... --ids 5e,P3 --pi0 --floor 3 --out ct70 --json m86b_bundle.json
   v2, all bands (ct71):  ... --ids 5e,P3 --pi0 --floor 1 --out ct71 --json m86c_bundle.json
   v3 (ct72):  ... --ids 5e,P3,S,SP --pi0 --floor 1 --out ct72 --json m86d_bundle.json
@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 from aicup.metric import LEVELS  # noqa: E402
 from aicup.qeval import SIZES, balanced_mean_over_n, paired_diff  # noqa: E402
 from aicup.submission import write_submission  # noqa: E402
@@ -167,7 +167,7 @@ def main():
             if other != a_.out and (ROOT / f"submission_rank_{other}.csv").exists():
                 co = sub(other); print(f"   vs {other}: {int((fin != co).sum())} questions differ (public {int(((fin != co) & pub).sum())}, private {int(((fin != co) & ~pub).sum())})"); rep["test"][f"changed_vs_{other}"] = int((fin != co).sum())
     (RV / a_.json).write_text(json.dumps(rep, indent=1, default=float)); print("written")
-    subprocess.run([sys.executable, "-I", "logs/nano4/m84_variant.py", "--stage", "finalize"], cwd=ROOT)
+    subprocess.run([sys.executable, "-I", "scripts/m_series/m84_variant.py", "--stage", "finalize"], cwd=ROOT)
 
 
 if __name__ == "__main__":

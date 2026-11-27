@@ -9,7 +9,7 @@ under the same guards). Build rule (design doc M137b): L0 under the guards must 
 it is better by >= 0.002 on both. Test side: coefficients fitted on all four folds (seeds 0-2), 15-game questions use the mean
 of the 10- and 20-game coefficients; ct28's 38 locked answers untouched; the guards relative to ct75u; never overwrites a file.
 
-  python -I logs/nano4/m137b_build.py [--name ct105] [--no-build]
+  python -I scripts/m_series/m137b_build.py [--name ct105] [--no-build]
 """
 import argparse
 import csv
@@ -23,7 +23,7 @@ import pandas as pd
 import torch
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m103_stability as m3  # noqa: E402
 import m110_fusion as mf  # noqa: E402
 import m123_lookalike_sym as la  # noqa: E402

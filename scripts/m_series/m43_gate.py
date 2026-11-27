@@ -10,7 +10,7 @@ Trained on three folds' validation questions, scored on the fourth:
   stack     (control) a 10-class MLP h32 on all questions, expected-score decision.
 Against ct9's decision: paired player bootstrap (class-balanced official score) and the plain average; the new rule (CI lower > 0,
 >= 3 of 4 folds > 0, diff >= 0.0025) must hold for both seed sets.
-  python -I logs/nano4/m43_gate.py --seeds 0 1 2 --out results/trunk_seq/es/m43_s012.json
+  python -I scripts/m_series/m43_gate.py --seeds 0 1 2 --out results/trunk_seq/es/m43_s012.json
 """
 import argparse
 import json
@@ -21,7 +21,7 @@ import numpy as np
 import torch
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 from aicup.qeval import balanced_mean_over_n, paired_diff  # noqa: E402
 from ens_compare import ES, load_fold  # noqa: E402
 

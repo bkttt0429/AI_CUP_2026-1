@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Fit the submission's fused MLP (Human SL + L1b question features) exactly as scripts/l1b_fold0_check.py did.
+"""Fit the submission's fused MLP (Human SL + L1b question features) exactly as experiments/l1b_fold0_check.py did.
 
 Issue #9. Training questions: qfeatures.sample_questions, --per-player per player, one RandomState(42) over
 --train-folds in ascending order (the L3 ladder's and the fold-0 check's rule). Features of a training fold
@@ -13,7 +13,7 @@ shards were scored with exactly those models.
 Fold 0 is re-scored as the fold-0 check did -- hsl alone, fused with each model's scores, and the mean of the
 models' probabilities -- and the numbers go into the document (fold0_check) and to stdout; with --reference they
 are compared with results/l1b/fold0_check.json. --fold0-proba writes the per-question fold-0 probabilities (the
-offline side of scripts/check_fused_submission.py). Only the models that did not train on fold 0 take part (A and
+offline side of experiments/check_fused_submission.py). Only the models that did not train on fold 0 take part (A and
 B both; of the five cross-fit models of issue #16 -- f0..f4, each trained on the other four folds and feeding its
 own fold -- only f0), so for a cross-fit document the fold-0 averages are over that one model and the submission's
 average over all five has no held-out check (the document says so in fold0_check.models_seen_fold0).
@@ -30,7 +30,7 @@ table also carries fused_opp_diff_hd_* and fused_opp_diff_hd_avg vs fused_opp_di
 features from the test files' HD[] and refuses the document when a game carries none.
 With --opp NAME:OPP_SCORES_DIR (issue #12; one per --l1b model, l1b_score.py --opponent directories) the
 document's MLP is the fused_opp one: the 40 fused features plus the 16 of the L1b sums over the opponent's
-moves, built by scripts/l1b_opp_check.features exactly as scripts/l1b_opp_fold0_check.py did (the same
+moves, built by scripts/l1b_opp_check.features exactly as experiments/l1b_opp_fold0_check.py did (the same
 model feeds the target's and the opponent's features of a fold). The hsl and fused MLPs are still fitted
 for the fold-0 table (hsl, fused_*, fused_opp_*; --reference then takes results/l1b/opp_fold0_check.json),
 and the fused MLP's state is kept in the document (fused_state) as a reference.

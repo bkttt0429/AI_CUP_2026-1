@@ -1,7 +1,7 @@
 """Section 4M M8: the games at positions 21-40 of every player's seeded permutation (scoring.fold_players with max_games 40 minus the
 20-game selection every score directory holds), folds 0-4, as a --game-keys CSV; plus the per-player game-count distribution.
 
-  python -I logs/nano4/x40_keys.py --out results/data/x40_keys.csv --report results/data/x40_keys.json
+  python -I scripts/m_series/x40_keys.py --out results/data/x40_keys.csv --report results/data/x40_keys.json
 """
 import argparse
 import json

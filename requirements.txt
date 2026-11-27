@@ -22,4 +22,4 @@ sgfmill==1.1.1
 six==1.17.0
 webdataset==1.0.2
 xgboost==2.1.4
-# tsfel (issue #36, scripts/tsfel_check.py) is NOT part of this environment: see requirements-tsfel.txt
+# tsfel (issue #36, experiments/tsfel_check.py) is NOT part of this environment: see experiments/requirements-tsfel.txt

@@ -1,4 +1,4 @@
-"""Data for the rank-evidence replay wall (viz/rank_replay.html).
+"""Data for the rank-evidence replay wall (experiments/viz/rank_replay.html).
 
 Each board replays one game; under it, the posterior-mean Human SL profile of the moves the
 target player has made so far (uniform prior over the 18 profiles) shows how the rank

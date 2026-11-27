@@ -11,7 +11,7 @@ As m161p_prod.py (players drawn with probability proportional to games ** gamma,
   one) and has_centre; train_<net>_s<seed>.json; a slim checkpoint with best_state (and best_centres).
 The best state is the one with the highest row-weighted held-out top-1 of the PROTOTYPE matching on the players trained on.
 
-  sbatch -p 16gpus --gres=gpu:8 -c 96 ... run.sbatch python -I logs/nano4/m161q_prod.py --jobs 1:30 2:30 3:30 4:30 all:30 1:31 2:31 3:31 --steps 40000
+  sbatch -p 16gpus --gres=gpu:8 -c 96 ... run.sbatch python -I scripts/m_series/m161q_prod.py --jobs 1:30 2:30 3:30 4:30 all:30 1:31 2:31 3:31 --steps 40000
 """
 import argparse
 import json
@@ -24,7 +24,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m88_seqid as base  # noqa: E402
 from m112_idaug import sym_table  # noqa: E402
 

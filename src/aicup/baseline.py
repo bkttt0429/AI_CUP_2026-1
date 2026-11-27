@@ -70,7 +70,7 @@ def split_players(folds, train_folds=(1, 2, 3, 4), val_games_per_rank=10_000, se
 
 
 def eval_questions(games, folds, questions, fold=0):
-    """The question sets of scripts/baseline_eval.py on one fold, carved 1x20 / 2x10 / 4x5 by pilot.pilot_questions.
+    """The question sets of experiments/baseline_eval.py on one fold, carved 1x20 / 2x10 / 4x5 by pilot.pilot_questions.
 
     'fold{fold}': every player of the fold with >= 5 games, up to 20 of them (scoring.fold_players
     on `games`, the rows of scoring.player_games); 'pilot_fold{fold}': the 200-player pilot set
@@ -112,7 +112,7 @@ def report(pred, y, qs, sizes=(5, 10, 20)):
     """Official scores of question decisions, with the keys of results/rank_model_eval.json plus `by_n` details.
 
     The headline `balanced_mean_over_n` gets the CI of that same statistic (one player resample
-    per replicate shared by every size), as scripts/fit_rank_model.py reports it; `by_n` and
+    per replicate shared by every size), as experiments/fit_rank_model.py reports it; `by_n` and
     `balanced_by_n_ci95` hold each size on its own. CIs resample players within each rank.
     """
     pred, y = np.asarray(pred, dtype=int), np.asarray(y, dtype=int)

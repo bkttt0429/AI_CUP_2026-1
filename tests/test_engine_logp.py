@@ -16,7 +16,7 @@ def _engine_runs():
     if not (BIN.exists() and MODEL.exists()):
         return False
     try:
-        return subprocess.run([str(ROOT / "scripts" / "katago.sh"), "version"], capture_output=True, timeout=60).returncode == 0
+        return subprocess.run([str(ROOT / "experiments" / "katago.sh"), "version"], capture_output=True, timeout=60).returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
 

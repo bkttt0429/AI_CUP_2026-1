@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m86_bundle as b  # noqa: E402
 s2 = b.s2
 RV = ROOT / "results/r_variants"

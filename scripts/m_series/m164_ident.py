@@ -13,7 +13,7 @@ For every --tag NAME:var[,var...] (sources fused with the cached block; every me
   readings), m84_<NAME>~m15_{val,test}.npz (m127_conf_family.quick_write).
 Nothing is overwritten: a NAME whose files exist is refused.
 
-  python -I logs/nano4/m164_ident.py --tag SQ1:S7t --tag SQ2:P,S2y,S4ft,S4Lt,S7t --prior fit
+  python -I scripts/m_series/m164_ident.py --tag SQ1:S7t --tag SQ2:P,S2y,S4ft,S4Lt,S7t --prior fit
 """
 import argparse
 import json
@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4"), str(Path.home() / "BK_AICUP_2026-2/src")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series"), str(Path.home() / "BK_AICUP_2026-2/src")]
 import ident_pool as ip  # noqa: E402
 import m127_conf_family as m127  # noqa: E402
 import m84_variant as mv  # noqa: E402

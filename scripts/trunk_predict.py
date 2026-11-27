@@ -17,7 +17,7 @@ pipeline's shard files. Nothing here changes the main submission (predict_submis
            without a usable game, or with non-finite probabilities, takes the main submission's row (--fallback-submission) or
            FALLBACK and is listed in the report. Exit codes as predict_submission.py: 0 ok, 1 the file failed validation, 2 bad
            inputs / shards / models, 3 a fallback row (--allow-fallback accepts), 4 lenient-input warnings (--allow-input-warnings).
-  offline  the same checkpoints on a mock test built from one training fold (scripts/make_mock_test.py --fold f), through the
+  offline  the same checkpoints on a mock test built from one training fold (experiments/make_mock_test.py --fold f), through the
            training-side tables and trunk vectors (results/scores_hd, results/l1b/*_hd, results/trunk_vec/fold f): the reference
            of the consistency check of the test-side path.
   compare  two probability files side by side: max / mean |dp|, questions whose decisions differ, and with --answers the
@@ -435,7 +435,7 @@ def offline(a):
         raise SystemExit(f"fold {f} is not one of {ts.FOLDS} (fold 0 is not used here)")
     mock = Path(a.mock_dir)
     ans = pd.read_csv(mock / "answers.csv", dtype=str, keep_default_na=False)
-    players = fold_players(player_games(), pd.read_csv(FOLDS_CSV), f)  # scripts/make_mock_test.py's construction
+    players = fold_players(player_games(), pd.read_csv(FOLDS_CSV), f)  # experiments/make_mock_test.py's construction
     qs = pilot_questions(players).set_index("question_id")
     unknown = [q for q in ans["source_question"] if q not in qs.index]
     if unknown:
@@ -516,7 +516,7 @@ def main(argv=None):
     ap.add_argument("--expect-rows", type=int, default=800)
     ap.add_argument("--expect-public", type=int, default=400)
     ap.add_argument("--expect-private", type=int, default=400)
-    ap.add_argument("--mock-dir", default=None, help="offline: a scripts/make_mock_test.py directory (answers.csv names the fold's pilot questions)")
+    ap.add_argument("--mock-dir", default=None, help="offline: a experiments/make_mock_test.py directory (answers.csv names the fold's pilot questions)")
     ap.add_argument("--fold", type=int, default=1, help="offline: the fold the mock test was built from")
     ap.add_argument("--cache", default=str(ROOT / "results/trunk_seq"), help="offline: trunk_seq_check's score arrays")
     ap.add_argument("--a", default=None, help="compare: a probability file")

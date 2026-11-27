@@ -8,7 +8,7 @@ A copy of m143_pool.py with the look-alike reading left as it is in the ct106 ru
 On a pass (unless --no-build): the test-side file --name (never overwrites, not copied to upload_next; ct28's locked answers
 untouched; guards relative to ct106's answers; without the new input the builder must reproduce ct106).
 
-  python -I logs/nano4/m163_pool.py --new SPALm --also SPALn SPALh --control SPAL --name ct111
+  python -I scripts/m_series/m163_pool.py --new SPALm --also SPALn SPALh --control SPAL --name ct111
 """
 import argparse
 import csv
@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m105_voters as m5  # noqa: E402
 import m137b_build as mb7  # noqa: E402
 import m137f_build2 as mf7  # noqa: E402

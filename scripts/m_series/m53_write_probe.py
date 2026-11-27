@@ -2,7 +2,7 @@
 The push is computed on ct9's test posteriors (submission_rank_ct9_proba.csv): on a question whose ct9 decision is i or j, m = P(i) + P(j) is
 kept and P'(j) = m r P(j) / (r P(j) + P(i)); a question changes only if the BASE file says i and the adjusted expected-score decision says j
 (so probes compose: each file = the previous accepted file + exactly one push, and the Public score difference reads that push alone).
-  python -I logs/nano4/m53_write_probe.py --base submission_rank_ct13.csv --push B A --r 2 --out submission_rank_ct14.csv
+  python -I scripts/m_series/m53_write_probe.py --base submission_rank_ct13.csv --push B A --r 2 --out submission_rank_ct14.csv
 """
 import argparse
 import hashlib
@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 from aicup.metric import LEVELS  # noqa: E402
 from aicup.submission import validate_submission, write_submission  # noqa: E402
 from m43_gate import decide  # noqa: E402

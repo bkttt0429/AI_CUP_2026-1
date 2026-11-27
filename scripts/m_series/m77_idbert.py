@@ -5,7 +5,7 @@ offset to the subject side's previous ply) + [CLS]; pre-norm Transformer encoder
 opponents in them is as on the test set); -1: all rows (the test model). One held-out game per player (>= 8 games) measures the
 identification itself. Outputs under results/m77/: val<v>.npz (the validation players' 20-game questions: opponent side and target
 side = impostor) or test.npz, heldout_<v>.json, model_<v>.pt.
-  python -I logs/nano4/m77_idbert.py --exclude-fold 1
+  python -I scripts/m_series/m77_idbert.py --exclude-fold 1
 """
 import argparse
 import json

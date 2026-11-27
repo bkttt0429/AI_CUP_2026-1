@@ -1,4 +1,4 @@
-"""aicup.sgf handicap / result parsing and scripts/hd_census.py (dataset v1.1, issue #42)."""
+"""aicup.sgf handicap / result parsing and experiments/hd_census.py (dataset v1.1, issue #42)."""
 import json
 
 import pandas as pd

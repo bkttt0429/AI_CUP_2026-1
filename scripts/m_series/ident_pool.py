@@ -13,7 +13,7 @@ component (per-question standardisation over the candidates, multinomial likelih
 Outputs: --out JSON, <out>.gate.npz and <out>.test.npz (read by ident_ct8.py). Portable: numpy + pandas only, CPU, fork or
 spawn multiprocessing; data under --root (data/training/train_*.csv, data/tests/rank_prediction_test_{public,private}.csv);
 the gate file and ct7 submission are looked up under --root (results/r_variants, project root) or next to this script (inputs/).
-  python -I logs/nano4/ident_pool.py --out results/r_variants/ident_pool.json [--limit-players 1200] [--workers 30] [--root DIR]
+  python -I scripts/m_series/ident_pool.py --out results/r_variants/ident_pool.json [--limit-players 1200] [--workers 30] [--root DIR]
 """
 import argparse
 import json

@@ -11,7 +11,7 @@ divided by the level's number of candidates. Base probabilities P' ~ P x reading
 M37: the ct75u rule on P' against the ct75u rule on P - CI lower bound > 0, >= 3 of 4 folds, difference >= 0.0025, both seed sets.
 On a pass (or --build): ct76 = the ct75u composition rebuilt on P9' (ct28's 38 locked answers untouched; with w = 0 the builder
 must reproduce the files ct44 and ct75u), the reading's distribution on test against validation, and the feasible Public readings.
-  python -I logs/nano4/m114_lookalike_test.py [--build]
+  python -I experiments/nano4/m114_lookalike_test.py [--build]
 """
 import argparse
 import csv
@@ -26,7 +26,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m103_stability as m3  # noqa: E402
 import m110_fusion as mf  # noqa: E402
 from aicup.metric import LEVELS  # noqa: E402

@@ -3,7 +3,7 @@ The probe's question probabilities (m107 --save-proba) are pooled into the base 
 on fold halves (seeds 0-2; seeds 6-8 reuse the picks). Registered test: base + B (with external players) against base + A (same
 architecture, competition players only), M37. Report: each against the base alone; the larger-body pair and lambda 3; and the
 same differences after the ct75u rule (anchors unchanged) is applied on top of the pooled probabilities.
-  python -I logs/nano4/m110_fusion.py [--proba results/r_variants/m107_proba.npz]
+  python -I scripts/m_series/m110_fusion.py [--proba results/r_variants/m107_proba.npz]
 """
 import argparse
 import json
@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m103_stability as m3  # noqa: E402
 from aicup.qeval import SIZES, balanced_mean_over_n, paired_diff  # noqa: E402
 

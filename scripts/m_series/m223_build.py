@@ -3,7 +3,7 @@
 largest expected score under the exact update of M222 (both readings: probe_C2B and ct118d; results/r_variants/m222_update.json):
 pub_q_0286 A -> C, pub_q_0192 D -> B, pub_q_0103 B -> A. Private rows = ct116 (= ct118d). Never overwrites.
 
-  python -I logs/nano4/m223_build.py
+  python -I scripts/m_series/m223_build.py
 """
 import csv
 import hashlib
@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m58_decode as led  # noqa: E402
 
 LEV = led.LEVELS; EDITS = {"pub_q_0286": ("A", "C"), "pub_q_0192": ("D", "B"), "pub_q_0103": ("B", "A")}

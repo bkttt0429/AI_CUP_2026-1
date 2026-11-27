@@ -1,4 +1,4 @@
-"""scripts/error_analysis.py: OOF residual analysis and the two pre-specified model-side checks (issue #23)."""
+"""experiments/error_analysis.py: OOF residual analysis and the two pre-specified model-side checks (issue #23)."""
 import json
 
 import numpy as np

@@ -10,7 +10,7 @@ Here: the all-players network (-1), seed 3, 20,000 steps (the control repeats M1
   strat    that share of the episodes takes all 256 players from one level (hard negatives: same strength)
   dropout / wd   stronger regularisation
 Evaluation as in m88_seqid.py: held-out own games of the training players against the prototypes of all 8,007 (top-1 / 5 / 20).
-  sbatch -p 16gpus --gres=gpu:8 -c 96 ... run.sbatch python -I logs/nano4/m112_idaug.py [--steps 20000] [--smoke]
+  sbatch -p 16gpus --gres=gpu:8 -c 96 ... run.sbatch python -I scripts/m_series/m112_idaug.py [--steps 20000] [--smoke]
 """
 import argparse
 import json
@@ -23,7 +23,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m88_seqid as base  # noqa: E402  (loader, model, constants; torch is imported lazily there)
 
 RV = ROOT / "results/r_variants"

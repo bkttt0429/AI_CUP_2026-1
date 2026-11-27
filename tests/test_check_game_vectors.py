@@ -1,4 +1,4 @@
-"""scripts/check_game_vectors.py: the pipeline's per-game vectors against a fold vectors file."""
+"""experiments/check_game_vectors.py: the pipeline's per-game vectors against a fold vectors file."""
 import json
 
 import hashlib

@@ -8,7 +8,7 @@ per question size. Composition: the four guards relative to the current final's 
 ct104b rule). Registered: the pool with the new input against the ct106 rule, M37 on seeds 0-2 and 6-8. On a pass the test-side
 file is built (ct28's locked answers untouched, guards relative to ct106's answers; never overwrites).
 
-  python -I logs/nano4/m141_opp_lookalike.py [--name ct107] [--no-build]
+  python -I scripts/m_series/m141_opp_lookalike.py [--name ct107] [--no-build]
 """
 import argparse
 import csv
@@ -22,7 +22,7 @@ import pandas as pd
 import torch
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m137b_build as mb7  # noqa: E402
 import m137f_build2 as mf7  # noqa: E402
 from aicup.metric import LEVELS  # noqa: E402

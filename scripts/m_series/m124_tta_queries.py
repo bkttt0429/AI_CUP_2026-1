@@ -11,7 +11,7 @@ Output: results/m84_cache/var_<name>.npz in m84_variant.py's format (protos from
 report (the identity orientation must reproduce the stored vectors; cosine between orientations; held-out top-1 of the plain and
 the averaged queries per network).
 
-  sbatch -p 16gpus --gres=gpu:8 -c 96 ... run.sbatch python -I logs/nano4/m124_tta_queries.py --seeds 0 --name S4t
+  sbatch -p 16gpus --gres=gpu:8 -c 96 ... run.sbatch python -I scripts/m_series/m124_tta_queries.py --seeds 0 --name S4t
 """
 import argparse
 import json
@@ -23,7 +23,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path.cwd()
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "logs/nano4")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]
 import m88_seqid as base  # noqa: E402
 from m112_idaug import sym_table  # noqa: E402
 

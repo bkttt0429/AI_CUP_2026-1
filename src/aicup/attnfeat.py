@@ -1,4 +1,4 @@
-"""Section 4M M36: per-game log-softmax of the cross-fitted spatial-attention heads (logs/nano4/e2e_pilot.py score, heads A then B)
+"""Section 4M M36: per-game log-softmax of the cross-fitted spatial-attention heads (experiments/nano4/e2e_pilot.py score, heads A then B)
 as question-level R columns. Head A trained on folds 1-2, head B on folds 3-4: a game of fold 1 or 2 takes B, of fold 3 or 4 takes A,
 of fold 0 (and the test set) their mean, so no game is scored by a head that saw its player."""
 import glob

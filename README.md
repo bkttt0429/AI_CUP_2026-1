@@ -12,10 +12,10 @@ AI CUP 2026 秋季賽「圍棋棋力與風格預測競賽—競賽二：從圍�
 | --- | --- |
 | [docs/FINAL_PIPELINE.md](docs/FINAL_PIPELINE.md) | 最終提交流程：各階段的程式、指令、權重位置與不在倉庫內的檔案 |
 | [docs/OFFICIAL_WEIGHTS.md](docs/OFFICIAL_WEIGHTS.md) | 最終流程使用的權重清單與 sha256 |
-| [docs/NANO4.md](docs/NANO4.md) | 叢集上的操作步驟與各步驟的完整參數 |
-| [reports/architecture_v2_2026-11-02.md](reports/architecture_v2_2026-11-02.md) | 完整的實驗紀錄：每一項實驗於取得結果前登記的假設、門檻與結果（以 M 加編號稱呼） |
-| [REPORT.md](REPORT.md)、[METHOD_NOTES.md](METHOD_NOTES.md) | 資料集與規則、早期的方法紀錄 |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 分層架構（開案時） |
+| [docs/records/NANO4.md](docs/records/NANO4.md) | 叢集上的操作步驟與各步驟的完整參數 |
+| [docs/records/architecture_v2_2026-11-02.md](docs/records/architecture_v2_2026-11-02.md) | 完整的實驗紀錄：每一項實驗於取得結果前登記的假設、門檻與結果（以 M 加編號稱呼） |
+| [docs/records/REPORT.md](docs/records/REPORT.md)、[docs/records/METHOD_NOTES.md](docs/records/METHOD_NOTES.md) | 資料集與規則、早期的方法紀錄 |
+| [docs/records/ARCHITECTURE.md](docs/records/ARCHITECTURE.md) | 分層架構（開案時） |
 
 ## 2. 環境
 
@@ -52,9 +52,9 @@ bash scripts/join_trunk_parts.sh     # 接回切成三段的微調主幹權重�
 | --- | --- | --- | --- |
 | 等級頭 | `scripts/l1b_build_cache.py` → `scripts/l1b_train.py` | 局面快取、等級標籤 | `results/l1b/heads3_{A,B}.pt` 與微調後的主幹 |
 | 基礎集成的 24 個成員 | `scripts/trunk_seq_check.py train` | 每手陣列、題目層特徵 | `results/models/ct_cv_m33/*.pt` 與設定檔 `.json` |
-| 統計成分（對手辨識） | `logs/nano4/ident_pool.py`、`m84_cache.py` | 訓練棋譜 | 各成分的分數快取 |
-| 序列辨識網路 | `logs/nano4/m88_seqid.py`、`m120_seqid_sym.py`、`m161p_prod.py`、`m161q_prod.py` | 每局前 256 手的主幹向量與落點 | 各網路的檢查點；每局對 8,007 位訓練玩家的相似度 |
-| 識別器 | `logs/nano4/m164_ident.py`、`m164_select.py`、`m127_conf_family.py` | 各辨識來源的分數 | `results/r_variants/m84_<識別器>~m15_{val,test}.npz`：每局最相似的訓練玩家、把握程度、其等級 |
+| 統計成分（對手辨識） | `scripts/m_series/ident_pool.py`、`m84_cache.py` | 訓練棋譜 | 各成分的分數快取 |
+| 序列辨識網路 | `scripts/m_series/m88_seqid.py`、`m120_seqid_sym.py`、`m161p_prod.py`、`m161q_prod.py` | 每局前 256 手的主幹向量與落點 | 各網路的檢查點；每局對 8,007 位訓練玩家的相似度 |
+| 識別器 | `scripts/m_series/m164_ident.py`、`m164_select.py`、`m127_conf_family.py` | 各辨識來源的分數 | `results/r_variants/m84_<識別器>~m15_{val,test}.npz`：每局最相似的訓練玩家、把握程度、其等級 |
 
 24 個成員的訓練指令（`$arm` 為 C 或 T，`$v` 為驗證折 1–4，`$s` 為種子 0–2）：
 
@@ -69,14 +69,14 @@ python -I scripts/trunk_seq_check.py train --arm $arm --val-fold $v --seed $s --
 | 步驟 | 程式 | 輸入 | 輸出 |
 | --- | --- | --- | --- |
 | 基礎集成的預測 | `scripts/trunk_predict.py predict` | 24 個成員的權重、測試集特徵 | 每題 10 級的機率與基礎答案 |
-| 對手證據 | `logs/nano4/m71_step2.py`、`m83_classcond.py`、`m87_pi0.py`、`m86_bundle.py`、`m129_bundle2.py` | 識別器輸出 | 依把握程度分帶校準的等級證據 |
-| 合併層與整批規則 | `logs/nano4/m141_opp_lookalike.py`、`m163_pool.py --new SQ4`（兩條推移的來源為 `m53_write_probe.py`） | 基礎機率、對手證據、原型比對的等級分布；先前版本的答案（鎖定的推移與防護規則的比較基準） | 合併後的機率；套用兩條推移（1D 改 A、4D 改 5D）與四條防護規則後的答案（`submission_rank_ct112.csv`，Public 0.8331743） |
-| 逐題調整 | `logs/nano4/m58_decode.py`、`m206_decode.py`、`m223_build.py`、`scripts/build_ct118e_a2b4.py` | ct112 的答案、Public 分數讀數 | 最終提交檔（Private 12 題、Public 22 題與 ct112 不同） |
+| 對手證據 | `scripts/m_series/m71_step2.py`、`m83_classcond.py`、`m87_pi0.py`、`m86_bundle.py`、`m129_bundle2.py` | 識別器輸出 | 依把握程度分帶校準的等級證據 |
+| 合併層與整批規則 | `scripts/m_series/m141_opp_lookalike.py`、`m163_pool.py --new SQ4`（兩條推移的來源為 `m53_write_probe.py`） | 基礎機率、對手證據、原型比對的等級分布；先前版本的答案（鎖定的推移與防護規則的比較基準） | 合併後的機率；套用兩條推移（1D 改 A、4D 改 5D）與四條防護規則後的答案（`submission_rank_ct112.csv`，Public 0.8331743） |
+| 逐題調整 | `scripts/m_series/m58_decode.py`、`m206_decode.py`、`m223_build.py`、`scripts/build_ct118e_a2b4.py` | ct112 的答案、Public 分數讀數 | 最終提交檔（Private 12 題、Public 22 題與 ct112 不同） |
 
 ## 4. 重現與核對
 
 - **核對最終提交檔**（僅需標準函式庫）：`python3 -I scripts/verify_final_chain.py submission_rank_ct118e_a2b4.csv`。此程式列出合併層輸出之後每一題的改動（題號、改前、改後、步驟、依據），逐步還原並以 md5 核對每一個中間檔。
-- **由保存的輸出重建合併層的答案**（不需 GPU）：`python -I logs/nano4/m163_pool.py --new SQ4 --control SPALm --name ctverify`，結果與上傳的 `submission_rank_ct112.csv` 逐位元相同。
+- **由保存的輸出重建合併層的答案**（不需 GPU）：`python -I scripts/m_series/m163_pool.py --new SQ4 --control SPALm --name ctverify`，結果與上傳的 `submission_rank_ct112.csv` 逐位元相同。
 - **從頭重現**：依 [docs/FINAL_PIPELINE.md](docs/FINAL_PIPELINE.md) 的順序執行，需要官方資料與 GPU。
 
 ## 5. 權重
