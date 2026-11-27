@@ -1,9 +1,10 @@
 # 最終提交流程（AI CUP 2026 圍棋棋力等級預測）
 
-2026-11-23 版。這份文件說明最終提交檔是怎麼來的、每一段用到哪些程式、權重放在哪裡，以及哪些東西不在這個 repo。
+2026-11-23 版（2026-11-27 依新的目錄結構更新路徑）。這份文件說明最終提交檔是怎麼來的、每一段用到哪些程式、權重放在哪裡，以及哪些東西不在這個 repo。
 
 ## 最終提交檔
 
+- 最終提交檔、md5 與 Public／Private 成績以 [README](../README.md) 的成績表（來源 `docs/final_status.json`）為準；本節保留 2026-11-23 定案時的紀錄。
 - 定案檔是 `submission_rank_ct118e_a2b4.csv`（md5 `2c2e4ad637a6407a35de7f599c4ac641`），Public 0.8587182。
 - 它的 Public 400 題與 `submission_rank_ct118e.csv`（md5 `0ef7368fb85cf1eecde2eb18b99367cb`，Public 0.85871825）逐題相同，所以 Public 讀數也相同。依歷次上傳的 Public 分數回推後修正的 Public 答案：相對於合併層輸出 ct112 共 22 題；其中 7 題已在 ct116，ct118e 相對於 ct116 再有 16 題不同（pub_q_0157 在兩個階段各改一次，故 7＋16−1＝22）。
 - 它的 Private 400 題＝`submission_rank_ct116.csv`（md5 `6b053db6672cd31cbb2e6b742de18649`，Public 0.8394955）的 Private，再把 4 題（priv_q_0062、0125、0204、0325）由 A 改成 B（2026-11-23 參賽者決定，見第四段）。
@@ -16,11 +17,12 @@
 ## 環境
 
 - Python 3.12，套件見 `requirements.txt`；在 nano4 上以 `bash scripts/nano4/setup.sh` 建 `.venv`。
-- KataGo v1.15.0 執行檔放在 `tools/katago/`，Human SL 權重 `b18c384nbt-humanv0` 放在 `models/katago/`。
+- KataGo v1.15.0 執行檔放在 `tools/katago/`，Human SL 權重 `b18c384nbt-humanv0` 放在 `models/katago/`（官方釋出檔要先以 KataGo 的 `migrate_defaultdict_to_dict.py` 轉換，見 README 第 2 節）。
 - 比賽資料放在 `data/training/` 與 `data/tests/`（不隨 repo 散布）。
 - 所有計算以 `sbatch scripts/nano4/run.sbatch <指令>` 送到計算節點；8 卡分片用 `bash scripts/nano4/shards.sh 8 <指令>`。前七步的完整參數見 `docs/records/NANO4.md` 的對應小節。
 - 第二到四段的程式與其啟動腳本在 `scripts/m_series/`（檔名沿用實驗登記的 M 編號）；其餘實驗程式封存於 `experiments/`，需以 tag `pre-restructure-20261127` 的目錄結構執行。新舊路徑對照見 `docs/layout_migration.tsv`。
 - `logs/nano4/` 是執行期的日誌資料夾（不進版控，`scripts/nano4/setup.sh` 會建立）。
+- `scripts/m_series/` 的啟動腳本與部分程式含比賽時叢集上的絕對路徑（`/home/u2507115/BK_AICUP_2026-1` 等；`BK_AICUP_2026-1` 是本儲存庫當時的資料夾名稱），在其他環境要改成自己的路徑。
 
 ## 第一段：基礎集成（只看棋的內容）
 
@@ -37,7 +39,7 @@
      --out results/trunk_seq/es --save-dir results/models/ct_cv_m33
    ```
 
-   啟動腳本：`scripts/m_series/m33.sh`（以 `scripts/m_series/pack8.sh` 在每個節點並行 8 個成員的訓練，再以 `scripts/m_series/m33_protocol_check.py` 檢查協議）。
+   啟動腳本：`scripts/m_series/m33.sh`（在每個節點以 `pack8.sh` 並行 8 個成員的訓練，再以 `scripts/m_series/m33_protocol_check.py` 檢查協議）。當時執行的 `pack8.sh` 是叢集上 `/home/u2507115/.cache/report_audit/` 裡的一份，內容即 `scripts/m_series/pack8.sh`；這些啟動腳本都寫死了叢集上的路徑（見 README 第 2 節）。
 
 7. **測試集推論**：`scripts/predict_submission.py`（分片評分）→ `scripts/trunk_predict.py extract` → `scripts/trunk_predict.py predict --models results/models/ct_cv_m33/val*_*-pc-f0-x40-oh_s*.pt`，產出 `submission_rank_ct9.csv`（md5 前 12 碼 `6ff60b847e26`，Public 0.7622032）與各題的機率檔。啟動腳本：`scripts/m_series/m33_prod2.sh`（使用先前 mock 一致性檢查與測試集分片評分的保存輸出；2026-11-27 以前本行誤寫為競賽一的 B1 試驗腳本 `b1_public.sh`）。
 

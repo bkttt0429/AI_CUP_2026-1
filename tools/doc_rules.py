@@ -24,7 +24,7 @@ ALLOWED_DOCS = [  # 允許存在的文件（萬用字元，* 可跨目錄）
     "docs/FINAL_PIPELINE.md", "docs/OFFICIAL_WEIGHTS.md", "docs/BRANCHES.md",  # 現行文件
     "docs/work/*.md",  # 工作檔
     "tools/*_baseline.txt",  # 檢查工具的基準檔（由 check_code_rules.py --write-baseline 產生）
-    "docs/records/*", "experiments/*", "reports/*", "results/*",  # 封存區與結果內的紀錄
+    "docs/records/*", "experiments/*", "reports/*", "results/*",  # 封存區、簡報網頁與結果內的紀錄
     "tests/fixtures/*",  # 測試資料的說明
 ]  # 結束允許清單
 LINK_CHECKED = [  # 要檢查內部連結的現行文件（萬用字元）
@@ -32,7 +32,7 @@ LINK_CHECKED = [  # 要檢查內部連結的現行文件（萬用字元）
     "experiments/README.md", "tests/fixtures/mock_fold0_40/README.md",  # 封存區入口說明與測試資料說明
 ]  # 結束連結檢查清單
 TABLE_FILES = ["README.md"]  # 含成績表格標記區塊的文件
-ARCHIVE_PREFIXES = ("experiments/", "docs/records/", "reports/", "results/archive/")  # 封存區（內容以 tools/archive.sha256 鎖定）
+ARCHIVE_PREFIXES = ("experiments/", "docs/records/", "results/archive/")  # 封存區（內容以 tools/archive.sha256 鎖定）
 WORK_GLOB = "docs/work/*.md"  # 工作檔的位置
 WORK_NAME = re.compile(r"^docs/work/\d{4}-\d{2}-\d{2}-[^/]+\.md$")  # 工作檔檔名格式
 WORK_STATES = ("進行中", "等待中", "已完成", "已取消")  # 工作檔允許的狀態

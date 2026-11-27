@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 在國網 nano4 上為本專案建立一次性的 Python 環境。請在登入節點執行（它需要網路，
-# 不需要 GPU），在解開的專案資料夾內任何位置執行都可以：
+# 不需要 GPU），在 clone 下來的 AI_CUP_2026-1 內任何位置執行都可以；兩個前置檔案的取得方式見 README 第 2 節：
 #   bash scripts/nano4/setup.sh                    # torch 2.14.1 的 CUDA 12.6 版本（驅動程式 >= R525）
 #   TORCH_CUDA=cu130 bash scripts/nano4/setup.sh   # lab01 使用的 CUDA 13.0 版本（驅動程式 >= R580）
 # 所有東西都留在專案內：uv 在 tools/uv、Python 在 tools/uv-python、下載快取在
@@ -24,7 +24,7 @@ die() { echo "setup failed: $*" >&2; exit 1; }  # 印出失敗原因並中止
 
 step "checks in $ROOT"  # 第一步：事前檢查
 for f in requirements.txt models/katago/b18c384nbt-humanv0.ckpt repo/KataGo/python/katago; do  # 逐一確認必要的檔案與資料夾
-  [ -e "$f" ] || die "$f is missing: run this inside the extracted AICUP_2026-1 folder"  # 缺少就表示不在解開的專案內執行
+  [ -e "$f" ] || die "$f is missing: fetch the prerequisites as in README section 2, inside AI_CUP_2026-1"  # 缺少就中止，並指向 README 第 2 節的取得方式
 done  # 結束檔案檢查
 arch=$(uname -m)  # CPU 架構，用來挑選 uv 的下載檔
 case "$arch" in  # 依架構選擇對應的 sha256
@@ -91,4 +91,5 @@ mkdir -p logs/nano4  # 套件清單的輸出資料夾
 
 step "done"  # 完成
 echo "env: $ROOT/.venv (package list in logs/nano4/env-freeze.txt)"  # 印出環境位置與套件清單的位置
-echo "next: cd $ROOT && sbatch -J checks -t 00:30:00 scripts/nano4/run.sbatch bash tools/run_checks.sh --all"  # 提示下一步：在計算節點執行全部檢查
+[ -e models/katago/b18c384nbt-humanv0.ckpt.backup ] || echo "next: convert the Human SL checkpoint (README section 2): cd $ROOT && sbatch -t 00:10:00 scripts/nano4/run.sbatch .venv/bin/python -I repo/KataGo/python/migrate_defaultdict_to_dict.py -checkpoint models/katago/b18c384nbt-humanv0.ckpt"  # 檢查點還沒轉換（沒有 .backup）時，先提示轉換
+echo "then: cd $ROOT && sbatch -J checks -t 00:30:00 scripts/nano4/run.sbatch bash tools/run_checks.sh --all"  # 再提示下一步：在計算節點執行全部檢查

@@ -37,7 +37,7 @@ AI_CUP_2026-1/
 │   ├── records/       封存紀錄：方法紀錄、實驗登記、計畫、備忘、研究筆記
 │   └── work/          工作檔（YYYY-MM-DD-主題.md）
 ├── experiments/       封存的實驗程式（以 tag pre-restructure-20261127 的目錄結構執行）
-└── reports/           簡報與報告網頁（封存）
+└── reports/           簡報與報告網頁（go_deck/ 是結案簡報，仍可更新）
 ```
 
 執行期資料夾不進版控：`data/`、`models/`、`repo/`、`tools/katago/`、`logs/`、`.venv/`。2026-11-27 整理前的結構保存在 tag `pre-restructure-20261127`，每個檔案的新舊路徑見 [docs/layout_migration.tsv](docs/layout_migration.tsv)。
@@ -59,15 +59,24 @@ AI_CUP_2026-1/
 git clone https://github.com/bkttt0429/AI_CUP_2026-1
 git clone https://github.com/bkttt0429/AI_CUP_2026-2   # 並排放置：對手辨識程式會匯入競賽一的 aicup_pid
 cd AI_CUP_2026-1
+# setup.sh 的兩個前置檔案：KataGo 的 Python 套件（d91ea855，只取 python/）與 Human SL 網路（KataGo v1.15.0 釋出）
+git clone --filter=blob:none --no-checkout https://github.com/lightvector/KataGo.git repo/KataGo
+git -C repo/KataGo sparse-checkout set python
+git -C repo/KataGo checkout d91ea855110dae533f0aada947b2b7d78cc8a4e1
+mkdir -p models/katago && curl -fL -o models/katago/b18c384nbt-humanv0.ckpt https://github.com/lightvector/KataGo/releases/download/v1.15.0/b18c384nbt-humanv0.ckpt
+echo "84b23476b56a73a775a0f09bad7d1c5c435690adb343aa851e80bf198c0c8b27  models/katago/b18c384nbt-humanv0.ckpt" | sha256sum -c
 bash scripts/nano4/setup.sh          # 建立 .venv：Python 3.12、PyTorch 2.14.1（CUDA 12.6）、requirements.txt 與 requirements-dev.txt
+.venv/bin/python -I repo/KataGo/python/migrate_defaultdict_to_dict.py -checkpoint models/katago/b18c384nbt-humanv0.ckpt   # 比賽時也做了這一步（見下方說明）
 bash scripts/join_trunk_parts.sh     # 接回切成三段的微調主幹權重，並以 results/l1b/heads3.sha256 核對
 ```
 
 - 作業系統：Red Hat Enterprise Linux 9.6；排程：Slurm；GPU：NVIDIA H200（每節點 8 張）。
 - 預訓練模型：KataGo Human SL 網路 `b18c384nbt-humanv0`，置於 `models/katago/`（取自 KataGo 官方釋出，不隨儲存庫散布）。KataGo v1.15.0 執行檔僅用於一致性檢查，置於 `tools/katago/`。
+- Human SL 檢查點的轉換：官方釋出檔（sha256 `84b23476…`）的訓練指標含 `defaultdict`，以 `torch.load(weights_only=True)` 讀取會失敗（`scripts/score_folds.py` 就是這樣讀），所以比賽時以 KataGo 的 `python/migrate_defaultdict_to_dict.py` 轉換；它只把這些指標改成一般的 dict，415 個權重張量與設定都不變，原檔留為 `.ckpt.backup`。轉換後的檔與比賽時的檔大小相同（323,749,927 bytes），sha256 則不同（比賽時為 `00e608f3…`，記於 `docs/nano4_large_files.sha256` 與 `results/l1b/heads3_*.json`）：檢查點的 `train_state` 含一個有 422 個檔名的 Python set（`data_files_used`），pickle 出的順序隨每次執行的字串雜湊而變，所以重新存檔不是逐位元固定的（固定 `PYTHONHASHSEED` 時，兩次轉換逐位元相同）。
 - KataGo 的 Python 套件：`setup.sh` 需要 `repo/KataGo/python/katago`（KataGo 官方儲存庫 2026-10-15 的 master，即 `d91ea855`，只用 `python/`），並以 `.pth` 把它與並排的 `../AI_CUP_2026-2/src` 加入 `.venv`。
 - 官方資料置於 `data/training/`（訓練集 v1.1）與 `data/tests/`（測試集），不隨儲存庫散布。
 - 計算一律以 `sbatch scripts/nano4/run.sbatch <指令>` 送至計算節點；8 張 GPU 的分片以 `bash scripts/nano4/shards.sh 8 <指令>` 執行。Slurm 日誌寫在 `logs/nano4/`（`setup.sh` 會建立）。
+- `scripts/m_series/` 的啟動腳本與部分程式含比賽時叢集上的絕對路徑（`/home/u2507115/BK_AICUP_2026-1`、`/home/u2507115/.cache/report_audit`、`/work/u2507115/...`；`BK_AICUP_2026-1`、`BK_AICUP_2026-2` 是兩個儲存庫當時的資料夾名稱），於其他環境執行時須改為自己的路徑。
 - 規則檢查：`bash tools/run_checks.sh --all`（中文註解、重複函式、封存區、文件規則、ruff、pytest；見 [AGENTS.md](AGENTS.md) 第 7 節）。
 
 ## 3. 流程與各模組的輸入、輸出
@@ -116,7 +125,7 @@ python -I scripts/trunk_seq_check.py train --arm $arm --val-fold $v --seed $s --
 ## 4. 重現與核對
 
 - **核對最終提交檔**（僅需標準函式庫）：`python3 -I scripts/verify_final_chain.py submission_rank_ct118e_a2b4.csv`。此程式列出合併層輸出之後每一題的改動（題號、改前、改後、步驟、依據），逐步還原並以 md5 核對每一個中間檔。
-- **由保存的輸出重建合併層的答案**（不需 GPU）：`python -I scripts/m_series/m163_pool.py --new SQ4 --control SPALm --name ctverify`，結果與上傳的 `submission_rank_ct112.csv` 逐位元相同。
+- **由保存的輸出重建合併層的答案**（不需 GPU）：`python -I scripts/m_series/m163_pool.py --new SQ4 --control SPALm --name ctverify`，結果與上傳的 `submission_rank_ct112.csv` 逐位元相同。所需的模型輸出（`results/r_variants/`、`results/m77/`、`results/trunk_seq/`、`results/m84_cache/` 等）、四個先前的提交檔（`submission_rank_ct9.csv`、`submission_rank_ct28.csv`、`submission_rank_ct104b.csv`、`submission_rank_ct106.csv`）與 ct9 的機率檔 `submission_rank_ct9_proba.csv`（這五個檔置於儲存庫根目錄）都不在儲存庫內，保存於本隊的本地備份；放回原位置後，從儲存庫根目錄執行。其中 `results/m84_cache/` 的 `queries.npz`、`var_S4e.npz` 在備份的 `AICUP1_MOVE_20261121_work/work/aicup1_moved/m84_cache/`（比賽時 `results/m84_cache` 是指向 `/work` 的符號連結），要放進實際的 `results/m84_cache/` 資料夾（逐檔清單為 `docs/records/backup_20261118/audit_chain_files.txt` 標記 `pool163` 的列；另見 [docs/FINAL_PIPELINE.md](docs/FINAL_PIPELINE.md)「不在 repo 的檔案」）。
 - **從頭重現**：依 [docs/FINAL_PIPELINE.md](docs/FINAL_PIPELINE.md) 的順序執行，需要官方資料與 GPU。
 
 ## 5. 權重
