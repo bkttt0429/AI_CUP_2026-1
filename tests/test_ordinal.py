@@ -35,10 +35,10 @@ def test_coral_fits_ordinal_data_and_round_trips():
     assert (pred == y).mean() > 0.4 and np.abs(pred - y).mean() < 1.0  # ordinal data: close to the true class
     assert np.corrcoef(P @ np.arange(10), z)[0, 1] > 0.9
     m2 = ordinal.from_state(json.loads(json.dumps(m.state_dict())))
-    np.testing.assert_array_equal(m2.predict_proba(X[:9]), P[:9])
+    np.testing.assert_allclose(m2.predict_proba(X[:9]), P[:9], rtol=0, atol=1e-12)  # 9 rows vs 600 rows: the last bit may differ by CPU
     assert m.state_dict()["type"] == "coral"
-    # deterministic per seed, different seeds differ
-    np.testing.assert_array_equal(ordinal.CoralMLP(hidden=8, epochs=200).fit(X, y).predict_proba(X[:5]), P[:5])
+    # deterministic per seed, different seeds differ (cross-batch inference differs by ~2e-16 on GitHub runners, hence atol)
+    np.testing.assert_allclose(ordinal.CoralMLP(hidden=8, epochs=200).fit(X, y).predict_proba(X[:5]), P[:5], rtol=0, atol=1e-12)
     assert not np.allclose(ordinal.CoralMLP(hidden=8, epochs=200, seed=1).fit(X, y).predict_proba(X[:5]), P[:5])
 
 
@@ -58,7 +58,7 @@ def test_pairwise_score_orders_the_ranks_and_round_trips():
     assert (np.diff(th) > 0).all() and float(m.link.scale().detach()) > 0
     m2 = ordinal.from_state(json.loads(json.dumps(m.state_dict())))
     np.testing.assert_allclose(m2.predict_proba(X[:9]), P[:9], rtol=0, atol=1e-15)
-    np.testing.assert_array_equal(m2.score(X[:9]), s[:9])
+    np.testing.assert_allclose(m2.score(X[:9]), s[:9], rtol=0, atol=1e-12)  # cross-batch: last-bit differences on other CPUs
     # one rank only cannot be paired
     with pytest.raises(ValueError, match="two different ranks"):
         ordinal.PairwiseScoreMLP(hidden=8, epochs=5).fit(X[:20], np.zeros(20, dtype=int))
