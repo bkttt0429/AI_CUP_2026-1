@@ -53,6 +53,8 @@ AI_CUP_2026-1/
 | [docs/records/REPORT.md](docs/records/REPORT.md)、[docs/records/METHOD_NOTES.md](docs/records/METHOD_NOTES.md) | 資料集與規則、早期的方法紀錄 |
 | [docs/records/ARCHITECTURE.md](docs/records/ARCHITECTURE.md) | 分層架構（開案時） |
 
+`docs/records/` 是封存紀錄，內文的程式路徑是 2026-11-27 整理前的位置（例如 `logs/nano4/m163_pool.py` 現在是 `scripts/m_series/m163_pool.py`）；新舊路徑對照見 [docs/layout_migration.tsv](docs/layout_migration.tsv)。
+
 ## 2. 環境
 
 ```bash
