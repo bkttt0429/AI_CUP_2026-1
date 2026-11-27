@@ -3,14 +3,50 @@
 AI CUP 2026 秋季賽「圍棋棋力與風格預測競賽—競賽二：從圍棋棋譜預測玩家棋力等級」，TEAM_11819 的程式與紀錄。
 
 - 任務：每題給同一位玩家的 5 至 20 局棋譜，預測其等級（D、C、B、A、1D–6D，共 10 級）。
-- 成績：Public 0.8587182、Private 0.7902471（最終提交檔 `submission_rank_ct118e_a2b4.csv`，md5 `2c2e4ad637a6407a35de7f599c4ac641`）。
-- 本倉庫另提供競賽一（[AI_CUP_2026-2](https://github.com/bkttt0429/AI_CUP_2026-2)）共用的 SGF 解析、特徵抽取與序列網路定義。
+- 本儲存庫另提供競賽一（[AI_CUP_2026-2](https://github.com/bkttt0429/AI_CUP_2026-2)）共用的 SGF 解析、特徵抽取與序列網路定義。
+- 專案規則（AI 工具與成員都要遵守）見 [AGENTS.md](AGENTS.md)。
 
-## 1. 文件
+<!-- final-status:begin -->
+| 項目 | 內容 |
+| --- | --- |
+| 競賽 | AI CUP 2026 秋季賽「圍棋棋力與風格預測競賽—競賽二：從圍棋棋譜預測玩家棋力等級」 |
+| 隊伍 | TEAM_11819 |
+| 最終提交檔 | `submission_rank_ct118e_a2b4.csv`（不在儲存庫內） |
+| 最終提交檔 md5 | `2c2e4ad637a6407a35de7f599c4ac641` |
+| Public 成績 | 0.8587182 |
+| Private 成績 | 0.7902471（第 5 名） |
+<!-- final-status:end -->
+
+## 1. 文件與目錄結構
+
+### 1.1 目錄結構
+
+```text
+AI_CUP_2026-1/
+├── AGENTS.md          專案規則（AI 工具與成員都要遵守）
+├── src/aicup/         共用套件：SGF 解析、評分、等級頭、序列模型（兩個競賽共用）
+├── scripts/           第一段「基礎集成」的程式，與核對入口 verify_final_chain.py
+│   ├── m_series/      第二到四段（對手辨識、證據合併、決策）的程式與啟動腳本，檔名沿用實驗登記的 M 編號
+│   └── nano4/         Slurm 啟動腳本與環境安裝（nano4 是國網的叢集名稱）
+├── results/           最終權重（models/ct_cv_m33/、l1b/heads3*）與最終流程讀取的檔案
+│   └── archive/       封存的實驗結果
+├── splits/            玩家分折
+├── tests/             pytest 測試
+├── tools/             規則檢查：run_checks.sh、check_code_rules.py、doc_rules.py
+├── docs/              現行文件（最終流程、權重清單、分支紀錄、成績來源 final_status.json、新舊路徑對照）
+│   ├── records/       封存紀錄：方法紀錄、實驗登記、計畫、備忘、研究筆記
+│   └── work/          工作檔（YYYY-MM-DD-主題.md）
+├── experiments/       封存的實驗程式（以 tag pre-restructure-20261127 的目錄結構執行）
+└── reports/           簡報與報告網頁（封存）
+```
+
+執行期資料夾不進版控：`data/`、`models/`、`repo/`、`tools/katago/`、`logs/`、`.venv/`。2026-11-27 整理前的結構保存在 tag `pre-restructure-20261127`，每個檔案的新舊路徑見 [docs/layout_migration.tsv](docs/layout_migration.tsv)。
+
+### 1.2 文件
 
 | 文件 | 內容 |
 | --- | --- |
-| [docs/FINAL_PIPELINE.md](docs/FINAL_PIPELINE.md) | 最終提交流程：各階段的程式、指令、權重位置與不在倉庫內的檔案 |
+| [docs/FINAL_PIPELINE.md](docs/FINAL_PIPELINE.md) | 最終提交流程：各階段的程式、指令、權重位置與不在儲存庫內的檔案 |
 | [docs/OFFICIAL_WEIGHTS.md](docs/OFFICIAL_WEIGHTS.md) | 最終流程使用的權重清單與 sha256 |
 | [docs/records/NANO4.md](docs/records/NANO4.md) | 叢集上的操作步驟與各步驟的完整參數 |
 | [docs/records/architecture_v2_2026-11-02.md](docs/records/architecture_v2_2026-11-02.md) | 完整的實驗紀錄：每一項實驗於取得結果前登記的假設、門檻與結果（以 M 加編號稱呼） |
@@ -20,15 +56,19 @@ AI CUP 2026 秋季賽「圍棋棋力與風格預測競賽—競賽二：從圍�
 ## 2. 環境
 
 ```bash
-git clone https://github.com/bkttt0429/AI_CUP_2026-1 && cd AI_CUP_2026-1
-bash scripts/nano4/setup.sh          # 建立 .venv：Python 3.12、PyTorch 2.14.1（CUDA 12.6）與 requirements.txt 的套件
+git clone https://github.com/bkttt0429/AI_CUP_2026-1
+git clone https://github.com/bkttt0429/AI_CUP_2026-2   # 並排放置：對手辨識程式會匯入競賽一的 aicup_pid
+cd AI_CUP_2026-1
+bash scripts/nano4/setup.sh          # 建立 .venv：Python 3.12、PyTorch 2.14.1（CUDA 12.6）、requirements.txt 與 requirements-dev.txt
 bash scripts/join_trunk_parts.sh     # 接回切成三段的微調主幹權重，並以 results/l1b/heads3.sha256 核對
 ```
 
 - 作業系統：Red Hat Enterprise Linux 9.6；排程：Slurm；GPU：NVIDIA H200（每節點 8 張）。
-- 預訓練模型：KataGo Human SL 網路 `b18c384nbt-humanv0`，置於 `models/katago/`（取自 KataGo 官方釋出，不隨倉庫散布）。KataGo v1.15.0 執行檔僅用於一致性檢查，置於 `tools/katago/`。
-- 官方資料置於 `data/training/`（訓練集 v1.1）與 `data/tests/`（測試集），不隨倉庫散布。
-- 計算一律以 `sbatch scripts/nano4/run.sbatch <指令>` 送至計算節點；8 張 GPU 的分片以 `bash scripts/nano4/shards.sh 8 <指令>` 執行。
+- 預訓練模型：KataGo Human SL 網路 `b18c384nbt-humanv0`，置於 `models/katago/`（取自 KataGo 官方釋出，不隨儲存庫散布）。KataGo v1.15.0 執行檔僅用於一致性檢查，置於 `tools/katago/`。
+- KataGo 的 Python 套件：`setup.sh` 需要 `repo/KataGo/python/katago`（KataGo 官方儲存庫 2026-10-15 的 master，即 `d91ea855`，只用 `python/`），並以 `.pth` 把它與並排的 `../AI_CUP_2026-2/src` 加入 `.venv`。
+- 官方資料置於 `data/training/`（訓練集 v1.1）與 `data/tests/`（測試集），不隨儲存庫散布。
+- 計算一律以 `sbatch scripts/nano4/run.sbatch <指令>` 送至計算節點；8 張 GPU 的分片以 `bash scripts/nano4/shards.sh 8 <指令>` 執行。Slurm 日誌寫在 `logs/nano4/`（`setup.sh` 會建立）。
+- 規則檢查：`bash tools/run_checks.sh --all`（中文註解、重複函式、封存區、文件規則、ruff、pytest；見 [AGENTS.md](AGENTS.md) 第 7 節）。
 
 ## 3. 流程與各模組的輸入、輸出
 
@@ -89,6 +129,8 @@ python -I scripts/trunk_seq_check.py train --arm $arm --val-fold $v --seed $s --
 | 序列辨識網路（50 個檔） | 單檔多超過 GitHub 的 100 MB 上限，保存於本隊的本地備份，可依主辦單位要求提供；清單與 sha256 見 [docs/OFFICIAL_WEIGHTS.md](docs/OFFICIAL_WEIGHTS.md) |
 
 三個較早的辨識元件僅保存其輸出、未保存權重（見 docs/FINAL_PIPELINE.md「不在 repo 的檔案」）；合併層與決策層可由這些輸出重算。
+
+2026-11-27 起，`src/` 與 `scripts/` 的每一行程式都加上了中文註解（程式邏輯經語法樹比對確認未變）。權重的附屬檔記錄了當時訓練程式的位元組雜湊（`code_sha256`），因此載入這些權重時會印出「由其他訓練程式訓練」的警告；這只是提醒，不影響預測結果。
 
 ## 6. 外部資源與揭露事項
 

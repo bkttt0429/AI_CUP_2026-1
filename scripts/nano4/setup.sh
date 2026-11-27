@@ -69,10 +69,12 @@ step "torch $TORCH_VERSION+$TORCH_CUDA"  # 第四步：安裝 torch
 
 step "pinned packages from requirements.txt"  # 第五步：其他套件
 "$UV" pip install --python .venv/bin/python -r requirements.txt  # 依 requirements.txt 安裝固定版本的其餘套件
+"$UV" pip install --python .venv/bin/python -r requirements-dev.txt  # 安裝 tools/run_checks.sh 用到的檢查工具（ruff）
 
-step "KataGo python package on the env path"  # 第六步：讓環境找得到 KataGo 的 Python 套件
+step "KataGo python package and AI_CUP_2026-2's aicup_pid on the env path"  # 第六步：讓環境找得到 KataGo 的 Python 套件與競賽一的套件
 site=$(.venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')  # 取得 .venv 的 site-packages 路徑
 echo "$ROOT/repo/KataGo/python" > "$site/katago.pth"  # 以 .pth 檔把 KataGo 的 python 資料夾加入匯入路徑
+echo "$(dirname "$ROOT")/AI_CUP_2026-2/src" > "$site/aicup_pid.pth"  # 以 .pth 檔加入並排的競賽一套件 aicup_pid（第二段的對手辨識程式會匯入）
 
 step "import check"  # 第七步：匯入檢查
 .venv/bin/python -I - <<'EOF'  # 以 heredoc 傳入檢查程式：匯入主要套件與 KataGo 模組
@@ -89,4 +91,4 @@ mkdir -p logs/nano4  # 套件清單的輸出資料夾
 
 step "done"  # 完成
 echo "env: $ROOT/.venv (package list in logs/nano4/env-freeze.txt)"  # 印出環境位置與套件清單的位置
-echo "next: cd $ROOT && sbatch experiments/nano4/smoke.sbatch"  # 提示下一步：送出冒煙測試
+echo "next: cd $ROOT && sbatch -J checks -t 00:30:00 scripts/nano4/run.sbatch bash tools/run_checks.sh --all"  # 提示下一步：在計算節點執行全部檢查

@@ -37,7 +37,9 @@
      --out results/trunk_seq/es --save-dir results/models/ct_cv_m33
    ```
 
-7. **測試集推論**：`scripts/predict_submission.py`（分片評分）→ `scripts/trunk_predict.py extract` → `scripts/trunk_predict.py predict --models results/models/ct_cv_m33/val*_*-pc-f0-x40-oh_s*.pt`，產出 `submission_rank_ct9.csv`（md5 前 12 碼 `6ff60b847e26`，Public 0.7622032）與各題的機率檔。啟動腳本：`experiments/nano4/report_audit/b1_public.sh`。
+   啟動腳本：`scripts/m_series/m33.sh`（以 `scripts/m_series/pack8.sh` 在每個節點並行 8 個成員的訓練，再以 `scripts/m_series/m33_protocol_check.py` 檢查協議）。
+
+7. **測試集推論**：`scripts/predict_submission.py`（分片評分）→ `scripts/trunk_predict.py extract` → `scripts/trunk_predict.py predict --models results/models/ct_cv_m33/val*_*-pc-f0-x40-oh_s*.pt`，產出 `submission_rank_ct9.csv`（md5 前 12 碼 `6ff60b847e26`，Public 0.7622032）與各題的機率檔。啟動腳本：`scripts/m_series/m33_prod2.sh`（使用先前 mock 一致性檢查與測試集分片評分的保存輸出；2026-11-27 以前本行誤寫為競賽一的 B1 試驗腳本 `b1_public.sh`）。
 
 ## 第二段：認出對手（錨點）
 

@@ -1,0 +1,16 @@
+# 既有的重複函式（最終流程維持比賽時的程式，不重構）；新增的重複會讓檢查失敗
+scripts/m_series/m120_seqid_sym.py:embed | scripts/m_series/m161p_prod.py:embed | scripts/m_series/m161q_prod.py:embed | scripts/m_series/m88_seqid.py:embed
+scripts/m_series/m120_seqid_sym.py:evaluate | scripts/m_series/m88_seqid.py:evaluate
+scripts/m_series/m127_conf_family.py:zs | scripts/m_series/m84_variant.py:zs
+scripts/m_series/m129_bundle2.py:compose | scripts/m_series/m137b_build.py:compose | scripts/m_series/m137f_build2.py:compose
+scripts/m_series/m137b_build.py:apply | scripts/m_series/m137f_build2.py:apply
+scripts/m_series/m137b_build.py:closure | scripts/m_series/m137f_build2.py:closure
+scripts/m_series/m137b_build.py:evidence_of | scripts/m_series/m137f_build2.py:evidence_of
+scripts/m_series/m137b_build.py:fit | scripts/m_series/m137f_build2.py:fit
+scripts/m_series/m137b_build.py:keep_old | scripts/m_series/m137f_build2.py:keep_old
+scripts/m_series/m161p_prod.py:summary | scripts/m_series/m161q_prod.py:summary
+scripts/m_series/m208_ledger_probe.py:profile | scripts/m_series/m211_ledger_ct116.py:profile
+scripts/m_series/m208_ledger_probe.py:solve | scripts/m_series/m211_ledger_ct116.py:solve
+scripts/m_series/m210_profile_all.py:one | scripts/m_series/m220_resolve.py:one
+scripts/m_series/m73_fused_id.py:top2 | scripts/m_series/m81_tactic_id.py:top2
+scripts/trunk_extract.py:init_worker | src/aicup/scoring.py:init_worker

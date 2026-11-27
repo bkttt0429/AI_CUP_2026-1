@@ -31,7 +31,7 @@ for d in (ROOT / "src", ROOT / "scripts"):  # 把 src 與 scripts 都加入匯�
 from katago.game.board import Board  # noqa: E402  KataGo 的棋盤與顏色常數
 from katago.game.gamestate import GameState  # noqa: E402  KataGo 的局面狀態與規則
 from aicup.humansl import load_humansl  # noqa: E402  載入 Human SL 網路
-from aicup.l1b import load_heads, neutral_rows, trunk_features  # noqa: E402  L1b 等級頭、中性 metadata 與主幹輸出
+from aicup.l1b import load_heads, neutral_rows, trunk_features  # noqa: E402  匯入 L1b 等級頭、中性 metadata 與主幹輸出
 from aicup.ladder import FOLDS_CSV  # noqa: E402  預設的玩家分折表
 from aicup.pilot import start_state  # noqa: E402  建立開局局面（含讓子石）
 from aicup.scoring import fold_players, load_games, part_paths, player_games, read_game_keys, restrict_players, resume_plan  # noqa: E402  與評分相同的選局與分段續跑

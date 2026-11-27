@@ -23,7 +23,7 @@ import pandas as pd  # 讀取 CSV 與依題目分組加總
 ROOT = Path.cwd()  # 以目前目錄為 repo 根目錄
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]  # 讓 aicup 套件與同目錄的實驗模組可匯入
 import m105_voters as m5  # noqa: E402  M105 的測試端密度比計算
-import m137b_build as mb7  # noqa: E402  M137b 的合併擬合、防護與共用設定
+import m137b_build as mb7  # noqa: E402  匯入 M137b 的合併擬合、防護與共用設定
 import m137f_build2 as mf7  # noqa: E402  修訂後的四條防護（guard2）
 import m141_opp_lookalike as m41  # noqa: E402  （含額外輸入的 L0 合併的 fit／apply）
 from aicup.metric import LEVELS  # noqa: E402  十個等級的名稱

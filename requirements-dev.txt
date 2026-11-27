@@ -1,0 +1,2 @@
+# 檢查工具（tools/run_checks.sh 使用）；與 requirements.txt 一起安裝：pip install -r requirements.txt -r requirements-dev.txt
+ruff==0.17.6

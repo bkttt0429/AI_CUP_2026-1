@@ -23,8 +23,8 @@ import torch  # 以 LBFGS 擬合合併係數
 
 ROOT = Path.cwd()  # 以目前目錄為 repo 根目錄
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts/m_series")]  # 讓 aicup 套件與同目錄的實驗模組可匯入
-import m137b_build as mb7  # noqa: E402  M137b 的合併擬合、防護與共用設定
-import m137f_build2 as mf7  # noqa: E402  M137e 修訂後的四條防護（guard2）
+import m137b_build as mb7  # noqa: E402  匯入 M137b 的合併擬合、防護與共用設定
+import m137f_build2 as mf7  # noqa: E402  匯入 M137e 修訂後的四條防護（guard2）
 from aicup.metric import LEVELS  # noqa: E402  十個等級的名稱
 from aicup.qeval import SIZES, balanced_mean_over_n, paired_diff  # noqa: E402  題目大小、類別平衡分數與成對差檢定
 

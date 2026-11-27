@@ -94,7 +94,7 @@ from aicup.humansl import PROFILES  # noqa: E402  18 個等級剖面
 from aicup.ladder_data import pack_questions  # noqa: E402  把題目打包成集合模型的輸入
 from aicup.metric import LEVELS, expected_score_decision  # noqa: E402  10 個等級與期望分數決策
 from aicup.qfeatures import FEATURE_NAMES, question_features  # noqa: E402  q24 題目特徵
-from aicup.rankmodel import _softmax, from_state  # noqa: E402  L3/L4 題目層模型的還原與 softmax
+from aicup.rankmodel import _softmax, from_state  # noqa: E402  題目層模型（L3/L4）的還原與 softmax
 from aicup.setmodel_io import file_sha256, load_set_model, sidecar_path, summary as set_model_summary  # noqa: E402  集合模型與側檔的讀取
 from aicup.settrain import BASE_CLIP, predict_set_model  # noqa: E402  集合模型的推論
 from aicup.handicap import question_hd_features_from_games  # noqa: E402  題目的讓子特徵
